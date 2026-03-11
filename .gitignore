@@ -11,3 +11,11 @@ Thumbs.db
 .env
 .env.*
 !.env.example
+
+# Supabase
+.supabase
+
+# Build / deps
+node_modules/
+dist/
+.vite/

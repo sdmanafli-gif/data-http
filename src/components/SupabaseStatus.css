@@ -1,0 +1,27 @@
+.supabase-status {
+  font-size: 11px;
+  padding: var(--space-xs) var(--space-sm);
+  margin: var(--space-md);
+  border-radius: var(--radius);
+  text-align: center;
+}
+
+.supabase-status--checking {
+  color: var(--color-text-muted);
+  background: var(--color-border);
+}
+
+.supabase-status--connected {
+  color: #0d6b0d;
+  background: #e8f5e9;
+}
+
+.supabase-status--missing {
+  color: #8a6d00;
+  background: #fff8e1;
+}
+
+.supabase-status--error {
+  color: #b71c1c;
+  background: #ffebee;
+}
