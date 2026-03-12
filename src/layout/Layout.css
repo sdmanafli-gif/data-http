@@ -51,6 +51,41 @@
   padding: var(--space-md) 0;
 }
 
+.layout__user {
+  border-top: 1px solid var(--color-border);
+  padding: var(--space-md);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.layout__user-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.layout__user-email {
+  font-size: 12px;
+  color: var(--color-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.layout__user-role {
+  font-size: 11px;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.layout__logout {
+  width: 100%;
+  font-size: 13px;
+  padding: var(--space-xs) var(--space-sm);
+}
+
 .layout__nav-link--icon {
   display: flex;
   align-items: center;

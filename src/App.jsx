@@ -1,5 +1,7 @@
 import { Routes, Route, Navigate } from 'react-router-dom'
+import { AuthProvider, useAuth } from './contexts/AuthContext'
 import Layout from './layout/Layout'
+import Login from './pages/Login'
 import { placeholders } from './config/nav'
 import MehsulBazasi from './features/mehsul-bazasi'
 import TechizatciBazasi from './features/techizatci-bazasi'
@@ -10,11 +12,15 @@ import MonthlyTracking from './features/monthly-tracking'
 import QiymetCedveliFeature from './features/qiymet-cedveli'
 import BazaraBorc from './features/bazara-borc'
 import TelefonNomreleri from './features/telefon-nomreleri'
+import CreateUser from './pages/CreateUser'
+import UserList from './pages/UserList'
 
-function App() {
+function AppRoutes() {
   return (
     <Layout>
       <Routes>
+        <Route path="/admin/create-user" element={<CreateUser />} />
+        <Route path="/admin/users" element={<UserList />} />
         {placeholders
           .filter(({ path }) => !['/mehsul-bazasi', '/techizatci-bazasi', '/inventar', '/musteri-bazasi', '/icloud', '/ayliq-yigim', '/qiymet-cedveli', '/bazara-borc', '/telefon-nomreleri'].includes(path))
           .map(({ path, Component }) => (
@@ -30,10 +36,31 @@ function App() {
         <Route path="/bazara-borc/*" element={<BazaraBorc />} />
         <Route path="/telefon-nomreleri/*" element={<TelefonNomreleri />} />
         <Route path="/" element={<Navigate to={placeholders[0].path} replace />} />
-        <Route path="*" element={<Navigate to={placeholders[0].path} replace />} />
+        <Route path="*" element={<Navigate to={placeholders[0]?.path ?? '/inventar'} replace />} />
       </Routes>
     </Layout>
   )
 }
 
-export default App
+function App() {
+  const { session, loading } = useAuth()
+  if (loading) {
+    return (
+      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--color-bg)' }}>
+        <p style={{ color: 'var(--color-text-muted)' }}>Yüklənir…</p>
+      </div>
+    )
+  }
+  if (!session) {
+    return <Login />
+  }
+  return <AppRoutes />
+}
+
+export default function AppWithAuth() {
+  return (
+    <AuthProvider>
+      <App />
+    </AuthProvider>
+  )
+}

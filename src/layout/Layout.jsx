@@ -1,4 +1,6 @@
 import { NavLink } from 'react-router-dom'
+import { useAuth } from '../contexts/AuthContext'
+import '../styles/shared.css'
 import { navSections } from '../config/nav'
 import SupabaseStatus from '../components/SupabaseStatus'
 import './Layout.css'
@@ -13,6 +15,8 @@ function CalculatorIcon() {
 }
 
 export default function Layout({ children }) {
+  const { profile, signOut, isAdmin } = useAuth()
+  const roleLabel = profile?.role === 'admin' ? 'Admin' : 'Mağaza meneceri'
   return (
     <div className="layout">
       <aside className="layout__sidebar">
@@ -51,6 +55,35 @@ export default function Layout({ children }) {
             <span className="layout__nav-icon"><CalculatorIcon /></span>
             <span>Qiymət cədvəli</span>
           </NavLink>
+        </div>
+        <div className="layout__user">
+          {isAdmin && (
+            <>
+              <NavLink
+                to="/admin/create-user"
+                className={({ isActive }) =>
+                  `layout__nav-link ${isActive ? 'layout__nav-link--active' : ''}`
+                }
+              >
+                Yeni istifadəçi
+              </NavLink>
+              <NavLink
+                to="/admin/users"
+                className={({ isActive }) =>
+                  `layout__nav-link ${isActive ? 'layout__nav-link--active' : ''}`
+                }
+              >
+                İstifadəçilər
+              </NavLink>
+            </>
+          )}
+          <div className="layout__user-info">
+            <span className="layout__user-email">{profile?.email ?? '—'}</span>
+            <span className="layout__user-role">{roleLabel}</span>
+          </div>
+          <button type="button" className="layout__logout btn btn--secondary" onClick={() => signOut()}>
+            Çıxış
+          </button>
         </div>
         <SupabaseStatus />
       </aside>
