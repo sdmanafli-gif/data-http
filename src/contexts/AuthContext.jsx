@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useState } from 'react'
-import { supabase } from '../lib/supabase'
+import { supabase, supabaseConfigured } from '../lib/supabase'
 
 const AuthContext = createContext(null)
 
@@ -15,6 +15,11 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
+    if (!supabase) {
+      setLoading(false)
+      return undefined
+    }
+
     supabase.auth.getSession().then(({ data: { session: s } }) => {
       setSession(s)
       if (s?.user?.id) fetchProfile(s.user.id)
@@ -36,6 +41,10 @@ export function AuthProvider({ children }) {
   }, [])
 
   async function fetchProfile(userId) {
+    if (!supabase) {
+      setLoading(false)
+      return
+    }
     try {
       const { data, error } = await supabase
         .from('profiles')
@@ -55,6 +64,7 @@ export function AuthProvider({ children }) {
   }
 
   async function signIn(email, password) {
+    if (!supabase) throw new Error('Supabase konfiqurasiya olunmayıb.')
     const { data, error } = await supabase.auth.signInWithPassword({
       email: email.trim(),
       password,
@@ -68,6 +78,7 @@ export function AuthProvider({ children }) {
    * Later accounts require a valid invite token → manager.
    */
   async function signUp({ email, password, displayName, inviteToken }) {
+    if (!supabase) throw new Error('Supabase konfiqurasiya olunmayıb.')
     const { data, error } = await supabase.auth.signUp({
       email: email.trim(),
       password,
@@ -87,11 +98,12 @@ export function AuthProvider({ children }) {
   }
 
   async function signOut() {
-    await supabase.auth.signOut()
+    if (supabase) await supabase.auth.signOut()
     setProfile(null)
   }
 
   async function createInvitation(email) {
+    if (!supabase) throw new Error('Supabase konfiqurasiya olunmayıb.')
     const {
       data: { user },
     } = await supabase.auth.getUser()
@@ -112,6 +124,7 @@ export function AuthProvider({ children }) {
   }
 
   async function listInvitations() {
+    if (!supabase) throw new Error('Supabase konfiqurasiya olunmayıb.')
     const { data, error } = await supabase
       .from('invitations')
       .select('id, email, token, role, status, expires_at, created_at, accepted_at')
@@ -124,6 +137,7 @@ export function AuthProvider({ children }) {
     session,
     profile,
     loading,
+    configured: supabaseConfigured,
     signIn,
     signUp,
     signOut,

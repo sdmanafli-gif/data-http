@@ -43,8 +43,35 @@ function AppRoutes() {
   )
 }
 
+function MissingConfig() {
+  return (
+    <div
+      style={{
+        minHeight: '100vh',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: 24,
+        background: 'var(--color-bg, #f5f5f5)',
+      }}
+    >
+      <div style={{ maxWidth: 480, textAlign: 'center' }}>
+        <h1 style={{ fontSize: '1.25rem', marginBottom: 12 }}>Konfiqurasiya çatışmır</h1>
+        <p style={{ color: 'var(--color-text-muted, #666)', lineHeight: 1.5 }}>
+          Netlify-də <strong>VITE_SUPABASE_URL</strong> və <strong>VITE_SUPABASE_ANON_KEY</strong>{' '}
+          əlavə edin, sonra saytı yenidən deploy edin. Bundan sonra giriş səhifəsi görünəcək.
+        </p>
+      </div>
+    </div>
+  )
+}
+
 function App() {
-  const { session, loading } = useAuth()
+  const { session, loading, configured } = useAuth()
+
+  if (!configured) {
+    return <MissingConfig />
+  }
 
   if (loading) {
     return (

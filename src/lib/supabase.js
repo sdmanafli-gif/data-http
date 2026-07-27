@@ -3,13 +3,18 @@ import { createClient } from '@supabase/supabase-js'
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
 
-if (!supabaseUrl || !supabaseAnonKey) {
-  console.warn(
-    'Mobideal: Supabase env missing. Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY to .env'
+export const supabaseConfigured = Boolean(supabaseUrl && supabaseAnonKey)
+
+if (!supabaseConfigured) {
+  console.error(
+    'Mobideal: Supabase env missing. Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY (e.g. Netlify Environment variables), then redeploy.'
   )
 }
 
-export const supabase = createClient(supabaseUrl || '', supabaseAnonKey || '')
+// Avoid crashing the whole app with a blank page when env is missing.
+export const supabase = supabaseConfigured
+  ? createClient(supabaseUrl, supabaseAnonKey)
+  : null
 
 /**
  * Supabase/PostgREST returns max 1000 rows by default.
@@ -20,6 +25,7 @@ export const supabase = createClient(supabaseUrl || '', supabaseAnonKey || '')
  * @returns {Promise<{ data: any[] | null, error: any }>}
  */
 export async function fetchAllPages(buildQuery, { pageSize = 1000 } = {}) {
+  if (!supabase) return { data: null, error: new Error('Supabase not configured') }
   const all = []
   let from = 0
 

@@ -1,0 +1,12 @@
+[build]
+  command = "npm run build"
+  publish = "dist"
+
+[build.environment]
+  NODE_VERSION = "20"
+  # Do NOT set VITE_BASE_PATH here — Netlify serves from site root (/)
+
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
