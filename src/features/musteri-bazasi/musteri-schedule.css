@@ -1,0 +1,84 @@
+.musteri-schedule {
+  margin-top: 28px;
+}
+
+.musteri-schedule__hint {
+  margin: 0 0 12px;
+  font-size: 13px;
+  color: var(--color-text-muted);
+}
+
+.musteri-schedule__summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.musteri-schedule__stat {
+  padding: 10px 12px;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+}
+
+.musteri-schedule__stat-label {
+  display: block;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  margin-bottom: 4px;
+}
+
+.musteri-schedule__stat-value {
+  font-size: 16px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.musteri-schedule__row--ilkin td {
+  background: rgba(15, 118, 110, 0.08);
+  font-weight: 600;
+}
+
+.musteri-schedule__row--late td {
+  background: rgba(220, 38, 38, 0.06);
+}
+
+.musteri-schedule__row--paid td {
+  background: rgba(22, 163, 74, 0.06);
+}
+
+.musteri-schedule__overdue {
+  color: var(--color-accent);
+  font-weight: 600;
+  font-size: 12px;
+}
+
+.musteri-schedule__upcoming {
+  color: var(--color-text-muted);
+  font-size: 12px;
+}
+
+.musteri-schedule__paid {
+  color: #15803d;
+  font-weight: 600;
+  font-size: 12px;
+}
+
+.musteri-record-overlay .telefon-modal,
+.musteri-record-modal {
+  width: min(960px, 96vw);
+  max-width: 96vw;
+  max-height: 92vh;
+  overflow: auto;
+  padding: 0;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+}
+
+.musteri-record-modal .record-module,
+.musteri-record-modal .card {
+  margin-bottom: 0;
+}

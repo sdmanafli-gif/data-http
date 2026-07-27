@@ -10,14 +10,21 @@
   border-right: 1px solid var(--color-border);
   display: flex;
   flex-direction: column;
+  transition: width 0.2s ease;
+  overflow: hidden;
+}
+
+.layout--sidebar-collapsed .layout__sidebar {
+  width: 64px;
 }
 
 .layout__logo {
-  padding: var(--space-lg) var(--space-md);
+  padding: var(--space-md);
   border-bottom: 1px solid var(--color-border);
   display: flex;
   align-items: center;
   gap: var(--space-sm);
+  min-height: 64px;
 }
 
 .layout__logo-mark {
@@ -38,6 +45,44 @@
   font-weight: 600;
   font-size: 1.1rem;
   color: var(--color-text);
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.layout__collapse-btn {
+  margin-left: auto;
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: var(--color-surface);
+  color: var(--color-text-muted);
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+
+.layout__collapse-btn:hover {
+  color: var(--color-accent);
+  border-color: var(--color-accent);
+}
+
+.layout--sidebar-collapsed .layout__logo {
+  flex-direction: column;
+  gap: var(--space-sm);
+  padding: var(--space-sm);
+}
+
+.layout--sidebar-collapsed .layout__collapse-btn {
+  margin-left: 0;
 }
 
 .layout__nav {
@@ -57,6 +102,11 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-sm);
+}
+
+.layout--sidebar-collapsed .layout__user {
+  padding: var(--space-sm);
+  align-items: stretch;
 }
 
 .layout__user-info {
@@ -84,6 +134,11 @@
   width: 100%;
   font-size: 13px;
   padding: var(--space-xs) var(--space-sm);
+}
+
+.layout--sidebar-collapsed .layout__logout {
+  padding: var(--space-sm);
+  min-width: 0;
 }
 
 .layout__nav-link--icon {
@@ -135,6 +190,17 @@
   border-left: 3px solid transparent;
   margin-left: 0;
   transition: background 0.15s, color 0.15s;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.layout--sidebar-collapsed .layout__nav-link {
+  text-align: center;
+  padding: var(--space-sm) 4px;
+  font-weight: 600;
+  border-left-width: 0;
+  border-left-color: transparent;
 }
 
 .layout__nav-link:hover {
@@ -150,11 +216,17 @@
   box-shadow: var(--shadow-sm);
 }
 
+.layout--sidebar-collapsed .layout__nav-link--active {
+  border-left-color: transparent;
+  box-shadow: inset 0 0 0 2px var(--color-accent);
+}
+
 .layout__main {
   flex: 1;
   overflow: auto;
   display: flex;
   flex-direction: column;
+  min-width: 0;
 }
 
 .layout__content {

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
+import { confirmDelete } from '../../lib/confirmDelete'
 import SupplierModal from '../../components/SupplierModal'
 import { STATUS_OPTIONS, CONDITION_OPTIONS, SOHBE_OPTIONS, SIM_TYPE_OPTIONS, INVENTORY_LABELS } from './constants'
 import '../../styles/shared.css'
@@ -65,6 +66,7 @@ export default function InventarEdit() {
     } catch (_) {}
     if (!Array.isArray(list) || idx < 0 || idx >= list.length) return
     const item = list[idx]
+    if (!confirmDelete(`«${item?.name || 'Fayl'}» silinsin?`)) return
     await supabase.storage.from('Mobideal').remove([item.path])
     const newList = list.filter((_, i) => i !== idx)
     const attachmentsJson = newList.length > 0 ? JSON.stringify(newList) : null

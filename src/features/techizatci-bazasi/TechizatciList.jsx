@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
+import { confirmDelete } from '../../lib/confirmDelete'
 import '../../styles/shared.css'
 
 export default function TechizatciList() {
@@ -24,7 +25,7 @@ export default function TechizatciList() {
   }
 
   async function handleDelete(id) {
-    if (!window.confirm('Bu təchizatçını silmək istədiyinizə əminsiniz?')) return
+    if (!confirmDelete('Bu təchizatçını silmək istədiyinizə əminsiniz?')) return
     const { error: e } = await supabase.from('suppliers').delete().eq('id', id)
     if (e) setError(e.message)
     else load()

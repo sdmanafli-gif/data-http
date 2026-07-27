@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
+import { confirmDelete } from '../../lib/confirmDelete'
 import '../../styles/shared.css'
 
 export default function MehsulBazasiList() {
@@ -32,7 +33,7 @@ export default function MehsulBazasiList() {
   }
 
   async function handleDelete(id) {
-    if (!window.confirm('Bu məhsulu silmək istədiyinizə əminsiniz?')) return
+    if (!confirmDelete('Bu məhsulu silmək istədiyinizə əminsiniz?')) return
     const { error: e } = await supabase.from('product_catalogue').delete().eq('id', id)
     if (e) setError(e.message)
     else load()

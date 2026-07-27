@@ -1,0 +1,59 @@
+.senedler-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.senedler-field__label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.senedler-field__error {
+  margin: 0;
+  font-size: 13px;
+  color: var(--color-accent);
+}
+
+.senedler-field__empty {
+  margin: 0;
+  font-size: 13px;
+  color: var(--color-text-muted);
+}
+
+.senedler-field__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.senedler-field__list li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  font-size: 13px;
+}
+
+.senedler-field__list a {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  word-break: break-all;
+}
+
+.senedler-field__actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.senedler-field__hint {
+  font-size: 12px;
+  color: var(--color-text-muted);
+}

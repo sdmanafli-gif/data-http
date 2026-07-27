@@ -1,8 +1,11 @@
 import { useState } from 'react'
+import { Link } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
+import { PUBLIC_SIGNUP_ENABLED } from '../config/auth'
 import '../styles/shared.css'
+import './auth.css'
 
-export default function Login() {
+export default function SignIn() {
   const { signIn } = useAuth()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -18,7 +21,7 @@ export default function Login() {
     }
     setLoading(true)
     try {
-      await signIn(email.trim(), password)
+      await signIn(email, password)
     } catch (err) {
       setError(err?.message ?? 'Daxil olmaq mümkün olmadı.')
     } finally {
@@ -27,27 +30,15 @@ export default function Login() {
   }
 
   return (
-    <div
-      style={{
-        minHeight: '100vh',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        background: 'var(--color-bg)',
-        padding: 'var(--space-lg)',
-      }}
-    >
-      <div className="card" style={{ width: '100%', maxWidth: '400px' }}>
-        <h1 className="card__title" style={{ fontSize: '1.5rem', marginBottom: 'var(--space-sm)' }}>
-          Mobideal
-        </h1>
-        <p style={{ color: 'var(--color-text-muted)', fontSize: 'var(--font-size-sm)', marginBottom: 'var(--space-lg)' }}>
-          Daxil olmaq üçün email və parolunuzu daxil edin.
-        </p>
+    <div className="auth-page">
+      <div className="auth-card card">
+        <h1 className="auth-card__brand">Mobideal</h1>
+        <p className="auth-card__subtitle">Hesabınıza daxil olun</p>
         <form onSubmit={handleSubmit}>
           <div className="form-group">
-            <label>Email</label>
+            <label htmlFor="signin-email">Email</label>
             <input
+              id="signin-email"
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
@@ -57,8 +48,9 @@ export default function Login() {
             />
           </div>
           <div className="form-group">
-            <label>Parol</label>
+            <label htmlFor="signin-password">Parol</label>
             <input
+              id="signin-password"
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
@@ -67,15 +59,16 @@ export default function Login() {
               required
             />
           </div>
-          {error && (
-            <p style={{ color: 'var(--color-accent)', marginBottom: 'var(--space-md)', fontSize: 'var(--font-size-sm)' }}>
-              {error}
-            </p>
-          )}
+          {error && <p className="auth-card__error">{error}</p>}
           <button type="submit" className="btn btn--primary" disabled={loading} style={{ width: '100%' }}>
             {loading ? 'Yoxlanılır…' : 'Daxil ol'}
           </button>
         </form>
+        {PUBLIC_SIGNUP_ENABLED && (
+          <p className="auth-card__footer">
+            Hesabınız yoxdur? <Link to="/qeydiyyat">Qeydiyyat</Link>
+          </p>
+        )}
       </div>
     </div>
   )

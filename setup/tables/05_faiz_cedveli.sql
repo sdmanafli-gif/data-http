@@ -1,0 +1,6 @@
+-- ============================================================
+-- DEPRECATED for Müştəri Bazası "Faiz" field.
+-- Faiz = penalty (cərimə) from a future table — not month % rates.
+-- This table is unused by the app; safe to ignore or drop.
+-- ============================================================
+-- drop table if exists public.faiz_cedveli;

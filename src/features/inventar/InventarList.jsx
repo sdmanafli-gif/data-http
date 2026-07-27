@@ -1,14 +1,10 @@
 import { useState, useEffect, useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
+import { confirmDelete } from '../../lib/confirmDelete'
+import { formatDate } from '../../lib/formatDate'
 import { STATUS_OPTIONS, CONDITION_OPTIONS, INVENTORY_LABELS } from './constants'
 import '../../styles/shared.css'
-
-function formatDate(d) {
-  if (!d) return '—'
-  const x = new Date(d)
-  return isNaN(x.getTime()) ? '—' : x.toLocaleDateString('az-AZ', { day: '2-digit', month: '2-digit', year: 'numeric' })
-}
 
 function formatMoney(n) {
   if (n == null || n === '') return '—'
@@ -82,7 +78,7 @@ export default function InventarList() {
   }, [items, imeiSearch, filterStatus, filterType, filterModel, filterColor])
 
   async function handleDelete(id) {
-    if (!window.confirm('Bu inventar sətirini silmək istədiyinizə əminsiniz?')) return
+    if (!confirmDelete('Bu inventar sətirini silmək istədiyinizə əminsiniz?')) return
     const { error: e } = await supabase.from('inventory').delete().eq('id', id)
     if (e) setError(e.message)
     else load()

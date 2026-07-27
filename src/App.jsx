@@ -1,42 +1,43 @@
 import { Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider, useAuth } from './contexts/AuthContext'
 import Layout from './layout/Layout'
-import Login from './pages/Login'
-import { placeholders } from './config/nav'
-import MehsulBazasi from './features/mehsul-bazasi'
-import TechizatciBazasi from './features/techizatci-bazasi'
-import Inventar from './features/inventar'
-import MusteriBazasi from './features/musteri-bazasi'
-import Icloud from './features/icloud'
-import MonthlyTracking from './features/monthly-tracking'
-import QiymetCedveliFeature from './features/qiymet-cedveli'
-import BazaraBorc from './features/bazara-borc'
-import TelefonNomreleri from './features/telefon-nomreleri'
-import CreateUser from './pages/CreateUser'
+import SignIn from './pages/SignIn'
+import SignUp from './pages/SignUp'
+import InviteUser from './pages/InviteUser'
 import UserList from './pages/UserList'
+import MusteriBazasi from './features/musteri-bazasi'
+import MehkemeList from './features/musteri-bazasi/MehkemeList'
+import YigimPage from './features/yigim'
+import OdenislerFeature from './features/odenisler'
+import DepoFeature from './features/depo'
+import NagdSatishFeature from './features/nagd-satish'
+import BorcNisyeFeature from './features/borc-nisye'
 
 function AppRoutes() {
   return (
     <Layout>
       <Routes>
-        <Route path="/admin/create-user" element={<CreateUser />} />
+        <Route path="/admin/invite" element={<InviteUser />} />
         <Route path="/admin/users" element={<UserList />} />
-        {placeholders
-          .filter(({ path }) => !['/mehsul-bazasi', '/techizatci-bazasi', '/inventar', '/musteri-bazasi', '/icloud', '/ayliq-yigim', '/qiymet-cedveli', '/bazara-borc', '/telefon-nomreleri'].includes(path))
-          .map(({ path, Component }) => (
-            <Route key={path} path={path} element={<Component />} />
-          ))}
-        <Route path="/mehsul-bazasi/*" element={<MehsulBazasi />} />
-        <Route path="/techizatci-bazasi/*" element={<TechizatciBazasi />} />
-        <Route path="/inventar/*" element={<Inventar />} />
         <Route path="/musteri-bazasi/*" element={<MusteriBazasi />} />
-        <Route path="/icloud/*" element={<Icloud />} />
-        <Route path="/ayliq-yigim/*" element={<MonthlyTracking />} />
-        <Route path="/qiymet-cedveli/*" element={<QiymetCedveliFeature />} />
-        <Route path="/bazara-borc/*" element={<BazaraBorc />} />
-        <Route path="/telefon-nomreleri/*" element={<TelefonNomreleri />} />
-        <Route path="/" element={<Navigate to={placeholders[0].path} replace />} />
-        <Route path="*" element={<Navigate to={placeholders[0]?.path ?? '/inventar'} replace />} />
+        <Route path="/yigim" element={<YigimPage />} />
+        <Route
+          path="/mehkeme"
+          element={
+            <>
+              <div className="page-header">
+                <h1>Məhkəmə</h1>
+              </div>
+              <MehkemeList />
+            </>
+          }
+        />
+        <Route path="/odenisler/*" element={<OdenislerFeature />} />
+        <Route path="/depo/*" element={<DepoFeature />} />
+        <Route path="/nagd-satish/*" element={<NagdSatishFeature />} />
+        <Route path="/borc-nisye/*" element={<BorcNisyeFeature />} />
+        <Route path="/" element={<Navigate to="/musteri-bazasi" replace />} />
+        <Route path="*" element={<Navigate to="/musteri-bazasi" replace />} />
       </Routes>
     </Layout>
   )
@@ -44,16 +45,33 @@ function AppRoutes() {
 
 function App() {
   const { session, loading } = useAuth()
+
   if (loading) {
     return (
-      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--color-bg)' }}>
+      <div
+        style={{
+          minHeight: '100vh',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          background: 'var(--color-bg)',
+        }}
+      >
         <p style={{ color: 'var(--color-text-muted)' }}>Yüklənir…</p>
       </div>
     )
   }
+
   if (!session) {
-    return <Login />
+    return (
+      <Routes>
+        <Route path="/daxil-ol" element={<SignIn />} />
+        <Route path="/qeydiyyat" element={<SignUp />} />
+        <Route path="*" element={<SignIn />} />
+      </Routes>
+    )
   }
+
   return <AppRoutes />
 }
 

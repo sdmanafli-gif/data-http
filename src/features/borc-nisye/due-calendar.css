@@ -1,0 +1,246 @@
+.due-cal {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(280px, 0.8fr);
+  gap: var(--space-lg);
+  align-items: start;
+}
+
+@media (max-width: 900px) {
+  .due-cal {
+    grid-template-columns: 1fr;
+  }
+}
+
+.due-cal__filters {
+  margin-bottom: var(--space-lg);
+}
+
+.due-cal__period-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.due-cal__custom-range {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: flex-end;
+}
+
+.due-cal__custom-range .form-group {
+  margin: 0;
+  min-width: 160px;
+}
+
+.due-cal__nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.due-cal__weekdays,
+.due-cal__grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 6px;
+}
+
+.due-cal__grid--week .due-cal__cell {
+  min-height: 88px;
+}
+
+.due-cal__weekday {
+  text-align: center;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  padding: 4px 0;
+}
+
+.due-cal__cell {
+  position: relative;
+  min-height: 64px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: var(--color-bg);
+  padding: 6px;
+  cursor: pointer;
+  text-align: left;
+  font-family: inherit;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.due-cal__cell--empty {
+  border: none;
+  background: transparent;
+  cursor: default;
+  min-height: 64px;
+}
+
+.due-cal__cell--today {
+  outline: 2px solid var(--color-primary, #2563eb);
+  outline-offset: -2px;
+}
+
+.due-cal__cell--selected {
+  background: var(--color-surface);
+  box-shadow: inset 0 0 0 2px var(--color-text);
+}
+
+.due-cal__cell--overdue {
+  border-color: var(--color-accent);
+}
+
+.due-cal__cell--muted {
+  opacity: 0.45;
+}
+
+.due-cal__day {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.due-cal__dots {
+  display: flex;
+  gap: 4px;
+}
+
+.due-cal__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.due-cal__dot--collect {
+  background: #0f766e;
+}
+
+.due-cal__dot--pay {
+  background: #b45309;
+}
+
+.due-cal__count {
+  margin-top: auto;
+  font-size: 11px;
+  color: var(--color-text-muted);
+}
+
+.due-cal__legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-top: 12px;
+  font-size: 13px;
+  color: var(--color-text-muted);
+  align-items: center;
+}
+
+.due-cal__legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.due-cal__year-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 10px;
+}
+
+.due-cal__year-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: flex-start;
+  text-align: left;
+  padding: 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: var(--color-bg);
+  cursor: pointer;
+  font-family: inherit;
+  color: inherit;
+}
+
+.due-cal__year-card--has {
+  border-color: #0f766e;
+}
+
+.due-cal__year-count {
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+
+.due-cal__year-money {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+}
+
+.due-cal__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 70vh;
+  overflow: auto;
+}
+
+.due-cal__item {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  padding: 10px 12px;
+  border-left-width: 4px;
+}
+
+.due-cal__item--collect {
+  border-left-color: #0f766e;
+}
+
+.due-cal__item--pay {
+  border-left-color: #b45309;
+}
+
+.due-cal__item--overdue {
+  background: rgba(180, 83, 9, 0.06);
+}
+
+.due-cal__item-top {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.due-cal__amount {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.due-cal__item-meta {
+  font-size: 13px;
+  color: var(--color-text-muted);
+}
+
+.due-cal__item-meta a {
+  color: inherit;
+  font-weight: 600;
+}
+
+.due-cal__badge {
+  display: inline-block;
+  margin-top: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-accent);
+}

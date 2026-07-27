@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../../lib/supabase'
+import { confirmDelete } from '../../lib/confirmDelete'
 import '../../styles/shared.css'
 
 function formatMoney(n) {
@@ -75,7 +76,7 @@ export default function BazaraBorcList() {
   }
 
   async function handleDelete(id) {
-    if (!window.confirm('Bu qeydi silmək istədiyinizə əminsiniz?')) return
+    if (!confirmDelete('Bu qeydi silmək istədiyinizə əminsiniz?')) return
     const { error: err } = await supabase.from('bazara_borc').delete().eq('id', id)
     if (err) setError(err.message)
     else load()

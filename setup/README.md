@@ -1,36 +1,61 @@
-# Mobideal — quraşdırma addımları
+# Mobideal — quraşdırma (yeni Supabase layihəsi)
 
-Bu qovluqda yalnız məlumatları daxil etməyiniz üçün lazım olan fayllar var.
+## 1. Yeni Supabase project
 
----
+1. https://supabase.com → **New project**
+2. Ad, parol, region seçin → Create
 
-## 1. Supabase açarları (`.env`)
+## 2. Cədvəlləri yaratmaq (SQL)
 
-**Fayl:** layihə kökündə **`.env`** (package.json ilə eyni qovluqda)
+**Fayl:** `setup/SUPABASE_TABLES.sql`
 
-1. `.env` faylını açın.
-2. Aşağıdakı iki sətri Supabase-dan götürdüyünüz məlumatlarla əvəz edin:
-   - **VITE_SUPABASE_URL** — Supabase Dashboard → Project Settings → API → **Project URL**
-   - **VITE_SUPABASE_ANON_KEY** — eyni səhifədə **anon public** açarı (Reveal ilə kopyalayın)
-3. Faylı saxlayın.
+1. Dashboard → **SQL Editor** → **New query**
+2. `setup/SUPABASE_TABLES.sql` məzmununu tam kopyalayıb yapışdırın
+3. **Run** basın
 
----
+Bu bir skript yaradır: clients, product_catalogue, suppliers, inventory, sales, sale_items, payments, icloud_tracking, sale_monthly_tracking, bazara_borc, telefon_nomreleri, profiles, store_manager_config + Storage bucket `Mobideal`.
 
-## 2. Supabase cədvəlləri (SQL)
+## 3. İlk admin istifadəçi
 
-**Fayl:** **`setup/SUPABASE_TABLES.sql`**
+1. Dashboard → **Authentication** → **Users** → **Add user**
+2. Email + password daxil edin
+3. İlk istifadəçi avtomatik **admin** olur (SQL trigger)
 
-1. Supabase Dashboard açın → **SQL Editor** → **New query**.
-2. `setup/SUPABASE_TABLES.sql` faylını açın, bütün məzmunu kopyalayın.
-3. SQL Editor-a yapışdırın və **Run** düyməsinə basın.
-4. Bütün cədvəllər (clients, **product_catalogue**, inventory, sales, payments, suppliers) yaranacaq.
+Əgər rol admin deyilsə, SQL Editor-da:
 
-**Qeyd:** Əgər cədvəlləri əvvəldən yaratmısınızsa: run edin `00004_product_catalogue_and_inventory.sql`, sonra `00005_quantity_and_sale_items.sql` (miqdar + satış sətirləri cədvəli).
+```sql
+ALTER TABLE public.profiles DISABLE TRIGGER profiles_deny_role_change;
+UPDATE public.profiles SET role = 'admin', updated_at = now()
+WHERE email = 'YOUR_EMAIL@example.com';
+ALTER TABLE public.profiles ENABLE TRIGGER profiles_deny_role_change;
+```
 
----
+## 4. `.env` açarları
 
-## 3. Yoxlama
+Layihə kökündə `.env`:
 
-1. Terminalda: `npm run dev`
-2. Brauzerdə tətbiqi açın.
-3. Sol panelin altında **"Supabase bağlı"** görsəniz, hər şey qoşulub.
+```
+VITE_SUPABASE_URL=https://YOUR-PROJECT-REF.supabase.co
+VITE_SUPABASE_ANON_KEY=your-anon-key
+```
+
+Açarlar: Dashboard → **Project Settings** → **API**
+
+## 5. Yoxlama
+
+```bash
+npm run dev
+```
+
+Sol paneldə **"Supabase bağlı"** görünməlidir. Login səhifəsindən daxil olun.
+
+## 6. (İstəyə bağlı) Edge Functions — istifadəçi yaratmaq/silmək
+
+Supabase CLI ilə:
+
+```bash
+npx supabase login
+npx supabase link --project-ref YOUR-PROJECT-REF
+npx supabase functions deploy create-user
+npx supabase functions deploy delete-user
+```

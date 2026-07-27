@@ -1,17 +1,8 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../../lib/supabase'
+import { confirmDelete } from '../../lib/confirmDelete'
+import { formatDate } from '../../lib/formatDate'
 import '../../styles/shared.css'
-
-// Display: dd.mm.yyyy
-function formatDate(d) {
-  if (!d) return '—'
-  const x = new Date(d)
-  if (isNaN(x.getTime())) return '—'
-  const day = String(x.getDate()).padStart(2, '0')
-  const month = String(x.getMonth() + 1).padStart(2, '0')
-  const year = x.getFullYear()
-  return `${day}.${month}.${year}`
-}
 
 // From DB/Date → dd.mm.yyyy for input fields
 function toDdMmYyyy(d) {
@@ -120,7 +111,7 @@ export default function TelefonNomreleriList() {
   }
 
   async function handleDelete(id) {
-    if (!window.confirm('Bu nömrəni silmək istədiyinizə əminsiniz?')) return
+    if (!confirmDelete('Bu nömrəni silmək istədiyinizə əminsiniz?')) return
     const { error: err } = await supabase.from('telefon_nomreleri').delete().eq('id', id)
     if (err) setError(err.message)
     else load()

@@ -17,13 +17,15 @@ export function AuthProvider({ children }) {
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session: s } }) => {
       setSession(s)
-      if (s?.user?.id) fetchProfile(s.user.id, s.user.email)
+      if (s?.user?.id) fetchProfile(s.user.id)
       else setLoading(false)
     })
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, s) => {
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, s) => {
       setSession(s)
-      if (s?.user?.id) fetchProfile(s.user.id, s.user.email)
+      if (s?.user?.id) fetchProfile(s.user.id)
       else {
         setProfile(null)
         setLoading(false)
@@ -33,43 +35,54 @@ export function AuthProvider({ children }) {
     return () => subscription.unsubscribe()
   }, [])
 
-  async function fetchProfile(userId, userEmail) {
-    const fallback = () => {
-      setProfile({ role: 'store_manager', email: userEmail ?? null })
-      setLoading(false)
-    }
+  async function fetchProfile(userId) {
     try {
       const { data, error } = await supabase
         .from('profiles')
-        .select('id, role, email, display_name')
+        .select('id, role, email, display_name, permissions')
         .eq('id', userId)
         .single()
       if (error) {
-        try {
-          await supabase.from('profiles').upsert(
-            { id: userId, role: 'store_manager', email: userEmail ?? null, updated_at: new Date().toISOString() },
-            { onConflict: 'id' }
-          )
-          const { data: retry } = await supabase.from('profiles').select('id, role, email, display_name').eq('id', userId).single()
-          setProfile(retry ?? { role: 'store_manager', email: userEmail ?? null })
-        } catch (_) {
-          fallback()
-          return
-        }
+        setProfile(null)
       } else {
         setProfile(data)
       }
     } catch (_) {
-      fallback()
-      return
+      setProfile(null)
     } finally {
       setLoading(false)
     }
   }
 
   async function signIn(email, password) {
-    const { data, error } = await supabase.auth.signInWithPassword({ email, password })
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email: email.trim(),
+      password,
+    })
     if (error) throw error
+    return data
+  }
+
+  /**
+   * Sign up. First account → admin (DB trigger).
+   * Later accounts require a valid invite token → manager.
+   */
+  async function signUp({ email, password, displayName, inviteToken }) {
+    const { data, error } = await supabase.auth.signUp({
+      email: email.trim(),
+      password,
+      options: {
+        data: {
+          display_name: displayName?.trim() || null,
+          invite_token: inviteToken || null,
+        },
+      },
+    })
+    if (error) throw error
+    if (data.user && !data.session) {
+      // Email confirmation may be enabled in Supabase
+      return { ...data, needsEmailConfirmation: true }
+    }
     return data
   }
 
@@ -78,19 +91,48 @@ export function AuthProvider({ children }) {
     setProfile(null)
   }
 
+  async function createInvitation(email) {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser()
+    if (!user) throw new Error('Daxil olmamısınız.')
+
+    const { data, error } = await supabase
+      .from('invitations')
+      .insert({
+        email: email.trim().toLowerCase(),
+        role: 'manager',
+        invited_by: user.id,
+      })
+      .select('id, email, token, role, status, expires_at, created_at')
+      .single()
+
+    if (error) throw error
+    return data
+  }
+
+  async function listInvitations() {
+    const { data, error } = await supabase
+      .from('invitations')
+      .select('id, email, token, role, status, expires_at, created_at, accepted_at')
+      .order('created_at', { ascending: false })
+    if (error) throw error
+    return data ?? []
+  }
+
   const value = {
     session,
     profile,
     loading,
     signIn,
+    signUp,
     signOut,
+    createInvitation,
+    listInvitations,
+    refreshProfile: () => (session?.user?.id ? fetchProfile(session.user.id) : null),
     isAdmin: profile?.role === 'admin',
-    isStoreManager: profile?.role === 'store_manager',
+    isManager: profile?.role === 'manager',
   }
 
-  return (
-    <AuthContext.Provider value={value}>
-      {children}
-    </AuthContext.Provider>
-  )
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }

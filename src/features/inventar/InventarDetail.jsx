@@ -1,14 +1,10 @@
 import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
+import { confirmDelete } from '../../lib/confirmDelete'
+import { formatDate } from '../../lib/formatDate'
 import { STATUS_OPTIONS, CONDITION_OPTIONS, INVENTORY_LABELS } from './constants'
 import '../../styles/shared.css'
-
-function formatDate(d) {
-  if (!d) return '—'
-  const x = new Date(d)
-  return isNaN(x.getTime()) ? '—' : x.toLocaleDateString('az-AZ', { day: '2-digit', month: '2-digit', year: 'numeric' })
-}
 
 function formatMoney(n) {
   if (n == null || n === '') return '—'
@@ -59,7 +55,7 @@ export default function InventarDetail() {
   }
 
   async function handleDelete() {
-    if (!window.confirm('Bu inventar sətirini silmək istədiyinizə əminsiniz?')) return
+    if (!confirmDelete('Bu inventar sətirini silmək istədiyinizə əminsiniz?')) return
     const { error: err } = await supabase.from('inventory').delete().eq('id', id)
     if (err) setError(err.message)
     else navigate('/inventar')
@@ -73,6 +69,7 @@ export default function InventarDetail() {
     } catch (_) {}
     if (!Array.isArray(list) || idx < 0 || idx >= list.length) return
     const fileItem = list[idx]
+    if (!confirmDelete(`«${fileItem?.name || 'Fayl'}» silinsin?`)) return
     await supabase.storage.from('Mobideal').remove([fileItem.path])
     const newList = list.filter((_, i) => i !== idx)
     const attachmentsJson = newList.length > 0 ? JSON.stringify(newList) : null

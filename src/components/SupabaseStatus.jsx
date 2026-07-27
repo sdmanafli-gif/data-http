@@ -13,7 +13,7 @@ export default function SupabaseStatus() {
       return
     }
     supabase
-      .from('clients')
+      .from('musteri_bazasi')
       .select('id', { count: 'exact', head: true })
       .then(({ error }) => setStatus(error ? 'error' : 'connected'))
       .catch(() => setStatus('error'))

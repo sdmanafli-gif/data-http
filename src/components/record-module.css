@@ -1,0 +1,84 @@
+.record-module__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-md);
+  flex-wrap: wrap;
+  margin-bottom: var(--space-lg);
+}
+
+.record-module__subtitle {
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: var(--color-text-muted);
+}
+
+.record-module__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.record-module__sections {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  margin-bottom: var(--space-md);
+}
+
+.record-module__always {
+  margin-bottom: var(--space-md);
+}
+
+.record-module__section-title {
+  margin: 0 0 var(--space-sm);
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.record-module__sections .collapse-section__body {
+  padding-top: var(--space-md);
+  padding-bottom: var(--space-md);
+}
+
+.record-module__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 12px 20px;
+  margin: 0;
+}
+
+.record-module__field {
+  min-width: 0;
+  padding: 10px 12px;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+}
+
+.record-module__field dt {
+  margin: 0 0 4px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--color-text-muted);
+}
+
+.record-module__field dd {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--color-text);
+  word-break: break-word;
+  white-space: pre-wrap;
+}
+
+.data-table tbody tr.data-table__row--clickable {
+  cursor: pointer;
+}
+
+.data-table tbody tr.data-table__row--clickable:hover {
+  background: rgba(0, 0, 0, 0.04);
+}

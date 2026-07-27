@@ -1,10 +1,19 @@
 -- ============================================================
--- Mobideal — bütün cədvəllər (bir dəfə Supabase SQL Editor-da Run edin)
+-- Mobideal — FULL fresh database setup (new Supabase project)
 -- ============================================================
--- Addım: Supabase Dashboard → SQL Editor → New query → bu faylı yapışdırın → Run
+-- How to run:
+--   1. Create a new project at https://supabase.com
+--   2. Dashboard → SQL Editor → New query
+--   3. Paste this entire file → Run
+--   4. Dashboard → Authentication → Users → Add user (email + password)
+--      First user automatically becomes admin (via trigger below)
+--   5. Dashboard → Storage: bucket "Mobideal" is created by this script
+--   6. Copy Project URL + anon key into project root .env
 -- ============================================================
 
--- 1. Müştərilər (clients)
+-- ------------------------------------------------------------
+-- 1. Clients (müştərilər)
+-- ------------------------------------------------------------
 create table if not exists public.clients (
   id uuid primary key default gen_random_uuid(),
   full_name text not null,
@@ -25,7 +34,9 @@ create table if not exists public.clients (
   updated_at timestamptz not null default now()
 );
 
--- 2. Məhsul kataloqu (unikal Növ, Model, Rəng, Memory — inventara əlavə zamanı seçim/yeni)
+-- ------------------------------------------------------------
+-- 2. Product catalogue (məhsul bazası)
+-- ------------------------------------------------------------
 create table if not exists public.product_catalogue (
   id uuid primary key default gen_random_uuid(),
   type text not null,
@@ -35,15 +46,33 @@ create table if not exists public.product_catalogue (
   created_at timestamptz not null default now(),
   unique (type, model, color, memory)
 );
-create index if not exists idx_product_catalogue_lookup on public.product_catalogue (type, model, color, memory);
-alter table public.product_catalogue enable row level security;
-create policy "Allow all for anon" on public.product_catalogue for all using (true) with check (true);
+create index if not exists idx_product_catalogue_lookup
+  on public.product_catalogue (type, model, color, memory);
 
--- 3. İnventar (hər sətir = bir fiziki telefon; product_id = kataloqdan seçim)
+-- ------------------------------------------------------------
+-- 3. Suppliers (təchizatçılar) — before inventory (FK)
+-- ------------------------------------------------------------
+create table if not exists public.suppliers (
+  id uuid primary key default gen_random_uuid(),
+  name text not null,
+  phone text,
+  address text,
+  contact_person text,
+  notes text,
+  comments text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+-- ------------------------------------------------------------
+-- 4. Inventory (inventar)
+-- ------------------------------------------------------------
 create table if not exists public.inventory (
   id uuid primary key default gen_random_uuid(),
   product_id uuid references public.product_catalogue(id) on delete set null,
-  status text not null default 'available' check (status in ('available', 'sold', 'reserved', 'returned', 'other')),
+  supplier_id uuid references public.suppliers(id) on delete set null,
+  status text not null default 'available'
+    check (status in ('available', 'sold', 'reserved', 'returned', 'other')),
   type text,
   model text,
   color text,
@@ -72,8 +101,13 @@ create table if not exists public.inventory (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+create index if not exists idx_inventory_status on public.inventory(status);
+create index if not exists idx_inventory_product_id on public.inventory(product_id);
+create index if not exists idx_inventory_supplier_id on public.inventory(supplier_id);
 
--- 4. Satışlar (sales — müştəri + növ + ümumi məbləğ; sətirlər sale_items-dadır)
+-- ------------------------------------------------------------
+-- 5. Sales (satışlar)
+-- ------------------------------------------------------------
 create table if not exists public.sales (
   id uuid primary key default gen_random_uuid(),
   sale_type text not null check (sale_type in ('credit', 'cash', 'nise')),
@@ -107,8 +141,12 @@ create table if not exists public.sales (
   days_to_complete_initial_payment int,
   credit_documents text
 );
+create index if not exists idx_sales_client_id on public.sales(client_id);
+create index if not exists idx_sales_sale_type on public.sales(sale_type);
 
--- 4b. Satış sətirləri (bir satışda bir neçə məhsul: inventar + miqdar + vahid qiymət)
+-- ------------------------------------------------------------
+-- 6. Sale items (satış sətirləri)
+-- ------------------------------------------------------------
 create table if not exists public.sale_items (
   id uuid primary key default gen_random_uuid(),
   sale_id uuid not null references public.sales(id) on delete cascade,
@@ -119,10 +157,10 @@ create table if not exists public.sale_items (
 );
 create index if not exists idx_sale_items_sale_id on public.sale_items(sale_id);
 create index if not exists idx_sale_items_inventory_id on public.sale_items(inventory_id);
-alter table public.sale_items enable row level security;
-create policy "Allow all for anon" on public.sale_items for all using (true) with check (true);
 
--- 5. Ödənişlər (payments — per sale, for credit/nise tracking)
+-- ------------------------------------------------------------
+-- 7. Payments (ödənişlər)
+-- ------------------------------------------------------------
 create table if not exists public.payments (
   id uuid primary key default gen_random_uuid(),
   sale_id uuid not null references public.sales(id) on delete restrict,
@@ -131,74 +169,11 @@ create table if not exists public.payments (
   notes text,
   created_at timestamptz not null default now()
 );
-
--- 6. Təchizatçılar (suppliers — mağazalar / şəxslər, onlardan məhsul alırıq)
-create table if not exists public.suppliers (
-  id uuid primary key default gen_random_uuid(),
-  name text not null,
-  phone text,
-  address text,
-  contact_person text,
-  notes text,
-  comments text,
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
-);
-
--- İnventar → təchizatçı əlaqəsi (optional)
-alter table public.inventory
-  add column if not exists supplier_id uuid references public.suppliers(id) on delete set null;
-
--- Köhnə inventar cədvəli üçün: çatmayan sütunları əlavə et (product_id, quantity və s.)
-do $$
-begin
-  if not exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'inventory' and column_name = 'product_id') then
-    alter table public.inventory add column product_id uuid references public.product_catalogue(id) on delete set null;
-  end if;
-  if not exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'inventory' and column_name = 'user') then
-    alter table public.inventory add column "user" text;
-  end if;
-  if not exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'inventory' and column_name = 'comments') then
-    alter table public.inventory add column comments text;
-  end if;
-  if not exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'inventory' and column_name = 'client_number') then
-    alter table public.inventory add column client_number text;
-  end if;
-  if not exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'inventory' and column_name = 'return_amount') then
-    alter table public.inventory add column return_amount numeric(12, 2);
-  end if;
-  if not exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'inventory' and column_name = 'quantity') then
-    alter table public.inventory add column quantity int not null default 1 check (quantity >= 0);
-  end if;
-  if not exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'inventory' and column_name = 'attachments') then
-    alter table public.inventory add column attachments text;
-  end if;
-end $$;
-
--- Indexes
-create index if not exists idx_inventory_status on public.inventory(status);
-create index if not exists idx_inventory_product_id on public.inventory(product_id);
-create index if not exists idx_inventory_supplier_id on public.inventory(supplier_id);
-create index if not exists idx_sales_client_id on public.sales(client_id);
-create index if not exists idx_sales_sale_type on public.sales(sale_type);
 create index if not exists idx_payments_sale_id on public.payments(sale_id);
 
--- RLS
-alter table public.clients enable row level security;
-alter table public.product_catalogue enable row level security;
-alter table public.inventory enable row level security;
-alter table public.sales enable row level security;
-alter table public.payments enable row level security;
-alter table public.suppliers enable row level security;
-
-create policy "Allow all for anon" on public.clients for all using (true) with check (true);
-create policy "Allow all for anon" on public.product_catalogue for all using (true) with check (true);
-create policy "Allow all for anon" on public.inventory for all using (true) with check (true);
-create policy "Allow all for anon" on public.sales for all using (true) with check (true);
-create policy "Allow all for anon" on public.payments for all using (true) with check (true);
-create policy "Allow all for anon" on public.suppliers for all using (true) with check (true);
-
--- iCloud tracking (kredit satışındakı cihazlar üçün iCloud qeydiyyat nömrəsi)
+-- ------------------------------------------------------------
+-- 8. iCloud tracking
+-- ------------------------------------------------------------
 create table if not exists public.icloud_tracking (
   id uuid primary key default gen_random_uuid(),
   sale_id uuid not null references public.sales(id) on delete cascade,
@@ -210,27 +185,28 @@ create table if not exists public.icloud_tracking (
 );
 create index if not exists idx_icloud_tracking_sale_id on public.icloud_tracking(sale_id);
 create index if not exists idx_icloud_tracking_inventory_id on public.icloud_tracking(inventory_id);
-alter table public.icloud_tracking enable row level security;
-create policy "Allow all for anon" on public.icloud_tracking for all using (true) with check (true);
 
--- Aylıq takip (kredit satışı üzrə aylıq: gözlənilən / ödənilən / status)
+-- ------------------------------------------------------------
+-- 9. Monthly tracking (aylıq yığım)
+-- ------------------------------------------------------------
 create table if not exists public.sale_monthly_tracking (
   id uuid primary key default gen_random_uuid(),
   sale_id uuid not null references public.sales(id) on delete cascade,
   year_month text not null,
   expected_amount numeric(12, 2) not null default 0,
   paid_amount numeric(12, 2) not null default 0,
-  status text not null default 'missing' check (status in ('fulfilled', 'partial', 'missing')),
+  status text not null default 'missing'
+    check (status in ('fulfilled', 'partial', 'missing')),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   unique (sale_id, year_month)
 );
 create index if not exists idx_sale_monthly_tracking_sale_id on public.sale_monthly_tracking(sale_id);
 create index if not exists idx_sale_monthly_tracking_year_month on public.sale_monthly_tracking(year_month);
-alter table public.sale_monthly_tracking enable row level security;
-create policy "Allow all for anon" on public.sale_monthly_tracking for all using (true) with check (true);
 
--- Bazara borc (təchizatçılara borc — B2B tərəfdaşlar)
+-- ------------------------------------------------------------
+-- 10. Bazara borc (supplier debts)
+-- ------------------------------------------------------------
 create table if not exists public.bazara_borc (
   id uuid primary key default gen_random_uuid(),
   supplier_id uuid not null references public.suppliers(id) on delete cascade,
@@ -241,10 +217,10 @@ create table if not exists public.bazara_borc (
 );
 create index if not exists idx_bazara_borc_supplier_id on public.bazara_borc(supplier_id);
 create index if not exists idx_bazara_borc_debt_date on public.bazara_borc(debt_date);
-alter table public.bazara_borc enable row level security;
-create policy "Allow all for anon" on public.bazara_borc for all using (true) with check (true);
 
--- Telefon nömrələri (ad, nömrə, yeniləmə tarixi)
+-- ------------------------------------------------------------
+-- 11. Telefon nömrələri
+-- ------------------------------------------------------------
 create table if not exists public.telefon_nomreleri (
   id uuid primary key default gen_random_uuid(),
   phone text not null,
@@ -253,5 +229,164 @@ create table if not exists public.telefon_nomreleri (
   created_at timestamptz not null default now()
 );
 create index if not exists idx_telefon_nomreleri_update_date on public.telefon_nomreleri(update_date);
+
+-- ------------------------------------------------------------
+-- 12. Auth profiles + store manager config
+-- ------------------------------------------------------------
+create table if not exists public.profiles (
+  id uuid primary key references auth.users(id) on delete cascade,
+  role text not null default 'store_manager'
+    check (role in ('admin', 'store_manager')),
+  email text,
+  display_name text,
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
+
+create table if not exists public.store_manager_config (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade unique,
+  config jsonb not null default '{}',
+  updated_at timestamptz default now()
+);
+
+create or replace function public.is_admin()
+returns boolean
+language sql stable security definer set search_path = public as $$
+  select exists (
+    select 1 from public.profiles where id = auth.uid() and role = 'admin'
+  );
+$$;
+
+-- First Auth user → admin; later users → store_manager
+create or replace function public.handle_new_user()
+returns trigger language plpgsql security definer set search_path = public as $$
+declare
+  assign_role text;
+begin
+  select case
+    when exists (select 1 from public.profiles limit 1) then 'store_manager'
+    else 'admin'
+  end into assign_role;
+  insert into public.profiles (id, role, email)
+  values (new.id, assign_role, new.email)
+  on conflict (id) do update set email = excluded.email, updated_at = now();
+  return new;
+end;
+$$;
+
+drop trigger if exists on_auth_user_created on auth.users;
+create trigger on_auth_user_created
+  after insert on auth.users
+  for each row execute function public.handle_new_user();
+
+create or replace function public.profiles_deny_role_change()
+returns trigger language plpgsql security definer set search_path = public as $$
+begin
+  if old.role is distinct from new.role and not public.is_admin() then
+    raise exception 'Only admin can change role';
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists profiles_deny_role_change on public.profiles;
+create trigger profiles_deny_role_change
+  before update on public.profiles
+  for each row execute function public.profiles_deny_role_change();
+
+-- ------------------------------------------------------------
+-- 13. Row Level Security (open for business tables; strict for profiles)
+-- ------------------------------------------------------------
+alter table public.clients enable row level security;
+alter table public.product_catalogue enable row level security;
+alter table public.suppliers enable row level security;
+alter table public.inventory enable row level security;
+alter table public.sales enable row level security;
+alter table public.sale_items enable row level security;
+alter table public.payments enable row level security;
+alter table public.icloud_tracking enable row level security;
+alter table public.sale_monthly_tracking enable row level security;
+alter table public.bazara_borc enable row level security;
 alter table public.telefon_nomreleri enable row level security;
+alter table public.profiles enable row level security;
+alter table public.store_manager_config enable row level security;
+
+drop policy if exists "Allow all for anon" on public.clients;
+drop policy if exists "Allow all for anon" on public.product_catalogue;
+drop policy if exists "Allow all for anon" on public.suppliers;
+drop policy if exists "Allow all for anon" on public.inventory;
+drop policy if exists "Allow all for anon" on public.sales;
+drop policy if exists "Allow all for anon" on public.sale_items;
+drop policy if exists "Allow all for anon" on public.payments;
+drop policy if exists "Allow all for anon" on public.icloud_tracking;
+drop policy if exists "Allow all for anon" on public.sale_monthly_tracking;
+drop policy if exists "Allow all for anon" on public.bazara_borc;
+drop policy if exists "Allow all for anon" on public.telefon_nomreleri;
+
+create policy "Allow all for anon" on public.clients for all using (true) with check (true);
+create policy "Allow all for anon" on public.product_catalogue for all using (true) with check (true);
+create policy "Allow all for anon" on public.suppliers for all using (true) with check (true);
+create policy "Allow all for anon" on public.inventory for all using (true) with check (true);
+create policy "Allow all for anon" on public.sales for all using (true) with check (true);
+create policy "Allow all for anon" on public.sale_items for all using (true) with check (true);
+create policy "Allow all for anon" on public.payments for all using (true) with check (true);
+create policy "Allow all for anon" on public.icloud_tracking for all using (true) with check (true);
+create policy "Allow all for anon" on public.sale_monthly_tracking for all using (true) with check (true);
+create policy "Allow all for anon" on public.bazara_borc for all using (true) with check (true);
 create policy "Allow all for anon" on public.telefon_nomreleri for all using (true) with check (true);
+
+drop policy if exists "Users can read own profile" on public.profiles;
+drop policy if exists "Admins can read all profiles" on public.profiles;
+drop policy if exists "Users can insert own profile" on public.profiles;
+drop policy if exists "Users can update own profile" on public.profiles;
+drop policy if exists "Admins can update any profile" on public.profiles;
+
+create policy "Users can read own profile" on public.profiles
+  for select using (id = auth.uid());
+create policy "Admins can read all profiles" on public.profiles
+  for select using (public.is_admin());
+create policy "Users can insert own profile" on public.profiles
+  for insert with check (id = auth.uid());
+create policy "Users can update own profile" on public.profiles
+  for update using (id = auth.uid()) with check (id = auth.uid());
+create policy "Admins can update any profile" on public.profiles
+  for update using (public.is_admin());
+
+drop policy if exists "Users can read own config" on public.store_manager_config;
+drop policy if exists "Admins can read all config" on public.store_manager_config;
+drop policy if exists "Admins can insert config" on public.store_manager_config;
+drop policy if exists "Admins can update config" on public.store_manager_config;
+drop policy if exists "Admins can delete config" on public.store_manager_config;
+
+create policy "Users can read own config" on public.store_manager_config
+  for select using (user_id = auth.uid());
+create policy "Admins can read all config" on public.store_manager_config
+  for select using (public.is_admin());
+create policy "Admins can insert config" on public.store_manager_config
+  for insert with check (public.is_admin());
+create policy "Admins can update config" on public.store_manager_config
+  for update using (public.is_admin());
+create policy "Admins can delete config" on public.store_manager_config
+  for delete using (public.is_admin());
+
+-- ------------------------------------------------------------
+-- 14. Storage bucket for inventory attachments
+-- ------------------------------------------------------------
+insert into storage.buckets (id, name, public)
+values ('Mobideal', 'Mobideal', true)
+on conflict (id) do nothing;
+
+drop policy if exists "Mobideal anon insert" on storage.objects;
+drop policy if exists "Mobideal anon select" on storage.objects;
+drop policy if exists "Mobideal anon delete" on storage.objects;
+
+create policy "Mobideal anon insert"
+  on storage.objects for insert to public
+  with check (bucket_id = 'Mobideal');
+create policy "Mobideal anon select"
+  on storage.objects for select to public
+  using (bucket_id = 'Mobideal');
+create policy "Mobideal anon delete"
+  on storage.objects for delete to public
+  using (bucket_id = 'Mobideal');

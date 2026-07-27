@@ -9,6 +9,6 @@ ALTER TABLE public.profiles DISABLE TRIGGER profiles_deny_role_change;
 
 UPDATE public.profiles
 SET role = 'admin', updated_at = now()
-WHERE email = 'YOUR_EMAIL@example.com';
+WHERE email = 'ilkin.kazimov.global@gmail.com';
 
 ALTER TABLE public.profiles ENABLE TRIGGER profiles_deny_role_change;
