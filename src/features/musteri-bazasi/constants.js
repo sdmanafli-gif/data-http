@@ -8,6 +8,15 @@ export const MUSTERI_TABLE = 'musteri_bazasi'
 export const MUSTERILER_TABLE = 'musteriler'
 export const COLUMN_SETTINGS_TABLE = 'ui_column_settings'
 export const COLUMN_SETTINGS_KEY = 'musteri_bazasi'
+/** Separate visibility/order/width for Məhkəmə list (same underlying müştəri columns). */
+export const MEHKEME_COLUMN_SETTINGS_KEY = 'mehkeme_bazasi'
+
+export const MEHKEME_NATIVE_KEYS = [
+  'mehkeme_isare',
+  'rusum_odenilib',
+  'mehkeme_status',
+  'mehkeme_qeyd',
+]
 
 /** Fields with select-or-type suggestions from existing DB values */
 export const SUGGEST_FIELDS = new Set(['model', 'reng', 'yaddas'])
@@ -188,6 +197,59 @@ export function buildMusteriViewSections(columns = DEFAULT_COLUMNS) {
 
 const SYSTEM_KEYS = new Set(DEFAULT_COLUMNS.map((c) => c.key))
 
+/**
+ * Defaults for Məhkəmə list: all müştəri columns (incl. custom),
+ * with native məhkəmə fields visible and listed first.
+ */
+export function buildMehkemeDefaultColumns(musteriColumns = DEFAULT_COLUMNS) {
+  const native = []
+  const rest = []
+  for (const c of musteriColumns || []) {
+    if (!c?.key) continue
+    if (MEHKEME_NATIVE_KEYS.includes(c.key)) {
+      native.push({
+        ...c,
+        visible: true,
+        formVisible: true,
+        label: c.key === 'mehkeme_isare' ? '☐' : c.label,
+        width:
+          typeof c.width === 'number'
+            ? c.width
+            : c.key === 'mehkeme_isare'
+              ? 52
+              : c.key === 'rusum_odenilib'
+                ? 130
+                : c.key === 'mehkeme_status'
+                  ? 160
+                  : c.key === 'mehkeme_qeyd'
+                    ? 200
+                    : undefined,
+        options: c.key === 'mehkeme_status' ? MEHKEME_STATUS_OPTIONS : c.options,
+      })
+      continue
+    }
+    rest.push({
+      ...c,
+      // Files column is awkward in dense tables — off by default for məhkəmə
+      visible: c.type === 'files' ? false : c.visible !== false,
+    })
+  }
+  // Ensure natives exist even if missing from musteriColumns
+  for (const key of MEHKEME_NATIVE_KEYS) {
+    if (native.some((c) => c.key === key)) continue
+    const base = DEFAULT_COLUMNS.find((c) => c.key === key)
+    if (base) {
+      native.push({
+        ...base,
+        visible: true,
+        formVisible: true,
+        label: key === 'mehkeme_isare' ? '☐' : base.label,
+      })
+    }
+  }
+  return [...native, ...rest].map((c, i) => ({ ...c, order: i }))
+}
+
 export function mergeColumnConfig(saved) {
   const byKey = new Map()
   DEFAULT_COLUMNS.forEach((c, i) => byKey.set(c.key, { ...c, order: i }))
@@ -206,6 +268,52 @@ export function mergeColumnConfig(saved) {
           width: typeof c.width === 'number' ? c.width : base.width,
         })
       } else {
+        byKey.set(c.key, {
+          key: c.key,
+          label: c.label || c.key,
+          type: c.type || 'text',
+          visible: c.visible !== false,
+          formVisible: c.formVisible !== false && c.visible !== false,
+          readonly: false,
+          system: false,
+          custom: true,
+          group: 'custom',
+          options: c.options || [],
+          order: typeof c.order === 'number' ? c.order : 1000 + i,
+          width: typeof c.width === 'number' ? c.width : undefined,
+        })
+      }
+    })
+  }
+
+  return Array.from(byKey.values()).sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
+}
+
+/**
+ * Merge saved Məhkəmə column prefs onto the full müştəri column set.
+ * @param {any[] | null} saved
+ * @param {any[]} [musteriColumns] full müştəri columns (system + custom)
+ */
+export function mergeMehkemeColumnConfig(saved, musteriColumns = DEFAULT_COLUMNS) {
+  const defaults = buildMehkemeDefaultColumns(musteriColumns)
+  const byKey = new Map(defaults.map((c, i) => [c.key, { ...c, order: i }]))
+
+  if (Array.isArray(saved)) {
+    saved.forEach((c, i) => {
+      if (!c?.key) return
+      const base = byKey.get(c.key)
+      if (base) {
+        byKey.set(c.key, {
+          ...base,
+          label: c.label || base.label,
+          visible: c.visible !== false,
+          formVisible: c.formVisible !== false && c.visible !== false,
+          order: typeof c.order === 'number' ? c.order : i,
+          width: typeof c.width === 'number' ? c.width : base.width,
+          options: base.options || c.options,
+        })
+      } else {
+        // Custom column added only in məhkəmə settings
         byKey.set(c.key, {
           key: c.key,
           label: c.label || c.key,
@@ -271,6 +379,7 @@ export function emptyMusteriForm(columns = DEFAULT_COLUMNS) {
 /**
  * Vəziyyət rules (for now):
  * - Məhkəmə is never auto-changed
+ * - Alış = 0 and Satış = 0 → Bitib
  * - Qalıb → Bitib when qalan borc = 0 (verilib >= satış)
  * - otherwise Qalıb (when not Məhkəmə)
  */
@@ -280,10 +389,13 @@ export function resolveVeziyyet(form) {
 
   const paid = Number(form?.verilib)
   const sale = Number(form?.satis_qiymeti)
+  const buy = Number(form?.alis_qiymeti)
   const paidN = Number.isFinite(paid) ? paid : 0
   const saleN = Number.isFinite(sale) ? sale : 0
-  const qalan = saleN - paidN
-  if (saleN > 0 && qalan <= 0) return 'Bitib'
+  const buyN = Number.isFinite(buy) ? buy : 0
+
+  if (buyN === 0 && saleN === 0) return 'Bitib'
+  if (saleN > 0 && saleN - paidN <= 0) return 'Bitib'
   return 'Qalıb'
 }
 
@@ -469,7 +581,7 @@ export function setFormField(form, col, value) {
   } else {
     next = { ...form, [col.key]: value }
   }
-  if (col.key === 'verilib' || col.key === 'satis_qiymeti') {
+  if (col.key === 'verilib' || col.key === 'satis_qiymeti' || col.key === 'alis_qiymeti') {
     next = applyVeziyyetFromAmounts(next)
   }
   return next

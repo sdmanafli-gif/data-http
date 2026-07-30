@@ -9,6 +9,8 @@ import {
   formatDate,
   sumPaymentsByType,
 } from './constants'
+import CollapsibleSummary from '../../components/CollapsibleSummary'
+import '../musteri-bazasi/musteri-table.css'
 import '../../styles/shared.css'
 
 export default function OdenisList() {
@@ -76,32 +78,33 @@ export default function OdenisList() {
             ))}
           </select>
         </div>
-        <Link to="/odenisler/idxal" className="btn btn--secondary">Excel idxal</Link>
       </div>
 
       {!loading && (
-        <div className="musteri-summary">
-          <div className="musteri-summary__card">
-            <div className="musteri-summary__label">İlkin</div>
-            <div className="musteri-summary__value">{formatMoney(totals.ilkin)}</div>
+        <CollapsibleSummary title="Cəmlər" storageKey="summary:odenisler">
+          <div className="musteri-summary">
+            <div className="musteri-summary__card">
+              <div className="musteri-summary__label">İlkin</div>
+              <div className="musteri-summary__value">{formatMoney(totals.ilkin)}</div>
+            </div>
+            <div className="musteri-summary__card">
+              <div className="musteri-summary__label">Aylıq</div>
+              <div className="musteri-summary__value">{formatMoney(totals.ayliq)}</div>
+            </div>
+            <div className="musteri-summary__card">
+              <div className="musteri-summary__label">Faiz</div>
+              <div className="musteri-summary__value">{formatMoney(totals.faiz)}</div>
+            </div>
+            <div className="musteri-summary__card">
+              <div className="musteri-summary__label">Cəmi</div>
+              <div className="musteri-summary__value">{formatMoney(totals.cemi)}</div>
+            </div>
+            <div className="musteri-summary__card musteri-summary__card--meta">
+              <div className="musteri-summary__label">Sətir sayı</div>
+              <div className="musteri-summary__value">{items.length}</div>
+            </div>
           </div>
-          <div className="musteri-summary__card">
-            <div className="musteri-summary__label">Aylıq</div>
-            <div className="musteri-summary__value">{formatMoney(totals.ayliq)}</div>
-          </div>
-          <div className="musteri-summary__card">
-            <div className="musteri-summary__label">Faiz</div>
-            <div className="musteri-summary__value">{formatMoney(totals.faiz)}</div>
-          </div>
-          <div className="musteri-summary__card">
-            <div className="musteri-summary__label">Cəmi</div>
-            <div className="musteri-summary__value">{formatMoney(totals.cemi)}</div>
-          </div>
-          <div className="musteri-summary__card musteri-summary__card--meta">
-            <div className="musteri-summary__label">Sətir sayı</div>
-            <div className="musteri-summary__value">{items.length}</div>
-          </div>
-        </div>
+        </CollapsibleSummary>
       )}
 
       <div className="card">

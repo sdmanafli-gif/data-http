@@ -1,4 +1,4 @@
-import { Routes, Route, Navigate } from 'react-router-dom'
+import { Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import { AuthProvider, useAuth } from './contexts/AuthContext'
 import Layout from './layout/Layout'
 import SignIn from './pages/SignIn'
@@ -7,11 +7,43 @@ import InviteUser from './pages/InviteUser'
 import UserList from './pages/UserList'
 import MusteriBazasi from './features/musteri-bazasi'
 import MehkemeList from './features/musteri-bazasi/MehkemeList'
+import ColumnManager from './features/musteri-bazasi/ColumnManager'
+import { MEHKEME_COLUMN_SETTINGS_KEY } from './features/musteri-bazasi/constants'
 import YigimPage from './features/yigim'
 import OdenislerFeature from './features/odenisler'
 import DepoFeature from './features/depo'
 import NagdSatishFeature from './features/nagd-satish'
 import BorcNisyeFeature from './features/borc-nisye'
+
+function MehkemeFeature() {
+  const location = useLocation()
+  const hideHeader = location.pathname.includes('/sutunlar')
+
+  return (
+    <>
+      {!hideHeader && (
+        <div className="page-header">
+          <h1>Məhkəmə</h1>
+        </div>
+      )}
+      <Routes>
+        <Route index element={<MehkemeList />} />
+        <Route
+          path="sutunlar"
+          element={
+            <ColumnManager
+              tableKey={MEHKEME_COLUMN_SETTINGS_KEY}
+              title="Məhkəmə — sütunları idarə et"
+              backTo="/mehkeme"
+              description="Bütün Müştəri Bazası sütunları + məhkəmə sahələri. Görünüş, sıra və en yalnız Məhkəmə səhifəsi üçündür (Müştəri Bazasına təsir etmir)."
+            />
+          }
+        />
+        <Route path="*" element={<Navigate to="/mehkeme" replace />} />
+      </Routes>
+    </>
+  )
+}
 
 function AppRoutes() {
   return (
@@ -21,17 +53,7 @@ function AppRoutes() {
         <Route path="/admin/users" element={<UserList />} />
         <Route path="/musteri-bazasi/*" element={<MusteriBazasi />} />
         <Route path="/yigim" element={<YigimPage />} />
-        <Route
-          path="/mehkeme"
-          element={
-            <>
-              <div className="page-header">
-                <h1>Məhkəmə</h1>
-              </div>
-              <MehkemeList />
-            </>
-          }
-        />
+        <Route path="/mehkeme/*" element={<MehkemeFeature />} />
         <Route path="/odenisler/*" element={<OdenislerFeature />} />
         <Route path="/depo/*" element={<DepoFeature />} />
         <Route path="/nagd-satish/*" element={<NagdSatishFeature />} />

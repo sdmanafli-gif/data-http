@@ -2,6 +2,41 @@
   margin-top: 28px;
 }
 
+.musteri-schedule__toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.musteri-schedule__snapshot {
+  padding: 12px;
+  background: #fff;
+  border-radius: var(--radius);
+}
+
+.musteri-schedule__snap-heading {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  align-items: baseline;
+  margin-bottom: 12px;
+  font-size: 13px;
+  color: var(--color-text);
+}
+
+.musteri-schedule__snap-heading strong {
+  font-size: 16px;
+}
+
+.musteri-schedule__snap-sira {
+  font-size: 18px !important;
+  font-variant-numeric: tabular-nums;
+  margin-right: 4px;
+}
+
 .musteri-schedule__hint {
   margin: 0 0 12px;
   font-size: 13px;

@@ -3,7 +3,6 @@ import { Link } from 'react-router-dom'
 import { supabase, fetchAllPages } from '../../lib/supabase'
 import {
   MUSTERI_TABLE,
-  VEZIYYET_OPTIONS,
   formatMoney,
   formatDate,
 } from '../musteri-bazasi/constants'
@@ -14,6 +13,7 @@ import {
   matchPaymentsToSchedule,
   statusLabel,
 } from '../musteri-bazasi/paymentSchedule'
+import CollapsibleSummary from '../../components/CollapsibleSummary'
 import '../../styles/shared.css'
 import '../musteri-bazasi/musteri-table.css'
 import '../musteri-bazasi/musteri-schedule.css'
@@ -37,11 +37,6 @@ const STATUS_FILTERS = [
   { value: 'late', label: 'Gecikmiş' },
   { value: 'paid', label: 'Ödənib' },
   { value: 'partial', label: 'Qismən' },
-]
-
-const VEZIYYET_FILTERS = [
-  { value: '', label: 'Hamısı' },
-  ...VEZIYYET_OPTIONS.map((v) => ({ value: v, label: v })),
 ]
 
 function toYmd(d) {
@@ -186,7 +181,6 @@ export default function YigimPage() {
   const [customFrom, setCustomFrom] = useState('')
   const [customTo, setCustomTo] = useState('')
   const [statusFilter, setStatusFilter] = useState('pending')
-  const [veziyyetFilter, setVeziyyetFilter] = useState('')
   const [search, setSearch] = useState('')
 
   const [rows, setRows] = useState([])
@@ -204,6 +198,7 @@ export default function YigimPage() {
             .select(
               'id, sira_no, ad_soyad, model, nomre_1, veziyyet, satis_qiymeti, ayliq_odenis, nece_ay, odenis_gunu, verilme_tarixi'
             )
+            .eq('veziyyet', 'Qalıb')
             .order('sira_no', { ascending: true })
         ),
         fetchAllPages(() =>
@@ -238,7 +233,7 @@ export default function YigimPage() {
     return rows.filter((r) => {
       if (!inRange(r.tarix, range.from, range.to)) return false
       if (!matchesStatusFilter(r, statusFilter)) return false
-      if (veziyyetFilter && r.veziyyet !== veziyyetFilter) return false
+      if (r.veziyyet !== 'Qalıb') return false
       if (term) {
         const hay = `${r.sira_no ?? ''} ${r.ad_soyad} ${r.model || ''} ${r.nomre_1 || ''}`.toLowerCase()
         if (!hay.includes(term) && !(term.match(/^\d+$/) && String(r.sira_no) === term)) {
@@ -247,7 +242,7 @@ export default function YigimPage() {
       }
       return true
     })
-  }, [rows, range, statusFilter, veziyyetFilter, search])
+  }, [rows, range, statusFilter, search])
 
   const totals = useMemo(() => {
     let owed = 0
@@ -369,15 +364,6 @@ export default function YigimPage() {
           </select>
         </div>
 
-        <div className="form-group" style={{ marginBottom: 0, minWidth: 160 }}>
-          <label>Vəziyyət</label>
-          <select value={veziyyetFilter} onChange={(e) => setVeziyyetFilter(e.target.value)}>
-            {VEZIYYET_FILTERS.map((s) => (
-              <option key={s.value || 'all-vez'} value={s.value}>{s.label}</option>
-            ))}
-          </select>
-        </div>
-
         <div className="form-group" style={{ marginBottom: 0, flex: '1 1 200px', maxWidth: 280 }}>
           <label>Axtarış</label>
           <input
@@ -391,32 +377,34 @@ export default function YigimPage() {
       {error && <p style={{ color: 'var(--color-accent)' }}>{error}</p>}
 
       {!loading && (
-        <div className="musteri-summary">
-          <div className="musteri-summary__card">
-            <div className="musteri-summary__label">Gözlənilən yığım</div>
-            <div className="musteri-summary__value">{formatMoney(totals.owed)}</div>
+        <CollapsibleSummary title="Cəmlər" storageKey="summary:yigim">
+          <div className="musteri-summary">
+            <div className="musteri-summary__card">
+              <div className="musteri-summary__label">Gözlənilən yığım</div>
+              <div className="musteri-summary__value">{formatMoney(totals.owed)}</div>
+            </div>
+            <div className="musteri-summary__card">
+              <div className="musteri-summary__label">Ödənilib</div>
+              <div className="musteri-summary__value">{formatMoney(totals.paid)}</div>
+            </div>
+            <div className="musteri-summary__card">
+              <div className="musteri-summary__label">Qalan / pending</div>
+              <div className="musteri-summary__value">{formatMoney(totals.remaining)}</div>
+            </div>
+            <div className="musteri-summary__card">
+              <div className="musteri-summary__label">Cərimə</div>
+              <div className="musteri-summary__value">{formatMoney(totals.penalty)}</div>
+            </div>
+            <div className="musteri-summary__card">
+              <div className="musteri-summary__label">Gecikmiş sətir</div>
+              <div className="musteri-summary__value">{totals.lateCount}</div>
+            </div>
+            <div className="musteri-summary__card musteri-summary__card--meta">
+              <div className="musteri-summary__label">Sətir sayı</div>
+              <div className="musteri-summary__value">{totals.count}</div>
+            </div>
           </div>
-          <div className="musteri-summary__card">
-            <div className="musteri-summary__label">Ödənilib</div>
-            <div className="musteri-summary__value">{formatMoney(totals.paid)}</div>
-          </div>
-          <div className="musteri-summary__card">
-            <div className="musteri-summary__label">Qalan / pending</div>
-            <div className="musteri-summary__value">{formatMoney(totals.remaining)}</div>
-          </div>
-          <div className="musteri-summary__card">
-            <div className="musteri-summary__label">Cərimə</div>
-            <div className="musteri-summary__value">{formatMoney(totals.penalty)}</div>
-          </div>
-          <div className="musteri-summary__card">
-            <div className="musteri-summary__label">Gecikmiş sətir</div>
-            <div className="musteri-summary__value">{totals.lateCount}</div>
-          </div>
-          <div className="musteri-summary__card musteri-summary__card--meta">
-            <div className="musteri-summary__label">Sətir sayı</div>
-            <div className="musteri-summary__value">{totals.count}</div>
-          </div>
-        </div>
+        </CollapsibleSummary>
       )}
 
       <div className="card">

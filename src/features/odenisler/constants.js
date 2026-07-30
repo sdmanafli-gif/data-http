@@ -98,7 +98,7 @@ export async function syncMusteriPaymentTotals(supabase, musteriBazasiId) {
 
   const { data: musteri, error: mErr } = await supabase
     .from(MUSTERI_TABLE)
-    .select('id, satis_qiymeti, veziyyet_manual, veziyyet')
+    .select('id, alis_qiymeti, satis_qiymeti, veziyyet_manual, veziyyet')
     .eq('id', musteriBazasiId)
     .single()
   if (mErr) return { error: mErr }
@@ -112,8 +112,11 @@ export async function syncMusteriPaymentTotals(supabase, musteriBazasiId) {
     // never overwrite Məhkəmə
   } else {
     const sale = Number(musteri.satis_qiymeti) || 0
+    const buy = Number(musteri.alis_qiymeti) || 0
     const qalan = sale - verilib
-    patch.veziyyet = sale > 0 && qalan <= 0 ? 'Bitib' : 'Qalıb'
+    if (buy === 0 && sale === 0) patch.veziyyet = 'Bitib'
+    else if (sale > 0 && qalan <= 0) patch.veziyyet = 'Bitib'
+    else patch.veziyyet = 'Qalıb'
     patch.veziyyet_manual = false
   }
 

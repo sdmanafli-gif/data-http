@@ -14,6 +14,8 @@ import {
   computeBalances,
   counterpartPath,
 } from './constants'
+import CollapsibleSummary from '../../components/CollapsibleSummary'
+import '../musteri-bazasi/musteri-table.css'
 import '../../styles/shared.css'
 
 function uniqueSorted(values) {
@@ -164,20 +166,22 @@ export default function CounterpartDetail() {
         </div>
       </div>
 
-      <div className="musteri-summary">
-        <div className="musteri-summary__card">
-          <div className="musteri-summary__label">Qalıq borc</div>
-          <div className="musteri-summary__value">{formatMoney(balance.qaliq_borc)}</div>
+      <CollapsibleSummary title="Cəmlər" storageKey="summary:borc-detail">
+        <div className="musteri-summary">
+          <div className="musteri-summary__card">
+            <div className="musteri-summary__label">Qalıq borc</div>
+            <div className="musteri-summary__value">{formatMoney(balance.qaliq_borc)}</div>
+          </div>
+          <div className="musteri-summary__card">
+            <div className="musteri-summary__label">Qalıq nisyə</div>
+            <div className="musteri-summary__value">{formatMoney(balance.qaliq_nisye)}</div>
+          </div>
+          <div className="musteri-summary__card musteri-summary__card--meta">
+            <div className="musteri-summary__label">Əməliyyat sayı</div>
+            <div className="musteri-summary__value">{entries.length}</div>
+          </div>
         </div>
-        <div className="musteri-summary__card">
-          <div className="musteri-summary__label">Qalıq nisyə</div>
-          <div className="musteri-summary__value">{formatMoney(balance.qaliq_nisye)}</div>
-        </div>
-        <div className="musteri-summary__card musteri-summary__card--meta">
-          <div className="musteri-summary__label">Əməliyyat sayı</div>
-          <div className="musteri-summary__value">{entries.length}</div>
-        </div>
-      </div>
+      </CollapsibleSummary>
 
       {error && <p style={{ color: 'var(--color-accent)' }}>{error}</p>}
 

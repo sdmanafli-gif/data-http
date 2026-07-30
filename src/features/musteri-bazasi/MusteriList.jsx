@@ -161,13 +161,10 @@ export default function MusteriList() {
         <Link to="/musteri-bazasi/sutunlar" className="btn btn--secondary">
           Sütunları idarə et
         </Link>
-        <Link to="/musteri-bazasi/idxal" className="btn btn--secondary">
-          Excel idxal
-        </Link>
       </div>
 
       {!loading && !colsLoading && (
-        <SummaryCards totals={totals} rowCount={viewRows.length} />
+        <SummaryCards totals={totals} rowCount={viewRows.length} storageKey="summary:musteri" />
       )}
 
       <div className="card">
@@ -181,6 +178,7 @@ export default function MusteriList() {
             onResizeColumn={handleResize}
             onRowOpen={(row) => setOpenRow(row)}
             onDisplayRowsChange={setViewRows}
+            prefsKey="musteri_bazasi"
           />
         )}
       </div>
