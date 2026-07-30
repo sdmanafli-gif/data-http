@@ -67,7 +67,7 @@ function DynamicField({ col, value, onChange, computedDisplay, suggestions }) {
   if (col.type === 'select') {
     const hint =
       col.key === 'veziyyet'
-        ? 'Avtomatik: Qalan borc = 0 → Bitib. Məhkəmə əl ilə seçiləndə dəyişmir.'
+        ? 'Avtomatik: alış və satış 0 → Bitib; qalan borc = 0 → Bitib. Məhkəmə əl ilə seçiləndə dəyişmir.'
         : null
     return (
       <div className="form-group" key={col.key}>

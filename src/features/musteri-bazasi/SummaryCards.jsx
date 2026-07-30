@@ -1,3 +1,4 @@
+import CollapsibleSummary from '../../components/CollapsibleSummary'
 import { formatMoney } from './constants'
 
 const CARDS = [
@@ -8,19 +9,29 @@ const CARDS = [
   { key: 'faiz', label: 'Faiz (cərimə)' },
 ]
 
-export default function SummaryCards({ totals, rowCount }) {
+export default function SummaryCards({ totals, rowCount, extraCards = [], storageKey = 'summary:musteri' }) {
   return (
-    <div className="musteri-summary">
-      {CARDS.map((card) => (
-        <div key={card.key} className="musteri-summary__card">
-          <div className="musteri-summary__label">{card.label}</div>
-          <div className="musteri-summary__value">{formatMoney(totals[card.key] ?? 0)}</div>
+    <CollapsibleSummary title="Cəmlər" storageKey={storageKey}>
+      <div className="musteri-summary">
+        {CARDS.map((card) => (
+          <div key={card.key} className="musteri-summary__card">
+            <div className="musteri-summary__label">{card.label}</div>
+            <div className="musteri-summary__value">{formatMoney(totals[card.key] ?? 0)}</div>
+          </div>
+        ))}
+        {extraCards.map((card) => (
+          <div key={card.key} className="musteri-summary__card">
+            <div className="musteri-summary__label">{card.label}</div>
+            <div className="musteri-summary__value">
+              {card.format === 'raw' ? card.value : formatMoney(card.value ?? 0)}
+            </div>
+          </div>
+        ))}
+        <div className="musteri-summary__card musteri-summary__card--meta">
+          <div className="musteri-summary__label">Sətir sayı</div>
+          <div className="musteri-summary__value">{rowCount}</div>
         </div>
-      ))}
-      <div className="musteri-summary__card musteri-summary__card--meta">
-        <div className="musteri-summary__label">Sətir sayı</div>
-        <div className="musteri-summary__value">{rowCount}</div>
       </div>
-    </div>
+    </CollapsibleSummary>
   )
 }

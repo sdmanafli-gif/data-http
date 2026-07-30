@@ -5,6 +5,7 @@ import { useColumnConfig } from './useColumnConfig'
 import ResizableDataTable from '../musteri-bazasi/ResizableDataTable'
 import { applyKeyOrder } from '../musteri-bazasi/columnOrder'
 import { NAGD_TABLE, formatCell, getRowValue, formatMoney } from './constants'
+import CollapsibleSummary from '../../components/CollapsibleSummary'
 import '../../styles/shared.css'
 
 function sumField(rows, key) {
@@ -96,32 +97,33 @@ export default function NagdList() {
           <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Kimə, model, IMEI, satıcı…" />
         </div>
         <Link to="/nagd-satish/sutunlar" className="btn btn--secondary">Sütunları idarə et</Link>
-        <Link to="/nagd-satish/idxal" className="btn btn--secondary">Excel idxal</Link>
       </div>
 
       {!loading && !colsLoading && (
-        <div className="musteri-summary">
-          <div className="musteri-summary__card">
-            <div className="musteri-summary__label">Ümumi alış</div>
-            <div className="musteri-summary__value">{formatMoney(totals.alis)}</div>
+        <CollapsibleSummary title="Cəmlər" storageKey="summary:nagd">
+          <div className="musteri-summary">
+            <div className="musteri-summary__card">
+              <div className="musteri-summary__label">Ümumi alış</div>
+              <div className="musteri-summary__value">{formatMoney(totals.alis)}</div>
+            </div>
+            <div className="musteri-summary__card">
+              <div className="musteri-summary__label">Ümumi satış</div>
+              <div className="musteri-summary__value">{formatMoney(totals.satis)}</div>
+            </div>
+            <div className="musteri-summary__card">
+              <div className="musteri-summary__label">Ümumi xeyir</div>
+              <div className="musteri-summary__value">{formatMoney(totals.xeyir)}</div>
+            </div>
+            <div className="musteri-summary__card">
+              <div className="musteri-summary__label">Xeyir (faizlə)</div>
+              <div className="musteri-summary__value">{formatMoney(totals.xeyirFaizle)}</div>
+            </div>
+            <div className="musteri-summary__card musteri-summary__card--meta">
+              <div className="musteri-summary__label">Sətir sayı</div>
+              <div className="musteri-summary__value">{viewRows.length}</div>
+            </div>
           </div>
-          <div className="musteri-summary__card">
-            <div className="musteri-summary__label">Ümumi satış</div>
-            <div className="musteri-summary__value">{formatMoney(totals.satis)}</div>
-          </div>
-          <div className="musteri-summary__card">
-            <div className="musteri-summary__label">Ümumi xeyir</div>
-            <div className="musteri-summary__value">{formatMoney(totals.xeyir)}</div>
-          </div>
-          <div className="musteri-summary__card">
-            <div className="musteri-summary__label">Xeyir (faizlə)</div>
-            <div className="musteri-summary__value">{formatMoney(totals.xeyirFaizle)}</div>
-          </div>
-          <div className="musteri-summary__card musteri-summary__card--meta">
-            <div className="musteri-summary__label">Sətir sayı</div>
-            <div className="musteri-summary__value">{viewRows.length}</div>
-          </div>
-        </div>
+        </CollapsibleSummary>
       )}
 
       <div className="card">
@@ -137,6 +139,7 @@ export default function NagdList() {
             getRowValue={getRowValue}
             onRowOpen={(row) => navigate(`/nagd-satish/${row.id}`)}
             onDisplayRowsChange={setViewRows}
+            prefsKey="nagd_satish"
           />
         )}
       </div>

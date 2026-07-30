@@ -1,12 +1,33 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useColumnConfig } from './useColumnConfig'
-import { FIELD_TYPES, slugifyColumnKey } from './constants'
+import {
+  FIELD_TYPES,
+  slugifyColumnKey,
+  COLUMN_SETTINGS_KEY,
+  MEHKEME_COLUMN_SETTINGS_KEY,
+  MEHKEME_NATIVE_KEYS,
+} from './constants'
 import { confirmDelete } from '../../lib/confirmDelete'
 import '../../styles/shared.css'
 
-export default function ColumnManager() {
-  const { columns: saved, loading, error: loadError, saveColumns } = useColumnConfig()
+/**
+ * @param {{
+ *   tableKey?: string,
+ *   title?: string,
+ *   backTo?: string,
+ *   description?: string,
+ * }} [props]
+ */
+export default function ColumnManager({
+  tableKey = COLUMN_SETTINGS_KEY,
+  title = 'Sütunları idarə et',
+  backTo = '/musteri-bazasi',
+  description =
+    'Siyahı və forma eyni sıranı istifadə edir. Sütunu yuxarı/aşağı aparın, gizlədin və ya yeni sütun əlavə edin.',
+} = {}) {
+  const isMehkeme = tableKey === MEHKEME_COLUMN_SETTINGS_KEY
+  const { columns: saved, loading, error: loadError, saveColumns } = useColumnConfig({ tableKey })
   const [cols, setCols] = useState([])
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(null)
@@ -99,11 +120,11 @@ export default function ColumnManager() {
   return (
     <div className="card">
       <div className="page-header" style={{ marginBottom: 'var(--space-md)' }}>
-        <h2 className="card__title" style={{ margin: 0 }}>Sütunları idarə et</h2>
-        <Link to="/musteri-bazasi" className="btn btn--secondary">Geri</Link>
+        <h2 className="card__title" style={{ margin: 0 }}>{title}</h2>
+        <Link to={backTo} className="btn btn--secondary">Geri</Link>
       </div>
       <p style={{ color: 'var(--color-text-muted)', fontSize: 13, marginBottom: 'var(--space-lg)' }}>
-        Siyahı və forma eyni sıranı istifadə edir. Sütunu yuxarı/aşağı aparın, gizlədin və ya yeni sütun əlavə edin.
+        {description}
       </p>
 
       {(error || loadError) && (
@@ -118,6 +139,7 @@ export default function ColumnManager() {
               <th style={{ width: 70 }}>Sıra</th>
               <th>Ad</th>
               <th>Tip</th>
+              <th>Mənbə</th>
               <th>Görünür</th>
               <th style={{ width: 160 }}>Əməliyyat</th>
             </tr>
@@ -137,6 +159,13 @@ export default function ColumnManager() {
                   )}
                 </td>
                 <td>{FIELD_TYPES.find((t) => t.value === col.type)?.label || col.type}</td>
+                <td style={{ fontSize: 12, color: 'var(--color-text-muted)', whiteSpace: 'nowrap' }}>
+                  {isMehkeme && MEHKEME_NATIVE_KEYS.includes(col.key)
+                    ? 'Məhkəmə'
+                    : col.custom
+                      ? 'Özəl'
+                      : 'Müştəri'}
+                </td>
                 <td>
                   <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
                     <input

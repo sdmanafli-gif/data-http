@@ -9,56 +9,13 @@ import { applyKeyOrder } from './columnOrder'
 import {
   MUSTERI_TABLE,
   MEHKEME_STATUS_OPTIONS,
+  MEHKEME_COLUMN_SETTINGS_KEY,
   formatCell,
   getRowValue,
-  formatMoney,
 } from './constants'
 import '../../styles/shared.css'
 import './musteri-table.css'
 import './musteri-schedule.css'
-
-const MEHKEME_COL_KEYS = new Set([
-  'mehkeme_isare',
-  'rusum_odenilib',
-  'mehkeme_status',
-  'mehkeme_qeyd',
-])
-
-const MEHKEME_EXTRA = [
-  {
-    key: 'mehkeme_isare',
-    label: '☐',
-    type: 'checkbox',
-    visible: true,
-    width: 52,
-    system: true,
-  },
-  {
-    key: 'rusum_odenilib',
-    label: 'Rüsüm ödənilib',
-    type: 'money',
-    visible: true,
-    width: 130,
-    system: true,
-  },
-  {
-    key: 'mehkeme_status',
-    label: 'Məhkəmə statusu',
-    type: 'select',
-    visible: true,
-    width: 160,
-    system: true,
-    options: MEHKEME_STATUS_OPTIONS,
-  },
-  {
-    key: 'mehkeme_qeyd',
-    label: 'Məhkəmə komment',
-    type: 'text',
-    visible: true,
-    width: 200,
-    system: true,
-  },
-]
 
 function sumField(rows, key) {
   return rows.reduce((acc, row) => {
@@ -74,12 +31,13 @@ function parseAmount(raw) {
 }
 
 /**
- * Same müştəri columns as Müştəri Bazası, filtered to veziyyet = Məhkəmə,
- * plus editable məhkəmə fields.
+ * Məhkəmə list — own column settings (all müştəri cols + native məhkəmə fields).
  */
 export default function MehkemeList() {
   const navigate = useNavigate()
-  const { columns, loading: colsLoading, saveColumns } = useColumnConfig()
+  const { columns, loading: colsLoading, saveColumns } = useColumnConfig({
+    tableKey: MEHKEME_COLUMN_SETTINGS_KEY,
+  })
   const [items, setItems] = useState([])
   const [viewRows, setViewRows] = useState([])
   const [loading, setLoading] = useState(true)
@@ -95,13 +53,10 @@ export default function MehkemeList() {
     setLocalCols(columns)
   }, [columns])
 
-  /** All visible müştəri columns + məhkəmə extras first (always shown here). */
-  const displayColumns = useMemo(() => {
-    const base = (localCols || [])
-      .filter((c) => c.visible !== false && !MEHKEME_COL_KEYS.has(c.key) && c.type !== 'files')
-      .map((c) => ({ ...c }))
-    return [...MEHKEME_EXTRA, ...base]
-  }, [localCols])
+  const visibleCols = useMemo(
+    () => (localCols || []).filter((c) => c.visible !== false),
+    [localCols]
+  )
 
   async function load() {
     setLoading(true)
@@ -156,13 +111,11 @@ export default function MehkemeList() {
 
   const handleReorder = useCallback(
     async (orderedVisible) => {
-      // Keep məhkəmə extras pinned at front; persist only müştəri column order
-      const mehkemeOrdered = orderedVisible.filter((c) => MEHKEME_COL_KEYS.has(c.key))
-      const restOrdered = orderedVisible.filter((c) => !MEHKEME_COL_KEYS.has(c.key))
-      const nextLocal = applyKeyOrder(localCols, restOrdered.map((c) => c.key))
+      const nextLocal = applyKeyOrder(
+        localCols,
+        orderedVisible.map((c) => c.key)
+      )
       setLocalCols(nextLocal)
-      // displayColumns rebuilds from MEHKEME_EXTRA + nextLocal — preserve mehkeme order in EXTRA constant
-      void mehkemeOrdered
       try {
         await saveColumns(nextLocal)
       } catch (err) {
@@ -174,7 +127,6 @@ export default function MehkemeList() {
 
   const handleResize = useCallback(
     (key, width) => {
-      if (MEHKEME_COL_KEYS.has(key)) return
       setLocalCols((prev) => {
         const next = prev.map((c) => (c.key === key ? { ...c, width } : c))
         clearTimeout(resizeTimer.current)
@@ -315,7 +267,7 @@ export default function MehkemeList() {
             ))}
           </select>
         </div>
-        <Link to="/musteri-bazasi/sutunlar" className="btn btn--secondary">
+        <Link to="/mehkeme/sutunlar" className="btn btn--secondary">
           Sütunları idarə et
         </Link>
         <Link to="/musteri-bazasi" className="btn btn--secondary">
@@ -326,15 +278,18 @@ export default function MehkemeList() {
       {error && <p style={{ color: 'var(--color-accent)' }}>{error}</p>}
 
       {!loading && !colsLoading && (
-        <>
-          <SummaryCards totals={totals} rowCount={viewRows.length} />
-          <div className="musteri-summary" style={{ marginTop: 0 }}>
-            <div className="musteri-summary__card">
-              <div className="musteri-summary__label">Rüsüm cəmi</div>
-              <div className="musteri-summary__value">{formatMoney(totals.rusum_odenilib)}</div>
-            </div>
-          </div>
-        </>
+        <SummaryCards
+          totals={totals}
+          rowCount={viewRows.length}
+          storageKey="summary:mehkeme"
+          extraCards={[
+            {
+              key: 'rusum_odenilib',
+              label: 'Rüsüm cəmi',
+              value: totals.rusum_odenilib,
+            },
+          ]}
+        />
       )}
 
       <div className="card">
@@ -342,7 +297,7 @@ export default function MehkemeList() {
           <p className="empty-state">Yüklənir…</p>
         ) : (
           <ResizableDataTable
-            columns={displayColumns}
+            columns={visibleCols}
             rows={items}
             onReorderColumns={handleReorder}
             onResizeColumn={handleResize}
@@ -352,6 +307,7 @@ export default function MehkemeList() {
             onRowOpen={(row) => setOpenRow(row)}
             onDisplayRowsChange={setViewRows}
             emptyText="Vəziyyəti «Məhkəmə» olan qeyd yoxdur. Müştəri Bazasında vəziyyəti Məhkəmə edin."
+            prefsKey="mehkeme_bazasi"
           />
         )}
       </div>

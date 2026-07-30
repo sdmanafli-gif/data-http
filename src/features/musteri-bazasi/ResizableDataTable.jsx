@@ -1,13 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
+import { moveItem, TABLE_ZOOM_MAX, TABLE_ZOOM_MIN, TABLE_ZOOM_STEP } from './columnOrder'
 import {
   loadTableZoom,
   saveTableZoom,
-  moveItem,
-  TABLE_ZOOM_MAX,
-  TABLE_ZOOM_MIN,
-  TABLE_ZOOM_STEP,
-} from './columnOrder'
+  loadTableFilters,
+  saveTableFilters,
+  loadTableSort,
+  saveTableSort,
+} from '../../lib/uiPrefs'
 import { formatCell as defaultFormatCell, getRowValue as defaultGetRowValue } from './constants'
 import { rowPassesFilters, sortRows } from './ColumnFilter'
 import { confirmDelete } from '../../lib/confirmDelete'
@@ -16,6 +17,7 @@ import './musteri-table.css'
 /**
  * Shared data table: LTR columns, sticky header, native per-column filter row.
  * Selection stays left; Əməliyyat actions stay right.
+ * Pass prefsKey to persist zoom / filters / sort per table.
  */
 export default function ResizableDataTable({
   columns,
@@ -30,20 +32,35 @@ export default function ResizableDataTable({
   emptyText = 'Qeyd tapılmadı.',
   formatCell = defaultFormatCell,
   getRowValue = defaultGetRowValue,
+  prefsKey = 'default',
 }) {
-  const [zoom, setZoom] = useState(loadTableZoom)
+  const [zoom, setZoom] = useState(() => loadTableZoom(prefsKey))
   const [dragKey, setDragKey] = useState(null)
   const [overKey, setOverKey] = useState(null)
-  const [filters, setFilters] = useState({})
-  const [sort, setSort] = useState({ key: null, dir: 'asc' })
+  const [filters, setFilters] = useState(() => loadTableFilters(prefsKey))
+  const [sort, setSort] = useState(() => loadTableSort(prefsKey))
   const [labelRowHeight, setLabelRowHeight] = useState(40)
   const resizing = useRef(null)
   const labelsRowRef = useRef(null)
   const showActions = typeof renderActions === 'function'
 
   useEffect(() => {
-    saveTableZoom(zoom)
-  }, [zoom])
+    saveTableZoom(prefsKey, zoom)
+  }, [prefsKey, zoom])
+
+  useEffect(() => {
+    saveTableFilters(prefsKey, filters)
+  }, [prefsKey, filters])
+
+  useEffect(() => {
+    saveTableSort(prefsKey, sort)
+  }, [prefsKey, sort])
+
+  useEffect(() => {
+    setZoom(loadTableZoom(prefsKey))
+    setFilters(loadTableFilters(prefsKey))
+    setSort(loadTableSort(prefsKey))
+  }, [prefsKey])
 
   useEffect(() => {
     const el = labelsRowRef.current

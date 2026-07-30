@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase, fetchAllPages } from '../../lib/supabase'
 import ResizableDataTable from '../musteri-bazasi/ResizableDataTable'
+import CollapsibleSummary from '../../components/CollapsibleSummary'
+import { loadUiFlag, saveUiFlag } from '../../lib/uiPrefs'
 import {
   LEDGER_TABLE,
   computeBalances,
@@ -35,6 +37,16 @@ export default function OverviewPage() {
   const [onlyOpen, setOnlyOpen] = useState(true)
   const [borcView, setBorcView] = useState([])
   const [nisyeView, setNisyeView] = useState([])
+  const [borcOpen, setBorcOpen] = useState(() => loadUiFlag('borc-nisye:borc-open', true))
+  const [nisyeOpen, setNisyeOpen] = useState(() => loadUiFlag('borc-nisye:nisye-open', true))
+
+  useEffect(() => {
+    saveUiFlag('borc-nisye:borc-open', borcOpen)
+  }, [borcOpen])
+
+  useEffect(() => {
+    saveUiFlag('borc-nisye:nisye-open', nisyeOpen)
+  }, [nisyeOpen])
 
   useEffect(() => {
     let cancelled = false
@@ -121,6 +133,14 @@ export default function OverviewPage() {
     if (row?.kime) navigate(counterpartPath(row.kime))
   }
 
+  function toggleBorc() {
+    setBorcOpen((open) => !open)
+  }
+
+  function toggleNisye() {
+    setNisyeOpen((open) => !open)
+  }
+
   if (error) {
     return <p className="empty-state" style={{ color: 'var(--color-accent)' }}>{error}</p>
   }
@@ -138,96 +158,123 @@ export default function OverviewPage() {
         </label>
       </div>
 
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 420px), 1fr))',
-          gap: 20,
-          alignItems: 'start',
-        }}
-      >
-        {/* ——— Borc (left) ——— */}
-        <section>
-          <h2 className="card__title" style={{ marginBottom: 12 }}>Borc</h2>
-          {!loading && (
-            <div className="musteri-summary">
-              <div className="musteri-summary__card musteri-summary__card--meta">
-                <div className="musteri-summary__label">Müştəri</div>
-                <div className="musteri-summary__value">{borcView.length}</div>
-              </div>
-              <div className="musteri-summary__card">
-                <div className="musteri-summary__label">Borc Verdim (cəmi)</div>
-                <div className="musteri-summary__value">{formatMoney(borcTotals.borc_verdim)}</div>
-              </div>
-              <div className="musteri-summary__card">
-                <div className="musteri-summary__label">Borc Aldım (cəmi)</div>
-                <div className="musteri-summary__value">{formatMoney(borcTotals.borc_aldim)}</div>
-              </div>
-              <div className="musteri-summary__card">
-                <div className="musteri-summary__label">Qalıq (Borc)</div>
-                <div className="musteri-summary__value">{formatMoney(borcTotals.qaliq_borc)}</div>
+      <div className="borc-nisye-split">
+        <section className={`borc-nisye-panel${borcOpen ? '' : ' borc-nisye-panel--collapsed'}`}>
+          <div className="borc-nisye-panel__head">
+            <h2 className="card__title">Borc</h2>
+            <button
+              type="button"
+              className="borc-nisye-panel__toggle"
+              onClick={toggleBorc}
+              title={borcOpen ? 'Borc bölməsini bağla' : 'Borc bölməsini aç'}
+              aria-expanded={borcOpen}
+            >
+              {borcOpen ? '«' : '»'}
+            </button>
+          </div>
+          {borcOpen && (
+            <div className="borc-nisye-panel__body">
+              {!loading && (
+                <CollapsibleSummary title="Borc cəmləri" storageKey="summary:borc-panel">
+                  <div className="musteri-summary">
+                    <div className="musteri-summary__card musteri-summary__card--meta">
+                      <div className="musteri-summary__label">Müştəri</div>
+                      <div className="musteri-summary__value">{borcView.length}</div>
+                    </div>
+                    <div className="musteri-summary__card">
+                      <div className="musteri-summary__label">Borc Verdim (cəmi)</div>
+                      <div className="musteri-summary__value">{formatMoney(borcTotals.borc_verdim)}</div>
+                    </div>
+                    <div className="musteri-summary__card">
+                      <div className="musteri-summary__label">Borc Aldım (cəmi)</div>
+                      <div className="musteri-summary__value">{formatMoney(borcTotals.borc_aldim)}</div>
+                    </div>
+                    <div className="musteri-summary__card">
+                      <div className="musteri-summary__label">Qalıq (Borc)</div>
+                      <div className="musteri-summary__value">{formatMoney(borcTotals.qaliq_borc)}</div>
+                    </div>
+                  </div>
+                </CollapsibleSummary>
+              )}
+              <div className="card">
+                {loading ? (
+                  <p className="empty-state">Yüklənir…</p>
+                ) : (
+                  <ResizableDataTable
+                    columns={OVERVIEW_BORC_COLUMNS}
+                    rows={borcRows}
+                    formatCell={formatCell}
+                    getRowValue={getBalanceValue}
+                    onRowOpen={openCounterpart}
+                    onDisplayRowsChange={setBorcView}
+                    emptyText="Borc qeydi yoxdur."
+                    prefsKey="borc_overview"
+                  />
+                )}
               </div>
             </div>
           )}
-          <div className="card">
-            {loading ? (
-              <p className="empty-state">Yüklənir…</p>
-            ) : (
-              <ResizableDataTable
-                columns={OVERVIEW_BORC_COLUMNS}
-                rows={borcRows}
-                formatCell={formatCell}
-                getRowValue={getBalanceValue}
-                onRowOpen={openCounterpart}
-                onDisplayRowsChange={setBorcView}
-                emptyText="Borc qeydi yoxdur."
-              />
-            )}
-          </div>
         </section>
 
-        {/* ——— Nisyə (right) ——— */}
-        <section>
-          <h2 className="card__title" style={{ marginBottom: 12 }}>Nisyə</h2>
-          {!loading && (
-            <div className="musteri-summary">
-              <div className="musteri-summary__card musteri-summary__card--meta">
-                <div className="musteri-summary__label">Müştəri</div>
-                <div className="musteri-summary__value">{nisyeView.length}</div>
-              </div>
-              <div className="musteri-summary__card">
-                <div className="musteri-summary__label">Nisyə Verdim (cəmi)</div>
-                <div className="musteri-summary__value">{formatMoney(nisyeTotals.nisye_verdim)}</div>
-              </div>
-              <div className="musteri-summary__card">
-                <div className="musteri-summary__label">Nisyə Aldım (cəmi)</div>
-                <div className="musteri-summary__value">{formatMoney(nisyeTotals.nisye_aldim)}</div>
-              </div>
-              <div className="musteri-summary__card">
-                <div className="musteri-summary__label">Nisyə Ödəniş (cəmi)</div>
-                <div className="musteri-summary__value">{formatMoney(nisyeTotals.nisye_odenis)}</div>
-              </div>
-              <div className="musteri-summary__card">
-                <div className="musteri-summary__label">Qalıq (Nisyə)</div>
-                <div className="musteri-summary__value">{formatMoney(nisyeTotals.qaliq_nisye)}</div>
+        <section className={`borc-nisye-panel${nisyeOpen ? '' : ' borc-nisye-panel--collapsed'}`}>
+          <div className="borc-nisye-panel__head">
+            <h2 className="card__title">Nisyə</h2>
+            <button
+              type="button"
+              className="borc-nisye-panel__toggle"
+              onClick={toggleNisye}
+              title={nisyeOpen ? 'Nisyə bölməsini bağla' : 'Nisyə bölməsini aç'}
+              aria-expanded={nisyeOpen}
+            >
+              {nisyeOpen ? '»' : '«'}
+            </button>
+          </div>
+          {nisyeOpen && (
+            <div className="borc-nisye-panel__body">
+              {!loading && (
+                <CollapsibleSummary title="Nisyə cəmləri" storageKey="summary:nisye-panel">
+                  <div className="musteri-summary">
+                    <div className="musteri-summary__card musteri-summary__card--meta">
+                      <div className="musteri-summary__label">Müştəri</div>
+                      <div className="musteri-summary__value">{nisyeView.length}</div>
+                    </div>
+                    <div className="musteri-summary__card">
+                      <div className="musteri-summary__label">Nisyə Verdim (cəmi)</div>
+                      <div className="musteri-summary__value">{formatMoney(nisyeTotals.nisye_verdim)}</div>
+                    </div>
+                    <div className="musteri-summary__card">
+                      <div className="musteri-summary__label">Nisyə Aldım (cəmi)</div>
+                      <div className="musteri-summary__value">{formatMoney(nisyeTotals.nisye_aldim)}</div>
+                    </div>
+                    <div className="musteri-summary__card">
+                      <div className="musteri-summary__label">Nisyə Ödəniş (cəmi)</div>
+                      <div className="musteri-summary__value">{formatMoney(nisyeTotals.nisye_odenis)}</div>
+                    </div>
+                    <div className="musteri-summary__card">
+                      <div className="musteri-summary__label">Qalıq (Nisyə)</div>
+                      <div className="musteri-summary__value">{formatMoney(nisyeTotals.qaliq_nisye)}</div>
+                    </div>
+                  </div>
+                </CollapsibleSummary>
+              )}
+              <div className="card">
+                {loading ? (
+                  <p className="empty-state">Yüklənir…</p>
+                ) : (
+                  <ResizableDataTable
+                    columns={OVERVIEW_NISYE_COLUMNS}
+                    rows={nisyeRows}
+                    formatCell={formatCell}
+                    getRowValue={getBalanceValue}
+                    onRowOpen={openCounterpart}
+                    onDisplayRowsChange={setNisyeView}
+                    emptyText="Nisyə qeydi yoxdur."
+                    prefsKey="nisye_overview"
+                  />
+                )}
               </div>
             </div>
           )}
-          <div className="card">
-            {loading ? (
-              <p className="empty-state">Yüklənir…</p>
-            ) : (
-              <ResizableDataTable
-                columns={OVERVIEW_NISYE_COLUMNS}
-                rows={nisyeRows}
-                formatCell={formatCell}
-                getRowValue={getBalanceValue}
-                onRowOpen={openCounterpart}
-                onDisplayRowsChange={setNisyeView}
-                emptyText="Nisyə qeydi yoxdur."
-              />
-            )}
-          </div>
         </section>
       </div>
     </>

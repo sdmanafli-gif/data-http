@@ -12,6 +12,7 @@ import {
   formatMoney,
 } from './constants'
 import { LEDGER_TABLE } from '../borc-nisye/constants'
+import CollapsibleSummary from '../../components/CollapsibleSummary'
 import '../../styles/shared.css'
 
 function sumField(rows, key) {
@@ -153,7 +154,6 @@ export default function DepoList() {
           <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Model, IMEI…" />
         </div>
         <Link to="/depo/sutunlar" className="btn btn--secondary">Sütunları idarə et</Link>
-        <Link to="/depo/idxal" className="btn btn--secondary">Excel idxal</Link>
       </div>
 
       {selectedIds.size > 0 && (
@@ -190,24 +190,26 @@ export default function DepoList() {
       )}
 
       {!loading && !colsLoading && (
-        <div className="musteri-summary">
-          <div className="musteri-summary__card">
-            <div className="musteri-summary__label">Mövcud</div>
-            <div className="musteri-summary__value">{availableCount}</div>
+        <CollapsibleSummary title="Cəmlər" storageKey="summary:depo">
+          <div className="musteri-summary">
+            <div className="musteri-summary__card">
+              <div className="musteri-summary__label">Mövcud</div>
+              <div className="musteri-summary__value">{availableCount}</div>
+            </div>
+            <div className="musteri-summary__card">
+              <div className="musteri-summary__label">Ümumi alış</div>
+              <div className="musteri-summary__value">{formatMoney(totals.alis)}</div>
+            </div>
+            <div className="musteri-summary__card">
+              <div className="musteri-summary__label">Ümumi miqdar</div>
+              <div className="musteri-summary__value">{totals.miqdar}</div>
+            </div>
+            <div className="musteri-summary__card musteri-summary__card--meta">
+              <div className="musteri-summary__label">Sətir sayı</div>
+              <div className="musteri-summary__value">{viewRows.length}</div>
+            </div>
           </div>
-          <div className="musteri-summary__card">
-            <div className="musteri-summary__label">Ümumi alış</div>
-            <div className="musteri-summary__value">{formatMoney(totals.alis)}</div>
-          </div>
-          <div className="musteri-summary__card">
-            <div className="musteri-summary__label">Ümumi miqdar</div>
-            <div className="musteri-summary__value">{totals.miqdar}</div>
-          </div>
-          <div className="musteri-summary__card musteri-summary__card--meta">
-            <div className="musteri-summary__label">Sətir sayı</div>
-            <div className="musteri-summary__value">{viewRows.length}</div>
-          </div>
-        </div>
+        </CollapsibleSummary>
       )}
 
       <div className="card">
@@ -223,6 +225,7 @@ export default function DepoList() {
             getRowValue={getRowValue}
             onRowOpen={(row) => navigate(`/depo/${row.id}`)}
             onDisplayRowsChange={setViewRows}
+            prefsKey="depo"
             selection={{
               selectedIds,
               isSelectable: (row) => row.status === 'available',

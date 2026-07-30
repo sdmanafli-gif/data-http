@@ -319,7 +319,10 @@ export function excelRowToForm(excelRow, mapping, columnsByKey) {
     form.veziyyet_manual = false
     const paid = Number(form.verilib) || 0
     const sale = Number(form.satis_qiymeti) || 0
-    form.veziyyet = sale > 0 && paid >= sale ? 'Bitib' : 'Qalıb'
+    const buy = Number(form.alis_qiymeti) || 0
+    if (buy === 0 && sale === 0) form.veziyyet = 'Bitib'
+    else if (sale > 0 && paid >= sale) form.veziyyet = 'Bitib'
+    else form.veziyyet = 'Qalıb'
   }
   return form
 }

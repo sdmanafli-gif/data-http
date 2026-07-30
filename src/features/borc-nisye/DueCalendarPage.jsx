@@ -10,6 +10,7 @@ import {
   formatDate,
   tipLabel,
 } from './constants'
+import CollapsibleSummary from '../../components/CollapsibleSummary'
 import '../../styles/shared.css'
 import '../musteri-bazasi/musteri-table.css'
 import './due-calendar.css'
@@ -414,22 +415,24 @@ export default function DueCalendarPage() {
         )}
       </div>
 
-      <div className="musteri-summary">
-        <div className="musteri-summary__card">
-          <div className="musteri-summary__label">{labels.collect}</div>
-          <div className="musteri-summary__value">{formatMoney(stats.collect)}</div>
-        </div>
-        <div className="musteri-summary__card">
-          <div className="musteri-summary__label">{labels.pay}</div>
-          <div className="musteri-summary__value">{formatMoney(stats.pay)}</div>
-        </div>
-        <div className="musteri-summary__card musteri-summary__card--meta">
-          <div className="musteri-summary__label">Gecikmiş / qeyd sayı</div>
-          <div className="musteri-summary__value">
-            {stats.overdue} / {filteredEvents.length}
+      <CollapsibleSummary title="Cəmlər" storageKey="summary:borc-calendar">
+        <div className="musteri-summary">
+          <div className="musteri-summary__card">
+            <div className="musteri-summary__label">{labels.collect}</div>
+            <div className="musteri-summary__value">{formatMoney(stats.collect)}</div>
+          </div>
+          <div className="musteri-summary__card">
+            <div className="musteri-summary__label">{labels.pay}</div>
+            <div className="musteri-summary__value">{formatMoney(stats.pay)}</div>
+          </div>
+          <div className="musteri-summary__card musteri-summary__card--meta">
+            <div className="musteri-summary__label">Gecikmiş / qeyd sayı</div>
+            <div className="musteri-summary__value">
+              {stats.overdue} / {filteredEvents.length}
+            </div>
           </div>
         </div>
-      </div>
+      </CollapsibleSummary>
 
       <div className="due-cal">
         <div className="card due-cal__month">

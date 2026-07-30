@@ -3,6 +3,10 @@ const { Client } = require('pg')
 
 const sql = fs.readFileSync('setup/tables/10_veziyyet_rules.sql', 'utf8')
 const password = process.env.SUPABASE_DB_PASSWORD
+if (!password) {
+  console.error('Set SUPABASE_DB_PASSWORD')
+  process.exit(1)
+}
 
 async function main() {
   const client = new Client({
@@ -15,17 +19,31 @@ async function main() {
   })
   await client.connect()
   await client.query(sql)
+
+  // Extra backfill for paid-off rows (SQL file already backfills alış=satış=0)
   const r = await client.query(`
     update public.musteri_bazasi
        set veziyyet = 'Bitib',
            veziyyet_manual = false,
            updated_at = now()
-     where veziyyet = 'Qalıb'
+     where coalesce(veziyyet, '') <> 'Məhkəmə'
        and coalesce(satis_qiymeti, 0) > 0
        and coalesce(verilib, 0) >= coalesce(satis_qiymeti, 0)
-    returning id, sira_no, ad_soyad
+       and coalesce(veziyyet, '') <> 'Bitib'
+    returning id
   `)
-  console.log('Updated Qalıb→Bitib:', r.rowCount)
+  console.log('Updated paid-off → Bitib:', r.rowCount)
+
+  const z = await client.query(`
+    select count(*)::int as n
+      from public.musteri_bazasi
+     where coalesce(veziyyet, '') <> 'Məhkəmə'
+       and coalesce(alis_qiymeti, 0) = 0
+       and coalesce(satis_qiymeti, 0) = 0
+       and veziyyet = 'Bitib'
+  `)
+  console.log('Zero alış+satış marked Bitib:', z.rows[0].n)
+
   await client.end()
 }
 

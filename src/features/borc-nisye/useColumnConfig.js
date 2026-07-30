@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabase'
+import { loadLocalColumnSettings, saveLocalColumnSettings } from '../../lib/uiPrefs'
 import {
   COLUMN_SETTINGS_TABLE,
   COLUMN_SETTINGS_KEY,
@@ -8,21 +9,47 @@ import {
 } from './constants'
 
 export function useColumnConfig() {
-  const [columns, setColumns] = useState(() => mergeColumnConfig(null))
+  const tableKey = COLUMN_SETTINGS_KEY
+  const [columns, setColumns] = useState(() =>
+    mergeColumnConfig(loadLocalColumnSettings(tableKey)?.columns)
+  )
   const [loading, setLoading] = useState(true)
   const [settingsId, setSettingsId] = useState(null)
 
   const reload = useCallback(async () => {
     setLoading(true)
+    const local = loadLocalColumnSettings(tableKey)
     const { data } = await supabase
       .from(COLUMN_SETTINGS_TABLE)
       .select('id, columns')
-      .eq('table_key', COLUMN_SETTINGS_KEY)
+      .eq('table_key', tableKey)
       .maybeSingle()
-    setSettingsId(data?.id ?? null)
-    setColumns(mergeColumnConfig(data?.columns))
+    if (data?.columns) {
+      setSettingsId(data.id ?? null)
+      saveLocalColumnSettings(tableKey, data.columns)
+      setColumns(mergeColumnConfig(data.columns))
+    } else if (local?.columns) {
+      setColumns(mergeColumnConfig(local.columns))
+      try {
+        const { data: upserted } = await supabase
+          .from(COLUMN_SETTINGS_TABLE)
+          .upsert(
+            {
+              table_key: tableKey,
+              columns: local.columns,
+              updated_at: new Date().toISOString(),
+            },
+            { onConflict: 'table_key' }
+          )
+          .select('id')
+          .single()
+        if (upserted?.id) setSettingsId(upserted.id)
+      } catch (_) {}
+    } else {
+      setColumns(mergeColumnConfig(null))
+    }
     setLoading(false)
-  }, [])
+  }, [tableKey])
 
   useEffect(() => {
     reload()
@@ -39,25 +66,25 @@ export function useColumnConfig() {
       width: typeof c.width === 'number' ? c.width : undefined,
       system: true,
     }))
+    saveLocalColumnSettings(tableKey, normalized)
+    setColumns(mergeColumnConfig(normalized))
+
     const payload = {
-      table_key: COLUMN_SETTINGS_KEY,
+      table_key: tableKey,
       columns: normalized,
       updated_at: new Date().toISOString(),
     }
     if (settingsId) {
-      const { error } = await supabase.from(COLUMN_SETTINGS_TABLE).update(payload).eq('id', settingsId)
-      if (error) throw error
+      await supabase.from(COLUMN_SETTINGS_TABLE).update(payload).eq('id', settingsId)
     } else {
-      const { data, error } = await supabase
+      const { data } = await supabase
         .from(COLUMN_SETTINGS_TABLE)
         .upsert(payload, { onConflict: 'table_key' })
         .select('id')
         .single()
-      if (error) throw error
       if (data?.id) setSettingsId(data.id)
     }
-    setColumns(mergeColumnConfig(normalized))
   }
 
-  return { columns, loading, saveColumns }
+  return { columns, loading, saveColumns, defaults: DEFAULT_COLUMNS }
 }

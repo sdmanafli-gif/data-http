@@ -7,11 +7,11 @@
  *
  * Matching: İlkin + Aylıq ödənişlər cover schedule FIFO.
  * Faiz Borc is excluded (stays separate).
- * Penalty (display only): 0.05% of aylıq ödəniş × delay days.
+ * Penalty (display only): 0.5% of aylıq ödəniş × delay days.
  */
 
 /** Daily penalty rate vs monthly installment amount */
-export const PENALTY_RATE_PER_DAY = 0.0005 // 0.05%
+export const PENALTY_RATE_PER_DAY = 0.005 // 0.5%
 
 function toYmd(d) {
   const y = d.getFullYear()
