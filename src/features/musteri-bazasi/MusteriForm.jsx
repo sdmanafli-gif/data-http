@@ -88,6 +88,11 @@ function DynamicField({ col, value, onChange, computedDisplay, suggestions }) {
   const inputType =
     col.type === 'date' ? 'date' : col.type === 'number' || col.type === 'money' ? 'number' : 'text'
 
+  const dateHint =
+    col.key === 'birinci_ayliq_odenis_tarixi'
+      ? 'Kredit ödəniş cədvəli bu tarixdən başlayır; növbəti aylar eyni gündə hesablanır. Ödəniş günündən üstünlük götürür.'
+      : null
+
   return (
     <div className="form-group" key={col.key}>
       <label>{col.label}{col.required ? ' *' : ''}</label>
@@ -98,6 +103,9 @@ function DynamicField({ col, value, onChange, computedDisplay, suggestions }) {
         onChange={(e) => onChange(e.target.value)}
         required={col.required}
       />
+      {dateHint && (
+        <p style={{ margin: '4px 0 0', fontSize: 11, color: 'var(--color-text-muted)' }}>{dateHint}</p>
+      )}
     </div>
   )
 }
@@ -268,7 +276,7 @@ export default function MusteriForm() {
     const faiz = Number(form.faiz) || 0
     return {
       gozlenilen_gelir: formatMoney(satis - alis),
-      faktiki_gelir: formatMoney(verilib - alis),
+      faktiki_gelir: formatMoney(verilib + faiz - alis),
       qalan_borc: formatMoney(satis - verilib),
       faiz: formatMoney(faiz),
     }
@@ -311,6 +319,12 @@ export default function MusteriForm() {
     }
     if (!form.ad_soyad?.trim()) {
       setError('Ad Soyad Ata adı doldurulmalıdır.')
+      return
+    }
+
+    const months = Number(form.nece_ay)
+    if (Number.isFinite(months) && months > 0 && !form.birinci_ayliq_odenis_tarixi) {
+      setError('Kredit üçün «Birinci aylıq ödəniş tarixi» doldurulmalıdır.')
       return
     }
 
@@ -412,7 +426,13 @@ export default function MusteriForm() {
           </div>
         </details>
 
-        <PaymentScheduleList record={record} />
+        <PaymentScheduleList
+          record={record}
+          onRecordUpdated={(next) => {
+            setRecord(next)
+            setForm(rowToForm(next, columns))
+          }}
+        />
       </RecordModule>
     )
   }
@@ -486,7 +506,12 @@ export default function MusteriForm() {
                   </span>
                   <div className="musteri-form-dnd__body">
                     <DynamicField
-                      col={col}
+                      col={
+                        col.key === 'birinci_ayliq_odenis_tarixi' &&
+                        Number(form.nece_ay) > 0
+                          ? { ...col, required: true }
+                          : col
+                      }
                       value={getFieldValue(form, col)}
                       onChange={(v) => setField(col, v)}
                       computedDisplay={preview[col.key]}

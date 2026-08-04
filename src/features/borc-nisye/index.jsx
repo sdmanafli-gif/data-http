@@ -4,6 +4,8 @@ import CounterpartDetail from './CounterpartDetail'
 import LedgerForm from './LedgerForm'
 import ExcelImport from './ExcelImport'
 import DueCalendarPage from './DueCalendarPage'
+import SexsiKreditForm from './SexsiKreditForm'
+import SexsiKreditDetail from './SexsiKreditDetail'
 import { ChangeHistoryPage, MODULE_TABLES } from '../change-history'
 import '../../styles/shared.css'
 
@@ -16,6 +18,7 @@ export default function BorcNisyeFeature() {
     location.pathname.includes('/idxal') ||
     location.pathname.includes('/tarixce') ||
     location.pathname.includes('/kalendar') ||
+    location.pathname.includes('/sexsi-kredit') ||
     location.pathname.endsWith('/yeni')
 
   return (
@@ -32,6 +35,13 @@ export default function BorcNisyeFeature() {
             </button>
             <button type="button" className="btn btn--secondary" onClick={() => navigate('/borc-nisye/idxal')}>
               Excel idxal
+            </button>
+            <button
+              type="button"
+              className="btn btn--secondary"
+              onClick={() => navigate('/borc-nisye/sexsi-kredit/yeni')}
+            >
+              Kredit yarat
             </button>
             <button type="button" className="btn btn--primary" onClick={() => navigate('/borc-nisye/yeni')}>
               Yeni əməliyyat
@@ -55,6 +65,9 @@ export default function BorcNisyeFeature() {
           }
         />
         <Route path="yeni" element={<LedgerForm />} />
+        <Route path="sexsi-kredit/yeni" element={<SexsiKreditForm />} />
+        <Route path="sexsi-kredit/:id/redakte" element={<SexsiKreditForm />} />
+        <Route path="sexsi-kredit/:id" element={<SexsiKreditDetail />} />
         <Route path="taraf/:kime" element={<CounterpartDetail />} />
         <Route path="qeyd/:id" element={<LedgerForm />} />
       </Routes>

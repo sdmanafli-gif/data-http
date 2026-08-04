@@ -6,9 +6,9 @@
 -- Qaydalar:
 --   №              → avtomatik (mövcud max + 1)
 --   Alış / Satış   → əl ilə
---   Gözlənilən gəlir = Satış − Alış          (avtomatik)
---   Faktiki gəlir    = Verilib − Alış        (avtomatik)
---   Qalan borc       = Satış − Verilib       (avtomatik)
+--   Gözlənilən gəlir = Satış − Alış                    (avtomatik)
+--   Faktiki gəlir    = Verilib + Faiz − Alış           (avtomatik)
+--   Qalan borc       = Satış − Verilib                 (avtomatik)
 --   Verilib          → başqa cədvəldən gələcək (indi əl ilə / default 0)
 --   Vəziyyət         → Qalıb | Bitib | Məhkəmə
 -- ============================================================
@@ -33,7 +33,9 @@ create table if not exists public.musteri_bazasi (
   gozlenilen_gelir numeric(12, 2)
     generated always as (coalesce(satis_qiymeti, 0) - coalesce(alis_qiymeti, 0)) stored,
   faktiki_gelir numeric(12, 2)
-    generated always as (coalesce(verilib, 0) - coalesce(alis_qiymeti, 0)) stored,
+    generated always as (
+      coalesce(verilib, 0) + coalesce(faiz, 0) - coalesce(alis_qiymeti, 0)
+    ) stored,
   qalan_borc numeric(12, 2)
     generated always as (coalesce(satis_qiymeti, 0) - coalesce(verilib, 0)) stored,
 

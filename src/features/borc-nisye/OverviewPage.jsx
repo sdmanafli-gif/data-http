@@ -13,6 +13,7 @@ import {
   OVERVIEW_BORC_COLUMNS,
   OVERVIEW_NISYE_COLUMNS,
 } from './constants'
+import SexsiKreditPanel from './SexsiKreditPanel'
 import '../musteri-bazasi/musteri-table.css'
 import '../../styles/shared.css'
 
@@ -277,6 +278,8 @@ export default function OverviewPage() {
           )}
         </section>
       </div>
+
+      <SexsiKreditPanel />
     </>
   )
 }

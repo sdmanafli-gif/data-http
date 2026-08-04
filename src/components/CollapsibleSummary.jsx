@@ -9,9 +9,10 @@ export default function CollapsibleSummary({
   children,
   className = '',
   storageKey,
+  defaultOpen = false,
 }) {
   const [open, setOpen] = useState(() =>
-    storageKey ? loadUiFlag(storageKey, false) : false
+    storageKey ? loadUiFlag(storageKey, defaultOpen) : defaultOpen
   )
 
   useEffect(() => {

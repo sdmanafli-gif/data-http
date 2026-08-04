@@ -2,12 +2,254 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 
 const BLANK = '__blank__'
 const EQ = '__eq__:'
+const NUM = '__num__:'
+
+const AMOUNT_OPS = [
+  { value: 'gt', label: '≥ çox' },
+  { value: 'lt', label: '≤ az' },
+  { value: 'between', label: 'arası' },
+  { value: 'eq', label: '= bərabər' },
+]
 
 function selectedToDraft(selected) {
   const q = typeof selected === 'string' ? selected : ''
   if (!q || q === BLANK) return ''
   if (q.startsWith(EQ)) return q.slice(EQ.length)
   return q
+}
+
+export function parseNumFilter(raw) {
+  const q = typeof raw === 'string' ? raw : ''
+  if (!q.startsWith(NUM)) return null
+  const parts = q.slice(NUM.length).split(':')
+  const op = parts[0] || 'gt'
+  const a = parts[1] === undefined || parts[1] === '' ? '' : parts[1]
+  const b = parts[2] === undefined || parts[2] === '' ? '' : parts[2]
+  return { op, a, b }
+}
+
+export function encodeNumFilter(op, a, b = '') {
+  const o = op || 'gt'
+  if (o === 'between') return `${NUM}between:${a ?? ''}:${b ?? ''}`
+  return `${NUM}${o}:${a ?? ''}`
+}
+
+export function encodeExactFilter(value) {
+  if (value == null || String(value).trim() === '') return BLANK
+  return `${EQ}${value}`
+}
+
+export function isAmountColumn(col) {
+  return col?.type === 'money' || col?.type === 'number'
+}
+
+function toNumber(cell) {
+  if (cell === null || cell === undefined || cell === '') return null
+  if (typeof cell === 'number') return Number.isFinite(cell) ? cell : null
+  const cleaned = String(cell)
+    .replace(/\s/g, '')
+    .replace(/AZN/gi, '')
+    .replace(',', '.')
+    .replace(/[^\d.-]/g, '')
+  if (!cleaned || cleaned === '-' || cleaned === '.') return null
+  const n = Number(cleaned)
+  return Number.isFinite(n) ? n : null
+}
+
+function matchesNumFilter(cell, parsed) {
+  if (!parsed) return true
+  const n = toNumber(cell)
+  if (n === null) return false
+  const a = parsed.a === '' || parsed.a == null ? null : Number(parsed.a)
+  const b = parsed.b === '' || parsed.b == null ? null : Number(parsed.b)
+
+  switch (parsed.op) {
+    case 'gt':
+      return a == null || Number.isNaN(a) ? true : n >= a
+    case 'lt':
+      return a == null || Number.isNaN(a) ? true : n <= a
+    case 'eq':
+      return a == null || Number.isNaN(a) ? true : Math.abs(n - a) < 0.0001
+    case 'between': {
+      if (a != null && !Number.isNaN(a) && n < a) return false
+      if (b != null && !Number.isNaN(b) && n > b) return false
+      return true
+    }
+    default:
+      return true
+  }
+}
+
+/** Support typing ">100", ">=100", "<50", "10-200", "10..200" in amount filters. */
+function parseAmountShorthand(q) {
+  const s = String(q).trim().replace(/\s/g, '')
+  let m = s.match(/^(>=|<=|≥|≤|>|<|=)(-?\d+(?:[.,]\d+)?)$/)
+  if (m) {
+    const sym = m[1]
+    const a = m[2].replace(',', '.')
+    if (sym === '>' || sym === '≥' || sym === '>=') return { op: 'gt', a, b: '' }
+    if (sym === '<' || sym === '≤' || sym === '<=') return { op: 'lt', a, b: '' }
+    if (sym === '=') return { op: 'eq', a, b: '' }
+  }
+  m = s.match(/^(-?\d+(?:[.,]\d+)?)(?:\.\.|-|–|—)(-?\d+(?:[.,]\d+)?)$/)
+  if (m) {
+    return { op: 'between', a: m[1].replace(',', '.'), b: m[2].replace(',', '.') }
+  }
+  return null
+}
+
+/**
+ * Filter UI for money/number columns: ≥ / ≤ / arası / =.
+ */
+export function AmountColumnFilter({ columnKey, label, value, onChange }) {
+  const parsed = parseNumFilter(value) || { op: 'gt', a: '', b: '' }
+  const op = AMOUNT_OPS.some((o) => o.value === parsed.op) ? parsed.op : 'gt'
+
+  function emit(nextOp, a, b) {
+    const emptyA = a === '' || a == null
+    const emptyB = b === '' || b == null
+    if (nextOp === 'between') {
+      if (emptyA && emptyB) onChange?.(columnKey, '')
+      else onChange?.(columnKey, encodeNumFilter('between', a ?? '', b ?? ''))
+      return
+    }
+    if (emptyA) onChange?.(columnKey, '')
+    else onChange?.(columnKey, encodeNumFilter(nextOp, a ?? ''))
+  }
+
+  return (
+    <div
+      className="musteri-th__amount-filter"
+      onClick={(e) => e.stopPropagation()}
+      onMouseDown={(e) => e.stopPropagation()}
+    >
+      <select
+        className="musteri-th__filter-op"
+        value={op}
+        onChange={(e) => emit(e.target.value, parsed.a, parsed.b)}
+        aria-label={`${label} müqayisə`}
+        title="Müqayisə"
+      >
+        {AMOUNT_OPS.map((o) => (
+          <option key={o.value} value={o.value}>
+            {o.label}
+          </option>
+        ))}
+      </select>
+      <input
+        type="number"
+        step="any"
+        className="musteri-th__filter-input musteri-th__filter-input--amount"
+        value={parsed.a}
+        onChange={(e) => emit(op, e.target.value, parsed.b)}
+        placeholder={op === 'between' ? 'min' : 'məbləğ'}
+        aria-label={`${label} ${op === 'between' ? 'min' : 'dəyər'}`}
+      />
+      {op === 'between' && (
+        <input
+          type="number"
+          step="any"
+          className="musteri-th__filter-input musteri-th__filter-input--amount"
+          value={parsed.b}
+          onChange={(e) => emit(op, parsed.a, e.target.value)}
+          placeholder="max"
+          aria-label={`${label} max`}
+        />
+      )}
+    </div>
+  )
+}
+
+function FunnelIcon({ active }) {
+  return (
+    <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden>
+      <path
+        d="M1.5 2h9L7.2 6.2V10L4.8 8.8V6.2L1.5 2Z"
+        stroke="currentColor"
+        strokeWidth={active ? 1.6 : 1.25}
+        fill={active ? 'currentColor' : 'none'}
+        fillOpacity={active ? 0.22 : 0}
+      />
+    </svg>
+  )
+}
+
+/**
+ * Filter control inside the column header (funnel → popover).
+ * Replaces the old second filter row under headers.
+ */
+export function HeaderColumnFilter({ column, value, onChange }) {
+  const rootRef = useRef(null)
+  const [open, setOpen] = useState(false)
+  const active = Boolean(value && String(value).trim())
+  const isAmount = isAmountColumn(column)
+
+  useEffect(() => {
+    if (!open) return undefined
+    function onDoc(e) {
+      if (rootRef.current && !rootRef.current.contains(e.target)) setOpen(false)
+    }
+    function onKey(e) {
+      if (e.key === 'Escape') setOpen(false)
+    }
+    document.addEventListener('mousedown', onDoc)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('mousedown', onDoc)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [open])
+
+  return (
+    <div
+      className={`musteri-th__filter-pop${active ? ' musteri-th__filter-pop--active' : ''}${open ? ' musteri-th__filter-pop--open' : ''}`}
+      ref={rootRef}
+      onClick={(e) => e.stopPropagation()}
+      onMouseDown={(e) => e.stopPropagation()}
+    >
+      <button
+        type="button"
+        className="musteri-th__filter-btn"
+        title={active ? 'Filter aktiv' : 'Filter'}
+        aria-label={`${column.label} filter`}
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+      >
+        <FunnelIcon active={active || open} />
+      </button>
+      {open && (
+        <div className="musteri-th__filter-panel">
+          {isAmount ? (
+            <AmountColumnFilter
+              columnKey={column.key}
+              label={column.label}
+              value={value ?? ''}
+              onChange={(_, next) => onChange?.(column.key, next)}
+            />
+          ) : (
+            <input
+              type={column.type === 'date' ? 'date' : 'search'}
+              className="musteri-th__filter-input"
+              value={value ?? ''}
+              onChange={(e) => onChange?.(column.key, e.target.value)}
+              placeholder="Axtar…"
+              aria-label={`${column.label} filter`}
+              autoFocus
+            />
+          )}
+          {active && (
+            <button
+              type="button"
+              className="btn btn--secondary musteri-th__filter-clear"
+              onClick={() => onChange?.(column.key, '')}
+            >
+              Təmizlə
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  )
 }
 
 /**
@@ -149,6 +391,26 @@ export function rowPassesFilters(row, filters, columns, getRowValue) {
       continue
     }
 
+    const numParsed = parseNumFilter(q)
+    if (numParsed) {
+      if (!matchesNumFilter(cell, numParsed)) return false
+      continue
+    }
+
+    // Plain numeric compare for money/number when user types ">100" / "<50" / "10-20"
+    if (isAmountColumn(col)) {
+      const shorthand = parseAmountShorthand(q)
+      if (shorthand) {
+        if (!matchesNumFilter(cell, shorthand)) return false
+        continue
+      }
+      const asNum = toNumber(q)
+      if (asNum != null) {
+        if (!matchesNumFilter(cell, { op: 'eq', a: String(asNum), b: '' })) return false
+        continue
+      }
+    }
+
     const cellText = isBlank ? '' : String(cell)
 
     if (q.startsWith(EQ)) {
@@ -176,9 +438,9 @@ export function sortRows(rows, sort, columns, getRowValue) {
     if (aEmpty) return 1
     if (bEmpty) return -1
     if (col.type === 'money' || col.type === 'number') {
-      const an = Number(av)
-      const bn = Number(bv)
-      if (!Number.isNaN(an) && !Number.isNaN(bn)) return (an - bn) * dir
+      const an = toNumber(av)
+      const bn = toNumber(bv)
+      if (an != null && bn != null) return (an - bn) * dir
     }
     if (col.type === 'date') {
       const at = new Date(av).getTime()

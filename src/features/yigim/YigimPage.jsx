@@ -9,10 +9,11 @@ import {
 import { ODENISLER_TABLE } from '../odenisler/constants'
 import {
   canBuildSchedule,
-  buildPaymentSchedule,
+  resolvePaymentSchedule,
   matchPaymentsToSchedule,
   statusLabel,
 } from '../musteri-bazasi/paymentSchedule'
+import ResizableDataTable from '../musteri-bazasi/ResizableDataTable'
 import CollapsibleSummary from '../../components/CollapsibleSummary'
 import '../../styles/shared.css'
 import '../musteri-bazasi/musteri-table.css'
@@ -38,6 +39,45 @@ const STATUS_FILTERS = [
   { value: 'paid', label: 'Ödənib' },
   { value: 'partial', label: 'Qismən' },
 ]
+
+const YIGIM_COLS = [
+  { key: 'tarix', label: 'Vaxtı', type: 'date' },
+  { key: 'sira_no', label: '#', type: 'number' },
+  { key: 'ad_soyad', label: 'Müştəri', type: 'text' },
+  { key: 'veziyyet', label: 'Vəziyyət', type: 'text' },
+  { key: 'model', label: 'Model', type: 'text' },
+  { key: 'label', label: 'Növ', type: 'text' },
+  { key: 'owed', label: 'Məbləğ', type: 'money' },
+  { key: 'paid', label: 'Ödənilib', type: 'money' },
+  { key: 'remaining', label: 'Qalan', type: 'money' },
+  { key: 'faktiki_gelir', label: 'Faktiki gəlir', type: 'money' },
+  { key: 'delayDays', label: 'Gecikmə', type: 'number' },
+  { key: 'penalty', label: 'Cərimə', type: 'money' },
+  { key: 'statusText', label: 'Status', type: 'text' },
+]
+
+function profileFaktikiGelir(m) {
+  if (m?.faktiki_gelir != null && m.faktiki_gelir !== '') {
+    const n = Number(m.faktiki_gelir)
+    if (Number.isFinite(n)) return n
+  }
+  return (
+    (Number(m?.verilib) || 0) +
+    (Number(m?.faiz) || 0) -
+    (Number(m?.alis_qiymeti) || 0)
+  )
+}
+
+function yigimGetValue(row, col) {
+  const key = col?.key
+  if (!key) return ''
+  if (key === 'delayDays') {
+    const n = Number(row.delayDays) || 0
+    return n > 0 ? n : ''
+  }
+  const v = row[key]
+  return v == null ? '' : v
+}
 
 function toYmd(d) {
   const y = d.getFullYear()
@@ -134,7 +174,7 @@ export function buildYigimRows(musteriler, payments) {
   const rows = []
   for (const m of musteriler || []) {
     if (!canBuildSchedule(m)) continue
-    const schedule = buildPaymentSchedule(m)
+    const schedule = resolvePaymentSchedule(m)
     const matched = matchPaymentsToSchedule(schedule, byMusteri.get(m.id) || [], {
       aylıq: Number(m.ayliq_odenis) || 0,
     })
@@ -157,7 +197,9 @@ export function buildYigimRows(musteriler, payments) {
         delayDays: line.delayDays,
         penalty: line.penalty,
         status: line.status,
+        statusText: statusLabel(line.status),
         coveredAt: line.coveredAt,
+        faktiki_gelir: profileFaktikiGelir(m),
       })
     }
   }
@@ -182,6 +224,7 @@ export default function YigimPage() {
   const [customTo, setCustomTo] = useState('')
   const [statusFilter, setStatusFilter] = useState('pending')
   const [search, setSearch] = useState('')
+  const [viewRows, setViewRows] = useState([])
 
   const [rows, setRows] = useState([])
   const [loading, setLoading] = useState(true)
@@ -196,7 +239,7 @@ export default function YigimPage() {
           supabase
             .from(MUSTERI_TABLE)
             .select(
-              'id, sira_no, ad_soyad, model, nomre_1, veziyyet, satis_qiymeti, ayliq_odenis, nece_ay, odenis_gunu, verilme_tarixi'
+              'id, sira_no, ad_soyad, model, nomre_1, veziyyet, satis_qiymeti, alis_qiymeti, verilib, faiz, faktiki_gelir, ayliq_odenis, nece_ay, odenis_gunu, birinci_ayliq_odenis_tarixi, odenis_qrafiki, verilme_tarixi'
             )
             .eq('veziyyet', 'Qalıb')
             .order('sira_no', { ascending: true })
@@ -228,7 +271,7 @@ export default function YigimPage() {
     [period, year, month, weekStart, customFrom, customTo]
   )
 
-  const filtered = useMemo(() => {
+  const periodFiltered = useMemo(() => {
     const term = search.trim().toLowerCase()
     return rows.filter((r) => {
       if (!inRange(r.tarix, range.from, range.to)) return false
@@ -250,15 +293,134 @@ export default function YigimPage() {
     let remaining = 0
     let penalty = 0
     let lateCount = 0
-    for (const r of filtered) {
+    const faktikiByMusteri = new Map()
+    for (const r of viewRows) {
       owed += r.owed || 0
       paid += r.paid || 0
       remaining += r.remaining || 0
       penalty += r.penalty || 0
       if (r.status === 'gecikib' || (r.delayDays > 0 && r.remaining > 0)) lateCount += 1
+      if (r.musteriId && !faktikiByMusteri.has(r.musteriId)) {
+        faktikiByMusteri.set(r.musteriId, Number(r.faktiki_gelir) || 0)
+      }
     }
-    return { owed, paid, remaining, penalty, lateCount, count: filtered.length }
-  }, [filtered])
+    let faktiki = 0
+    for (const v of faktikiByMusteri.values()) faktiki += v
+    return {
+      owed,
+      paid,
+      remaining,
+      penalty,
+      faktiki,
+      lateCount,
+      count: viewRows.length,
+      musteriCount: faktikiByMusteri.size,
+    }
+  }, [viewRows])
+
+  function formatYigimCell(value, col) {
+    if (col.type === 'money') return formatMoney(value)
+    if (col.type === 'date' || col.key === 'tarix') return formatDate(value)
+    if (col.key === 'delayDays') {
+      const n = Number(value) || 0
+      return n > 0 ? `${n} gün` : '—'
+    }
+    if (value === null || value === undefined || value === '') return '—'
+    return String(value)
+  }
+
+  function renderYigimCell(row, col, raw) {
+    if (col.key === 'sira_no') {
+      return <Link to={`/musteri-bazasi?open=${row.musteriId}`}>{row.sira_no ?? '—'}</Link>
+    }
+    if (col.key === 'ad_soyad') {
+      return (
+        <Link to={`/musteri-bazasi?open=${row.musteriId}`} title={row.nomre_1 || undefined}>
+          {row.ad_soyad}
+        </Link>
+      )
+    }
+    if (col.key === 'delayDays') {
+      return row.delayDays > 0 ? (
+        <span className="musteri-schedule__overdue">{row.delayDays} gün</span>
+      ) : (
+        '—'
+      )
+    }
+    if (col.key === 'penalty') {
+      return row.penalty > 0 ? (
+        <span className="musteri-schedule__overdue">{formatMoney(row.penalty)}</span>
+      ) : (
+        '—'
+      )
+    }
+    if (col.key === 'statusText') {
+      return (
+        <span
+          className={
+            row.status === 'gecikib'
+              ? 'musteri-schedule__overdue'
+              : row.status === 'odenib_gec'
+                ? 'musteri-schedule__paid-late'
+                : row.status === 'odenib'
+                  ? 'musteri-schedule__paid'
+                  : 'musteri-schedule__upcoming'
+          }
+        >
+          {row.statusText}
+        </span>
+      )
+    }
+    return formatYigimCell(raw, col)
+  }
+
+  function getYigimRowClass(row) {
+    if (row.status === 'gecikib' || (row.delayDays > 0 && row.remaining > 0)) {
+      return 'musteri-schedule__row--late'
+    }
+    if (row.status === 'odenib_gec') return 'musteri-schedule__row--paid-late'
+    if (row.status === 'odenib') return 'musteri-schedule__row--paid'
+    return ''
+  }
+
+  function renderYigimFooter(displayRows) {
+    let owed = 0
+    let paid = 0
+    let remaining = 0
+    let penalty = 0
+    const faktikiByMusteri = new Map()
+    for (const r of displayRows) {
+      owed += r.owed || 0
+      paid += r.paid || 0
+      remaining += r.remaining || 0
+      penalty += r.penalty || 0
+      if (r.musteriId && !faktikiByMusteri.has(r.musteriId)) {
+        faktikiByMusteri.set(r.musteriId, Number(r.faktiki_gelir) || 0)
+      }
+    }
+    let faktiki = 0
+    for (const v of faktikiByMusteri.values()) faktiki += v
+    return (
+      <tr className="yigim-table-totals">
+        <td colSpan={6}>Cəmi ({displayRows.length} sətir)</td>
+        <td className="num">{formatMoney(owed)}</td>
+        <td className="num">{formatMoney(paid)}</td>
+        <td className="num">{formatMoney(remaining)}</td>
+        <td className="num" title="Unikal müştərilərin faktiki gəlir cəmi">
+          {formatMoney(faktiki)}
+        </td>
+        <td>—</td>
+        <td className="num">
+          {penalty > 0 ? (
+            <span className="musteri-schedule__overdue">{formatMoney(penalty)}</span>
+          ) : (
+            formatMoney(0)
+          )}
+        </td>
+        <td>—</td>
+      </tr>
+    )
+  }
 
   const title = periodTitle(period, { year, month, weekStart, customFrom, customTo })
 
@@ -396,12 +558,18 @@ export default function YigimPage() {
               <div className="musteri-summary__value">{formatMoney(totals.penalty)}</div>
             </div>
             <div className="musteri-summary__card">
+              <div className="musteri-summary__label">Faktiki gəlir (müştərilər)</div>
+              <div className="musteri-summary__value">{formatMoney(totals.faktiki)}</div>
+            </div>
+            <div className="musteri-summary__card">
               <div className="musteri-summary__label">Gecikmiş sətir</div>
               <div className="musteri-summary__value">{totals.lateCount}</div>
             </div>
             <div className="musteri-summary__card musteri-summary__card--meta">
-              <div className="musteri-summary__label">Sətir sayı</div>
-              <div className="musteri-summary__value">{totals.count}</div>
+              <div className="musteri-summary__label">Sətir / müştəri</div>
+              <div className="musteri-summary__value">
+                {totals.count} / {totals.musteriCount}
+              </div>
             </div>
           </div>
         </CollapsibleSummary>
@@ -410,91 +578,19 @@ export default function YigimPage() {
       <div className="card">
         {loading ? (
           <p className="empty-state">Yüklənir…</p>
-        ) : filtered.length === 0 ? (
-          <p className="empty-state">Bu filtrə uyğun yığım yoxdur.</p>
         ) : (
-          <div className="table-wrap">
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>Vaxtı</th>
-                  <th>#</th>
-                  <th>Müştəri</th>
-                  <th>Vəziyyət</th>
-                  <th>Model</th>
-                  <th>Növ</th>
-                  <th>Məbləğ</th>
-                  <th>Ödənilib</th>
-                  <th>Qalan</th>
-                  <th>Gecikmə</th>
-                  <th>Cərimə</th>
-                  <th>Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filtered.map((r) => (
-                  <tr
-                    key={r.id}
-                    className={
-                      r.status === 'gecikib' || (r.delayDays > 0 && r.remaining > 0)
-                        ? 'musteri-schedule__row--late'
-                        : r.status === 'odenib' || r.status === 'odenib_gec'
-                          ? 'musteri-schedule__row--paid'
-                          : undefined
-                    }
-                  >
-                    <td>{formatDate(r.tarix)}</td>
-                    <td>
-                      <Link to={`/musteri-bazasi?open=${r.musteriId}`}>
-                        {r.sira_no ?? '—'}
-                      </Link>
-                    </td>
-                    <td>
-                      <Link to={`/musteri-bazasi?open=${r.musteriId}`}>
-                        {r.ad_soyad}
-                      </Link>
-                      {r.nomre_1 ? (
-                        <div style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>{r.nomre_1}</div>
-                      ) : null}
-                    </td>
-                    <td>{r.veziyyet || '—'}</td>
-                    <td>{r.model || '—'}</td>
-                    <td>{r.label}</td>
-                    <td style={{ fontWeight: 600 }}>{formatMoney(r.owed)}</td>
-                    <td>{formatMoney(r.paid)}</td>
-                    <td>{formatMoney(r.remaining)}</td>
-                    <td>
-                      {r.delayDays > 0 ? (
-                        <span className="musteri-schedule__overdue">{r.delayDays} gün</span>
-                      ) : (
-                        '—'
-                      )}
-                    </td>
-                    <td>
-                      {r.penalty > 0 ? (
-                        <span className="musteri-schedule__overdue">{formatMoney(r.penalty)}</span>
-                      ) : (
-                        '—'
-                      )}
-                    </td>
-                    <td>
-                      <span
-                        className={
-                          r.status === 'gecikib' || r.status === 'odenib_gec'
-                            ? 'musteri-schedule__overdue'
-                            : r.status === 'odenib'
-                              ? 'musteri-schedule__paid'
-                              : 'musteri-schedule__upcoming'
-                        }
-                      >
-                        {statusLabel(r.status)}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <ResizableDataTable
+            columns={YIGIM_COLS}
+            rows={periodFiltered}
+            formatCell={formatYigimCell}
+            getRowValue={yigimGetValue}
+            renderCell={renderYigimCell}
+            getRowClassName={getYigimRowClass}
+            renderFooter={renderYigimFooter}
+            onDisplayRowsChange={setViewRows}
+            emptyText="Bu filtrə uyğun yığım yoxdur."
+            prefsKey="yigim"
+          />
         )}
       </div>
     </>
