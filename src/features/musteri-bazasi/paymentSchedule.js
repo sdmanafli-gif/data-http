@@ -3,7 +3,13 @@
  *
  * İlkin ödəniş = satış_qiyməti − (aylıq_odeniş × neçə_ay)  (never negative)
  * İlkin date   = verilmə_tarixi
- * Then neçə_ay monthly payments on ödəniş_günü, starting next month.
+ *
+ * Aylıq dates:
+ *   - If birinci_ayliq_odenis_tarixi is set → use it for month 1,
+ *     then same day each following month.
+ *   - Else → verilmə month + i, on ödəniş_günü.
+ *
+ * Custom override: row.odenis_qrafiki (jsonb array) when present.
  *
  * Matching: İlkin + Aylıq ödənişlər cover schedule FIFO.
  * Faiz Borc is excluded (stays separate).
@@ -59,17 +65,21 @@ export function canBuildSchedule(row) {
   if (!parseYmd(row.verilme_tarixi)) return false
   const months = Number(row.nece_ay)
   const aylıq = Number(row.ayliq_odenis)
-  const payDay = Number(row.odenis_gunu)
   const sale = Number(row.satis_qiymeti)
   if (!Number.isFinite(months) || months <= 0) return false
   if (!Number.isFinite(aylıq) || aylıq < 0) return false
-  if (!Number.isFinite(payDay) || payDay < 1 || payDay > 31) return false
   if (!Number.isFinite(sale)) return false
+
+  const firstMonthly = parseYmd(row.birinci_ayliq_odenis_tarixi)
+  if (firstMonthly) return true
+
+  const payDay = Number(row.odenis_gunu)
+  if (!Number.isFinite(payDay) || payDay < 1 || payDay > 31) return false
   return true
 }
 
 /**
- * Build installment rows for one müştəri credit record.
+ * Build installment rows for one müştəri credit record (always auto formula).
  * @returns {Array<{ type, label, installment, tarix, mebleg }>}
  */
 export function buildPaymentSchedule(row) {
@@ -79,6 +89,7 @@ export function buildPaymentSchedule(row) {
   const months = Number(row.nece_ay)
   const aylıq = Number(row.ayliq_odenis)
   const payDay = Number(row.odenis_gunu)
+  const firstMonthly = parseYmd(row.birinci_ayliq_odenis_tarixi)
   const ilkin = computeIlkinOdenis(row)
 
   const schedule = []
@@ -92,14 +103,22 @@ export function buildPaymentSchedule(row) {
   })
 
   for (let i = 1; i <= months; i += 1) {
-    const dueMonth = start.getMonth() + i
-    const dueYear = start.getFullYear() + Math.floor(dueMonth / 12)
-    const monthIndex = ((dueMonth % 12) + 12) % 12
+    let tarix
+    if (firstMonthly) {
+      const anchorDay = firstMonthly.getDate()
+      const due = new Date(firstMonthly.getFullYear(), firstMonthly.getMonth() + (i - 1), 1)
+      tarix = dateWithDay(due.getFullYear(), due.getMonth(), anchorDay)
+    } else {
+      const dueMonth = start.getMonth() + i
+      const dueYear = start.getFullYear() + Math.floor(dueMonth / 12)
+      const monthIndex = ((dueMonth % 12) + 12) % 12
+      tarix = dateWithDay(dueYear, monthIndex, payDay)
+    }
     schedule.push({
       type: 'ayliq',
       label: `Aylıq ödəniş (${i}/${months})`,
       installment: i,
-      tarix: dateWithDay(dueYear, monthIndex, payDay),
+      tarix,
       mebleg: aylıq,
     })
   }
@@ -107,14 +126,136 @@ export function buildPaymentSchedule(row) {
   return schedule
 }
 
+/** Normalize a custom/auto schedule line list for storage & display. */
+export function normalizeScheduleLines(lines, row) {
+  const months = Number(row?.nece_ay) || 0
+  return (lines || []).map((item, idx) => {
+    const type = item.type === 'ilkin' ? 'ilkin' : 'ayliq'
+    const installment =
+      type === 'ilkin' ? 0 : Number(item.installment) > 0 ? Number(item.installment) : idx
+    return {
+      type,
+      label:
+        type === 'ilkin'
+          ? 'İlkin ödəniş'
+          : `Aylıq ödəniş (${installment}${months ? `/${months}` : ''})`,
+      installment,
+      tarix: item.tarix ? String(item.tarix).slice(0, 10) : '',
+      mebleg: Math.round((Number(item.mebleg) || 0) * 100) / 100,
+    }
+  })
+}
+
+/**
+ * Prefer saved custom qrafik; otherwise auto-build.
+ */
+export function resolvePaymentSchedule(row) {
+  if (Array.isArray(row?.odenis_qrafiki) && row.odenis_qrafiki.length > 0) {
+    return normalizeScheduleLines(row.odenis_qrafiki, row)
+  }
+  return buildPaymentSchedule(row)
+}
+
+export function scheduleIsCustom(row) {
+  return Array.isArray(row?.odenis_qrafiki) && row.odenis_qrafiki.length > 0
+}
+
+/**
+ * Validate schedule against müştəri credit fields.
+ * Returns warning strings (empty = OK).
+ */
+export function validatePaymentSchedule(schedule, row) {
+  const warnings = []
+  const lines = normalizeScheduleLines(schedule, row)
+  if (!lines.length) {
+    warnings.push('Qrafik boşdur.')
+    return warnings
+  }
+
+  const sale = Number(row?.satis_qiymeti)
+  const months = Number(row?.nece_ay)
+  const aylıq = Number(row?.ayliq_odenis)
+  const expectedIlkin = computeIlkinOdenis(row)
+  const totals = scheduleTotals(lines)
+
+  if (Number.isFinite(sale)) {
+    const diff = Math.round((totals.cemi - sale) * 100) / 100
+    if (Math.abs(diff) > 0.01) {
+      warnings.push(
+        `Qrafik cəmi (${formatAz(totals.cemi)}) satış qiymətinə (${formatAz(sale)}) bərabər deyil. Fərq: ${formatAz(diff)}.`
+      )
+    }
+  }
+
+  const aylıqLines = lines.filter((l) => l.type === 'ayliq')
+  const ilkinLines = lines.filter((l) => l.type === 'ilkin')
+
+  if (Number.isFinite(months) && months > 0 && aylıqLines.length !== months) {
+    warnings.push(
+      `Aylıq ödəniş sayı (${aylıqLines.length}) neçə aya (${months}) uyğun gəlmir.`
+    )
+  }
+
+  if (ilkinLines.length !== 1) {
+    warnings.push(`İlkin ödəniş sətiri ${ilkinLines.length} dəfədir (1 olmalıdır).`)
+  }
+
+  if (Number.isFinite(aylıq) && aylıqLines.some((l) => Math.abs((Number(l.mebleg) || 0) - aylıq) > 0.01)) {
+    warnings.push(
+      `Bəzi aylıq məbləğlər aylıq ödənişə (${formatAz(aylıq)}) uyğun gəlmir.`
+    )
+  }
+
+  if (
+    expectedIlkin != null &&
+    ilkinLines[0] &&
+    Math.abs((Number(ilkinLines[0].mebleg) || 0) - expectedIlkin) > 0.01
+  ) {
+    warnings.push(
+      `İlkin ödəniş (${formatAz(ilkinLines[0].mebleg)}) gözlənilənə (${formatAz(expectedIlkin)}) uyğun gəlmir.`
+    )
+  }
+
+  for (let i = 0; i < lines.length; i += 1) {
+    if (!parseYmd(lines[i].tarix)) {
+      warnings.push(`Sətir ${i + 1}: tarix düzgün deyil.`)
+    }
+    if ((Number(lines[i].mebleg) || 0) < 0) {
+      warnings.push(`Sətir ${i + 1}: məbləğ mənfi ola bilməz.`)
+    }
+  }
+
+  for (let i = 1; i < lines.length; i += 1) {
+    const a = lines[i - 1].tarix
+    const b = lines[i].tarix
+    if (a && b && b < a) {
+      warnings.push(`Tarixlər artan sırada deyil (${a} → ${b}).`)
+      break
+    }
+  }
+
+  const firstCustom = aylıqLines[0]?.tarix
+  const firstField = row?.birinci_ayliq_odenis_tarixi
+    ? String(row.birinci_ayliq_odenis_tarixi).slice(0, 10)
+    : null
+  if (firstField && firstCustom && firstCustom !== firstField) {
+    warnings.push(
+      `Birinci aylıq tarix (${firstCustom}) sahədəki tarixdən (${firstField}) fərqlidir.`
+    )
+  }
+
+  return warnings
+}
+
+function formatAz(n) {
+  const x = Number(n)
+  if (!Number.isFinite(x)) return '—'
+  return `${x.toLocaleString('az-AZ', { minimumFractionDigits: 0, maximumFractionDigits: 2 })} AZN`
+}
+
 /**
  * Apply İlkin/Aylıq payments onto schedule (FIFO by due date).
  * Faiz tip is ignored.
- *
- * @param {Array} schedule from buildPaymentSchedule
- * @param {Array<{ tip, mebleg, tarix }>} payments
- * @param {{ aylıq?: number, today?: string }} opts
- * @returns matched schedule lines with paid/remaining/delay/penalty
  */
 export function matchPaymentsToSchedule(schedule, payments, opts = {}) {
   const today = opts.today || toYmd(new Date())
@@ -128,10 +269,10 @@ export function matchPaymentsToSchedule(schedule, payments, opts = {}) {
     owed: Number(item.mebleg) || 0,
     paid: 0,
     remaining: Number(item.mebleg) || 0,
-    coveredAt: null, // ymd when fully paid
+    coveredAt: null,
     delayDays: 0,
     penalty: 0,
-    status: 'gozleyir', // gozleyir | qismən | odenib | gecikib
+    status: 'gozleyir',
   }))
 
   const usable = (payments || [])
@@ -147,7 +288,6 @@ export function matchPaymentsToSchedule(schedule, payments, opts = {}) {
       return 0
     })
 
-  // Apply each payment left-to-right across unpaid schedule lines
   for (const pay of usable) {
     let left = pay.mebleg
     for (const line of lines) {
@@ -172,7 +312,6 @@ export function matchPaymentsToSchedule(schedule, payments, opts = {}) {
       continue
     }
 
-    // Delay: if fully paid after due → coveredAt − due; if still open and due passed → today − due
     let delay = 0
     if (line.remaining <= 0 && line.coveredAt) {
       delay = Math.max(0, daysBetween(line.tarix, line.coveredAt))
@@ -222,13 +361,10 @@ export function matchedScheduleTotals(matched) {
   }
 }
 
-/**
- * Flatten all credit müştəri schedules into calendar events (always "collect").
- */
 export function buildAllPaymentEvents(rows, { today = toYmd(new Date()) } = {}) {
   const list = []
   for (const row of rows || []) {
-    const schedule = buildPaymentSchedule(row)
+    const schedule = resolvePaymentSchedule(row)
     for (const item of schedule) {
       list.push({
         id: `${row.id}-${item.type}-${item.installment}`,

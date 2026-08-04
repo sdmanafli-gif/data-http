@@ -62,6 +62,16 @@ export const DEFAULT_COLUMNS = [
   { key: 'bitme_tarixi', label: 'Bitmə tarixi', type: 'date', visible: true, formVisible: true, readonly: false, system: true, group: 'record' },
   { key: 'nece_ay', label: 'Neçə ay', type: 'number', visible: true, formVisible: true, readonly: false, system: true, group: 'record' },
   { key: 'odenis_gunu', label: 'Ödəniş günü', type: 'number', visible: true, formVisible: true, readonly: false, system: true, group: 'record' },
+  {
+    key: 'birinci_ayliq_odenis_tarixi',
+    label: 'Birinci aylıq ödəniş tarixi',
+    type: 'date',
+    visible: true,
+    formVisible: true,
+    readonly: false,
+    system: true,
+    group: 'record',
+  },
   { key: 'ayliq_odenis', label: 'Aylıq ödəniş', type: 'money', visible: true, formVisible: true, readonly: false, system: true, group: 'record' },
   { key: 'faiz', label: 'Faiz (cərimə)', type: 'money', visible: true, formVisible: true, readonly: true, system: true, group: 'meta' },
   { key: 'model', label: 'Model', type: 'text', visible: true, formVisible: true, readonly: false, system: true, group: 'record' },
@@ -107,6 +117,7 @@ export const MUSTERI_VIEW_SECTIONS = [
       'ayliq_odenis',
       'nece_ay',
       'odenis_gunu',
+      'birinci_ayliq_odenis_tarixi',
       'verilme_tarixi',
       'bitme_tarixi',
       'veziyyet',
@@ -342,6 +353,33 @@ export function formatMoney(value) {
   return `${n.toLocaleString('az-AZ', { minimumFractionDigits: 0, maximumFractionDigits: 2 })} AZN`
 }
 
+/**
+ * Semantic money color classes for table cells.
+ * Neutral: alış / satış / aylıq · Green: verilib / gözlənilən · Red: qalan borc
+ * Faktiki: >0 green, <0 red, 0 neutral.
+ */
+export function moneyCellClass(col, value) {
+  if (col?.type !== 'money') return undefined
+  const key = col.key
+  const n = value === null || value === undefined || value === '' ? null : Number(value)
+  const finite = n != null && Number.isFinite(n)
+
+  if (key === 'alis_qiymeti' || key === 'satis_qiymeti' || key === 'ayliq_odenis') {
+    return 'num num--neutral'
+  }
+  if (key === 'verilib' || key === 'gozlenilen_gelir') {
+    return 'num num--pos'
+  }
+  if (key === 'qalan_borc') {
+    return 'num num--neg'
+  }
+  if (key === 'faktiki_gelir') {
+    if (!finite || n === 0) return 'num num--neutral'
+    return n > 0 ? 'num num--pos' : 'num num--neg'
+  }
+  return 'num num--neutral'
+}
+
 export function formatCell(value, col) {
   if (col?.type === 'files' || col?.key === 'senedler') return formatSenedlerCount(value)
   if (col?.type === 'checkbox') return value ? 'Bəli' : 'Xeyr'
@@ -484,7 +522,7 @@ export function toMusterilerPayload(form) {
 
 const SYSTEM_DB_KEYS = [
   'musteri_id', 'ad_soyad', 'alis_qiymeti', 'satis_qiymeti', 'verilib',
-  'verilme_tarixi', 'bitme_tarixi', 'nece_ay', 'odenis_gunu', 'ayliq_odenis', 'faiz',
+  'verilme_tarixi', 'bitme_tarixi', 'nece_ay', 'odenis_gunu', 'birinci_ayliq_odenis_tarixi', 'ayliq_odenis', 'faiz',
   'model', 'reng', 'icloud', 'icloud_bagli_nomre', 'itunes', 'itunes_bagli_nomre',
   'imei_1', 'imei_2', 'yaddas', 'kimden_alinib', 'battery_faiz', 'muqavile_nomresi',
   'nomre_1', 'nomre_2', 'nomre_3', 'nomre_4', 'nomre_5', 'zamin', 'kommentler', 'veziyyet',

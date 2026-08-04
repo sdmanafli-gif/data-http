@@ -82,7 +82,13 @@ export default function MusteriRecordModule({ record, onClose, onEdit, onUpdated
         </div>
       </details>
 
-      <PaymentScheduleList record={row} />
+      <PaymentScheduleList
+        record={row}
+        onRecordUpdated={(next) => {
+          setRow(next)
+          onUpdated?.(next)
+        }}
+      />
       <ClientPaymentsPanel musteriId={row.id} />
     </RecordModule>
   )

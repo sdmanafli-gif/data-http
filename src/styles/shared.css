@@ -46,6 +46,105 @@
   border-bottom: 1px solid var(--color-border);
 }
 
+/* Design G + Forest: solid accent header band, compact body */
+.data-table--band {
+  --table-row-h: 40px;
+  --table-cell-pad-x: 12px;
+  border-collapse: separate;
+  border-spacing: 0;
+  background: var(--color-table-shell);
+  table-layout: fixed;
+  width: 100%;
+}
+
+.data-table--band thead th {
+  box-sizing: border-box;
+  height: 42px;
+  padding: 0 var(--table-cell-pad-x);
+  vertical-align: middle;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--color-table-header-text);
+  background: var(--color-table-header);
+  border: none;
+  white-space: nowrap;
+  overflow: visible;
+}
+
+.data-table--band thead th:first-child {
+  border-radius: var(--radius-row) 0 0 0;
+}
+
+.data-table--band thead th:last-child {
+  border-radius: 0 var(--radius-row) 0 0;
+}
+
+.data-table--band tbody td {
+  box-sizing: border-box;
+  height: var(--table-row-h);
+  max-height: var(--table-row-h);
+  padding: 0 var(--table-cell-pad-x);
+  vertical-align: middle;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  line-height: 1.3;
+  background: var(--color-table-row);
+  border-bottom: 1px solid var(--color-border);
+  color: var(--color-text);
+}
+
+.data-table--band tbody tr:nth-child(even) td {
+  background: var(--color-table-row-alt);
+}
+
+.data-table tbody tr:nth-child(even) {
+  background: var(--color-table-row-alt);
+}
+
+.data-table--band tbody tr:hover td {
+  background: var(--color-table-accent-bg);
+}
+
+.data-table--band tbody tr.musteri-schedule__row--late td {
+  background: var(--color-danger-bg);
+}
+
+.data-table--band tbody tr.musteri-schedule__row--paid td {
+  background: var(--color-success-bg);
+}
+
+.data-table--band tbody tr.musteri-schedule__row--paid-late td {
+  background: var(--color-warning-bg);
+}
+
+.data-table--band tbody td.empty-state {
+  height: auto;
+  max-height: none;
+  white-space: normal;
+  text-align: center;
+  padding: 24px 12px;
+}
+
+.data-table--band tfoot td {
+  background: var(--color-table-accent-bg);
+  border-top: 2px solid var(--color-table-accent);
+  border-bottom: none;
+  height: auto;
+  max-height: none;
+  padding: 10px var(--table-cell-pad-x);
+  font-weight: 700;
+  white-space: nowrap;
+  color: var(--color-table-accent-hover);
+}
+
+.data-table--band .num {
+  font-variant-numeric: tabular-nums;
+}
+
 .data-table th {
   font-weight: 600;
   color: var(--color-text-muted);
@@ -57,9 +156,82 @@
   background: rgba(0, 0, 0, 0.02);
 }
 
+.data-table tfoot td {
+  font-weight: 700;
+  background: var(--color-bg);
+  border-top: 2px solid var(--color-border);
+  font-variant-numeric: tabular-nums;
+}
+
+.data-table .yigim-table-totals td {
+  position: sticky;
+  bottom: 0;
+  z-index: 1;
+  box-shadow: 0 -1px 0 var(--color-border);
+}
+
+.musteri-table-shell .yigim-table-totals td {
+  background: var(--color-bg);
+}
+
+.yigim-table-wrap {
+  max-height: min(70vh, 720px);
+  overflow: auto;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+}
+
+.yigim-table-wrap .data-table {
+  border-collapse: separate;
+  border-spacing: 0;
+  margin: 0;
+}
+
+.yigim-table-wrap thead th {
+  position: sticky;
+  z-index: 2;
+  background: var(--color-bg);
+}
+
+.yigim-table-wrap .musteri-thead__labels th {
+  top: 0;
+  z-index: 3;
+}
+
+.yigim-table-wrap .musteri-thead__filters th {
+  top: var(--musteri-label-row-h, 40px);
+  z-index: 2;
+  background: var(--color-surface);
+}
+
 .data-table .num {
   text-align: right;
   font-variant-numeric: tabular-nums;
+}
+
+.data-table .num--neutral {
+  color: var(--color-text);
+  font-weight: 600;
+}
+
+.data-table .num--pos {
+  color: var(--color-success);
+  font-weight: 600;
+}
+
+.data-table .num--neg {
+  color: var(--color-danger);
+  font-weight: 600;
+}
+
+.data-table .num--debt {
+  color: var(--color-debt);
+  font-weight: 600;
+}
+
+.data-table .num--zero {
+  color: var(--color-success);
+  font-weight: 600;
 }
 
 .btn {

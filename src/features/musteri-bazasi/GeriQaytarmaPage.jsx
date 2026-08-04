@@ -41,6 +41,7 @@ const MUSTERI_EDIT_KEYS = [
   'nece_ay',
   'ayliq_odenis',
   'odenis_gunu',
+  'birinci_ayliq_odenis_tarixi',
   'verilme_tarixi',
   'bitme_tarixi',
   'model',

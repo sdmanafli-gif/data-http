@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
 import { supabase, fetchAllPages } from '../../lib/supabase'
 import {
   ODENISLER_TABLE,
@@ -9,9 +9,26 @@ import {
   formatDate,
   sumPaymentsByType,
 } from './constants'
+import ResizableDataTable from '../musteri-bazasi/ResizableDataTable'
 import CollapsibleSummary from '../../components/CollapsibleSummary'
 import '../musteri-bazasi/musteri-table.css'
 import '../../styles/shared.css'
+
+const ODENIS_COLUMNS = [
+  { key: 'tarix', label: 'Tarix', type: 'date', visible: true, width: 120 },
+  { key: 'sira_no', label: '#', type: 'number', visible: true, width: 70 },
+  { key: 'ad_soyad', label: 'Ad Soyad Ata adı', type: 'text', visible: true, width: 200 },
+  { key: 'tip_label', label: 'Tip', type: 'text', visible: true, width: 130 },
+  { key: 'mebleg', label: 'Məbləğ', type: 'money', visible: true, width: 120 },
+  { key: 'qeyd', label: 'Qeyd', type: 'text', visible: true, width: 180 },
+]
+
+function formatOdenisCell(value, col) {
+  if (col?.type === 'money') return formatMoney(value)
+  if (col?.type === 'date' || col?.key === 'tarix') return formatDate(value)
+  if (value === null || value === undefined || value === '') return '—'
+  return String(value)
+}
 
 export default function OdenisList() {
   const navigate = useNavigate()
@@ -20,6 +37,7 @@ export default function OdenisList() {
   const [error, setError] = useState(null)
   const [search, setSearch] = useState('')
   const [tipFilter, setTipFilter] = useState('')
+  const [viewRows, setViewRows] = useState([])
 
   async function load() {
     setLoading(true)
@@ -52,10 +70,23 @@ export default function OdenisList() {
     return () => clearTimeout(t)
   }, [search, tipFilter])
 
-  const totals = useMemo(() => sumPaymentsByType(items), [items])
+  const rows = useMemo(
+    () =>
+      (items || []).map((r) => ({
+        ...r,
+        tip_label: tipLabel(r.tip),
+      })),
+    [items]
+  )
+
+  const totals = useMemo(() => sumPaymentsByType(viewRows.length ? viewRows : rows), [viewRows, rows])
 
   if (error) {
-    return <p className="empty-state" style={{ color: 'var(--color-accent)' }}>{error}</p>
+    return (
+      <p className="empty-state" style={{ color: 'var(--color-accent)' }}>
+        {error}
+      </p>
+    )
   }
 
   return (
@@ -74,7 +105,9 @@ export default function OdenisList() {
           <select value={tipFilter} onChange={(e) => setTipFilter(e.target.value)}>
             <option value="">Hamısı</option>
             {PAYMENT_TYPES.map((t) => (
-              <option key={t.value} value={t.value}>{t.label}</option>
+              <option key={t.value} value={t.value}>
+                {t.label}
+              </option>
             ))}
           </select>
         </div>
@@ -101,7 +134,7 @@ export default function OdenisList() {
             </div>
             <div className="musteri-summary__card musteri-summary__card--meta">
               <div className="musteri-summary__label">Sətir sayı</div>
-              <div className="musteri-summary__value">{items.length}</div>
+              <div className="musteri-summary__value">{viewRows.length || rows.length}</div>
             </div>
           </div>
         </CollapsibleSummary>
@@ -110,39 +143,16 @@ export default function OdenisList() {
       <div className="card">
         {loading ? (
           <p className="empty-state">Yüklənir…</p>
-        ) : items.length === 0 ? (
-          <p className="empty-state">Ödəniş yoxdur.</p>
         ) : (
-          <div className="table-wrap">
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>Tarix</th>
-                  <th>#</th>
-                  <th>Ad Soyad Ata adı</th>
-                  <th>Tip</th>
-                  <th>Məbləğ</th>
-                  <th>Qeyd</th>
-                </tr>
-              </thead>
-              <tbody>
-                {items.map((row) => (
-                  <tr
-                    key={row.id}
-                    style={{ cursor: 'pointer' }}
-                    onClick={() => navigate(`/odenisler/${row.id}`)}
-                  >
-                    <td>{formatDate(row.tarix)}</td>
-                    <td>{row.sira_no ?? '—'}</td>
-                    <td>{row.ad_soyad || '—'}</td>
-                    <td>{tipLabel(row.tip)}</td>
-                    <td style={{ fontWeight: 600 }}>{formatMoney(row.mebleg)}</td>
-                    <td>{row.qeyd || '—'}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <ResizableDataTable
+            columns={ODENIS_COLUMNS}
+            rows={rows}
+            formatCell={formatOdenisCell}
+            onRowOpen={(row) => navigate(`/odenisler/${row.id}`)}
+            onDisplayRowsChange={setViewRows}
+            emptyText="Ödəniş yoxdur."
+            prefsKey="odenisler"
+          />
         )}
       </div>
     </>

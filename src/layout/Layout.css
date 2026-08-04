@@ -155,11 +155,22 @@
 }
 
 .layout__nav-section {
-  margin-bottom: var(--space-lg);
+  margin-bottom: var(--space-sm);
 }
 
 .layout__nav-section:last-child {
   margin-bottom: 0;
+}
+
+.layout__nav-section--divided {
+  margin-top: var(--space-md);
+  padding-top: var(--space-md);
+  border-top: 1px solid var(--color-border);
+}
+
+.layout--sidebar-collapsed .layout__nav-section--divided {
+  margin-top: var(--space-sm);
+  padding-top: var(--space-sm);
 }
 
 .layout__nav-section-title {

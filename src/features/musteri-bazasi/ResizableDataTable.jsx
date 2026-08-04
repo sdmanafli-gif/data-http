@@ -9,13 +9,13 @@ import {
   loadTableSort,
   saveTableSort,
 } from '../../lib/uiPrefs'
-import { formatCell as defaultFormatCell, getRowValue as defaultGetRowValue } from './constants'
-import { rowPassesFilters, sortRows } from './ColumnFilter'
+import { formatCell as defaultFormatCell, getRowValue as defaultGetRowValue, moneyCellClass } from './constants'
+import { rowPassesFilters, sortRows, HeaderColumnFilter } from './ColumnFilter'
 import { confirmDelete } from '../../lib/confirmDelete'
 import './musteri-table.css'
 
 /**
- * Shared data table: LTR columns, sticky header, native per-column filter row.
+ * Shared data table — single compact header with in-header filters (funnel).
  * Selection stays left; Əməliyyat actions stay right.
  * Pass prefsKey to persist zoom / filters / sort per table.
  */
@@ -26,6 +26,8 @@ export default function ResizableDataTable({
   onResizeColumn,
   renderActions,
   renderCell,
+  renderFooter,
+  getRowClassName,
   onRowOpen,
   selection,
   onDisplayRowsChange,
@@ -33,24 +35,27 @@ export default function ResizableDataTable({
   formatCell = defaultFormatCell,
   getRowValue = defaultGetRowValue,
   prefsKey = 'default',
+  /** Controlled filters (optional). When set with onFiltersChange, parent owns filter state. */
+  filters: filtersProp,
+  onFiltersChange,
 }) {
+  const controlled = typeof onFiltersChange === 'function'
   const [zoom, setZoom] = useState(() => loadTableZoom(prefsKey))
   const [dragKey, setDragKey] = useState(null)
   const [overKey, setOverKey] = useState(null)
-  const [filters, setFilters] = useState(() => loadTableFilters(prefsKey))
+  const [internalFilters, setInternalFilters] = useState(() => loadTableFilters(prefsKey))
   const [sort, setSort] = useState(() => loadTableSort(prefsKey))
-  const [labelRowHeight, setLabelRowHeight] = useState(40)
   const resizing = useRef(null)
-  const labelsRowRef = useRef(null)
   const showActions = typeof renderActions === 'function'
+  const filters = controlled ? filtersProp || {} : internalFilters
 
   useEffect(() => {
     saveTableZoom(prefsKey, zoom)
   }, [prefsKey, zoom])
 
   useEffect(() => {
-    saveTableFilters(prefsKey, filters)
-  }, [prefsKey, filters])
+    if (!controlled) saveTableFilters(prefsKey, internalFilters)
+  }, [prefsKey, internalFilters, controlled])
 
   useEffect(() => {
     saveTableSort(prefsKey, sort)
@@ -58,19 +63,9 @@ export default function ResizableDataTable({
 
   useEffect(() => {
     setZoom(loadTableZoom(prefsKey))
-    setFilters(loadTableFilters(prefsKey))
+    if (!controlled) setInternalFilters(loadTableFilters(prefsKey))
     setSort(loadTableSort(prefsKey))
-  }, [prefsKey])
-
-  useEffect(() => {
-    const el = labelsRowRef.current
-    if (!el || typeof ResizeObserver === 'undefined') return undefined
-    const update = () => setLabelRowHeight(Math.ceil(el.getBoundingClientRect().height) || 40)
-    update()
-    const ro = new ResizeObserver(update)
-    ro.observe(el)
-    return () => ro.disconnect()
-  }, [columns, selection, showActions, zoom])
+  }, [prefsKey, controlled])
 
   useEffect(() => {
     function onMove(e) {
@@ -162,16 +157,19 @@ export default function ResizableDataTable({
   }
 
   function setColumnFilter(key, value) {
-    setFilters((prev) => {
+    const apply = (prev) => {
       const next = { ...prev }
       if (value == null || String(value).trim() === '') delete next[key]
       else next[key] = String(value)
       return next
-    })
+    }
+    if (controlled) onFiltersChange(apply(filters))
+    else setInternalFilters(apply)
   }
 
   function clearAllFilters() {
-    setFilters({})
+    if (controlled) onFiltersChange({})
+    else setInternalFilters({})
     setSort({ key: null, dir: 'asc' })
   }
 
@@ -197,20 +195,22 @@ export default function ResizableDataTable({
         onDragLeave={() => setOverKey((k) => (k === c.key ? null : k))}
       >
         <div className="musteri-th__row">
-          <span
-            className="musteri-th__drag"
-            draggable
-            onDragStart={(e) => onDragStart(e, c.key)}
-            onDragEnd={() => {
-              setDragKey(null)
-              setOverKey(null)
-            }}
-            title="Sürükleyib sütun sırasını dəyişin"
-          >
-            <span className="musteri-th__handle" aria-hidden>
-              ⋮⋮
+          {typeof onReorderColumns === 'function' && (
+            <span
+              className="musteri-th__drag"
+              draggable
+              onDragStart={(e) => onDragStart(e, c.key)}
+              onDragEnd={() => {
+                setDragKey(null)
+                setOverKey(null)
+              }}
+              title="Sürükleyib sütun sırasını dəyişin"
+            >
+              <span className="musteri-th__handle" aria-hidden>
+                ⋮⋮
+              </span>
             </span>
-          </span>
+          )}
           <button
             type="button"
             className="musteri-th__sort"
@@ -222,38 +222,31 @@ export default function ResizableDataTable({
               {sort.key === c.key ? (sort.dir === 'asc' ? '↑' : '↓') : ''}
             </span>
           </button>
+          <HeaderColumnFilter
+            column={c}
+            value={filters[c.key] ?? ''}
+            onChange={setColumnFilter}
+          />
         </div>
-        <span
-          className="musteri-th__resizer"
-          onMouseDown={(e) => startResize(e, c)}
-          title="Eni dəyişin"
-        />
-      </th>
-    )
-  }
-
-  function renderFilterCell(c) {
-    const type = c.type === 'date' ? 'date' : c.type === 'number' || c.type === 'money' ? 'search' : 'search'
-    return (
-      <th key={`f-${c.key}`} className="musteri-th musteri-th--filter">
-        <input
-          type={type === 'date' ? 'date' : 'search'}
-          className="musteri-th__filter-input"
-          value={filters[c.key] ?? ''}
-          onChange={(e) => setColumnFilter(c.key, e.target.value)}
-          placeholder="Axtar…"
-          aria-label={`${c.label} filter`}
-          onClick={(e) => e.stopPropagation()}
-        />
+        {typeof onResizeColumn === 'function' && (
+          <span
+            className="musteri-th__resizer"
+            onMouseDown={(e) => startResize(e, c)}
+            title="Eni dəyişin"
+          />
+        )}
       </th>
     )
   }
 
   function renderBodyCell(row, c) {
+    const raw = getRowValue(row, c)
+    const moneyish = c.type === 'money' || c.type === 'number'
+    const moneyTone = c.type === 'money' ? moneyCellClass(c, raw) : moneyish ? 'num' : undefined
     return (
       <td
         key={c.key}
-        className={c.type === 'money' || c.type === 'number' ? 'num' : undefined}
+        className={moneyTone}
         style={{ width: c.width || 160 }}
         onClick={(e) => {
           if (e.target.closest('input, select, textarea, button, a, label')) {
@@ -261,9 +254,7 @@ export default function ResizableDataTable({
           }
         }}
       >
-        {renderCell
-          ? renderCell(row, c, getRowValue(row, c))
-          : formatCell(getRowValue(row, c), c)}
+        {renderCell ? renderCell(row, c, raw) : formatCell(raw, c)}
       </td>
     )
   }
@@ -287,7 +278,7 @@ export default function ResizableDataTable({
           </button>
         )}
         <span className="musteri-table-toolbar__hint">
-          Başlığa klik = sırala · altdakı xana = filter
+          Başlıq = sırala · huni = filter · məbləğ ≥ / ≤ / arası
           {displayRows.length !== (rows || []).length
             ? ` · ${displayRows.length} / ${(rows || []).length}`
             : ` · ${displayRows.length} sətir`}
@@ -296,12 +287,9 @@ export default function ResizableDataTable({
 
       <div className="musteri-table-shell">
         <div style={{ zoom, transformOrigin: 'top left' }}>
-          <table
-            className="data-table data-table--friendly"
-            style={{ '--musteri-label-row-h': `${labelRowHeight}px` }}
-          >
+          <table className="data-table data-table--friendly data-table--band">
             <thead>
-              <tr className="musteri-thead__labels" ref={labelsRowRef}>
+              <tr className="musteri-thead__labels">
                 {selection && (
                   <th className="musteri-th musteri-th--sticky-left" style={{ width: 44, minWidth: 44 }} title="Seç">
                     <span className="musteri-th__label">✓</span>
@@ -312,15 +300,6 @@ export default function ResizableDataTable({
                   <th className="musteri-th musteri-th--actions" style={{ width: 160, minWidth: 140 }}>
                     Əməliyyat
                   </th>
-                )}
-              </tr>
-              <tr className="musteri-thead__filters">
-                {selection && (
-                  <th className="musteri-th musteri-th--filter musteri-th--sticky-left" style={{ width: 44 }} />
-                )}
-                {columns.map((c) => renderFilterCell(c))}
-                {showActions && (
-                  <th className="musteri-th musteri-th--filter musteri-th--actions" />
                 )}
               </tr>
             </thead>
@@ -337,10 +316,13 @@ export default function ResizableDataTable({
                 displayRows.map((row) => {
                   const selectable = selection?.isSelectable ? selection.isSelectable(row) : true
                   const checked = Boolean(selection?.selectedIds?.has?.(row.id))
+                  const extraClass = getRowClassName?.(row) || ''
                   return (
                     <tr
                       key={row.id}
-                      className={onRowOpen ? 'data-table__row--clickable' : undefined}
+                      className={[onRowOpen ? 'data-table__row--clickable' : '', extraClass]
+                        .filter(Boolean)
+                        .join(' ') || undefined}
                       onClick={onRowOpen ? () => onRowOpen(row) : undefined}
                       onKeyDown={
                         onRowOpen
@@ -385,6 +367,9 @@ export default function ResizableDataTable({
                 })
               )}
             </tbody>
+            {typeof renderFooter === 'function' && displayRows.length > 0 && (
+              <tfoot>{renderFooter(displayRows, columns)}</tfoot>
+            )}
           </table>
         </div>
       </div>

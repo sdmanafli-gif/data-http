@@ -44,11 +44,14 @@ export default function Layout({ children }) {
         </div>
 
         <nav className="layout__nav">
-          {navSections.map((section) => (
-            <div key={section.id} className="layout__nav-section">
-              {!collapsed && (
+          {navSections.map((section, sectionIndex) => (
+            <div
+              key={section.id}
+              className={`layout__nav-section${sectionIndex > 0 ? ' layout__nav-section--divided' : ''}`}
+            >
+              {!collapsed && section.label ? (
                 <div className="layout__nav-section-title">{section.label}</div>
-              )}
+              ) : null}
               <ul className="layout__nav-list">
                 {section.items.map((item) => (
                   <li key={item.path}>

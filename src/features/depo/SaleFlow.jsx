@@ -79,6 +79,7 @@ export default function SaleFlow() {
     nece_ay: '',
     ayliq_odenis: '',
     odenis_gunu: '',
+    birinci_ayliq_odenis_tarixi: '',
     verilme_tarixi: new Date().toISOString().slice(0, 10),
     bitme_tarixi: '',
     veziyyet: 'Qalıb',
@@ -240,6 +241,7 @@ export default function SaleFlow() {
         nece_ay: '',
         ayliq_odenis: '',
         odenis_gunu: '',
+        birinci_ayliq_odenis_tarixi: '',
         bitme_tarixi: '',
       }))
       return
@@ -253,6 +255,7 @@ export default function SaleFlow() {
           nece_ay: '',
           ayliq_odenis: '',
           odenis_gunu: '',
+          birinci_ayliq_odenis_tarixi: '',
           bitme_tarixi: '',
           veziyyet_manual: false,
         })
@@ -377,6 +380,10 @@ export default function SaleFlow() {
       setError('Kredit üçün «Neçə ay» doldurulmalıdır.')
       return
     }
+    if (saleType === 'kredit' && !form.birinci_ayliq_odenis_tarixi) {
+      setError('Kredit üçün «Birinci aylıq ödəniş tarixi» doldurulmalıdır.')
+      return
+    }
 
     setSaving(true)
     try {
@@ -418,6 +425,7 @@ export default function SaleFlow() {
           nece_ay: form.nece_ay,
           ayliq_odenis: form.ayliq_odenis,
           odenis_gunu: form.odenis_gunu,
+          birinci_ayliq_odenis_tarixi: form.birinci_ayliq_odenis_tarixi,
           verilme_tarixi: form.verilme_tarixi,
           bitme_tarixi: form.bitme_tarixi,
           veziyyet: form.veziyyet || 'Qalıb',
@@ -906,6 +914,20 @@ export default function SaleFlow() {
                   <div className="form-group">
                     <label>Ödəniş günü (1–31)</label>
                     <input type="number" min={1} max={31} value={form.odenis_gunu} onChange={(e) => setForm((f) => ({ ...f, odenis_gunu: e.target.value }))} />
+                  </div>
+                  <div className="form-group">
+                    <label>Birinci aylıq ödəniş tarixi *</label>
+                    <input
+                      type="date"
+                      required
+                      value={form.birinci_ayliq_odenis_tarixi}
+                      onChange={(e) =>
+                        setForm((f) => ({ ...f, birinci_ayliq_odenis_tarixi: e.target.value }))
+                      }
+                    />
+                    <p style={{ margin: '4px 0 0', fontSize: 11, color: 'var(--color-text-muted)' }}>
+                      Ödəniş cədvəli bu tarixdən başlayır; növbəti aylar eyni gündə hesablanır.
+                    </p>
                   </div>
                   <div className="form-group">
                     <label>Verilmə tarixi</label>
