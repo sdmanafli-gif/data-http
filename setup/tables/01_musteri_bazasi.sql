@@ -6,9 +6,10 @@
 -- Qaydalar:
 --   №              → avtomatik (mövcud max + 1)
 --   Alış / Satış   → əl ilə
---   Gözlənilən gəlir = Satış − Alış                    (avtomatik)
---   Faktiki gəlir    = Verilib + Faiz − Alış           (avtomatik)
+--   Gözlənilən gəlir = Satış − Alış − Satıcı faizi       (avtomatik)
+--   Faktiki gəlir    = Verilib + Faiz − Alış − Satıcı faizi (avtomatik)
 --   Qalan borc       = Satış − Verilib                 (avtomatik)
+--   Satıcı faizi     = işçi komissiyası (AZN), alışın üstünə
 --   Verilib          → başqa cədvəldən gələcək (indi əl ilə / default 0)
 --   Vəziyyət         → Qalıb | Bitib | Məhkəmə
 -- ============================================================
@@ -28,13 +29,20 @@ create table if not exists public.musteri_bazasi (
 
   -- Ödənilən məbləğ (sonra ödəniş cədvəlindən yenilənəcək)
   verilib numeric(12, 2) not null default 0,
+  faiz numeric(12, 2),
+  satici text,
+  satici_faizi numeric(12, 2) not null default 0,
 
   -- Hesablanan sütunlar (yalnız oxunur — INSERT/UPDATE ilə yazılmır)
+  -- Gözlənilən = Satış − Alış − Satıcı faizi
+  -- Faktiki     = Verilib + Faiz − Alış − Satıcı faizi
   gozlenilen_gelir numeric(12, 2)
-    generated always as (coalesce(satis_qiymeti, 0) - coalesce(alis_qiymeti, 0)) stored,
+    generated always as (
+      coalesce(satis_qiymeti, 0) - coalesce(alis_qiymeti, 0) - coalesce(satici_faizi, 0)
+    ) stored,
   faktiki_gelir numeric(12, 2)
     generated always as (
-      coalesce(verilib, 0) + coalesce(faiz, 0) - coalesce(alis_qiymeti, 0)
+      coalesce(verilib, 0) + coalesce(faiz, 0) - coalesce(alis_qiymeti, 0) - coalesce(satici_faizi, 0)
     ) stored,
   qalan_borc numeric(12, 2)
     generated always as (coalesce(satis_qiymeti, 0) - coalesce(verilib, 0)) stored,
@@ -44,7 +52,6 @@ create table if not exists public.musteri_bazasi (
   bitme_tarixi date,
   nece_ay int,
   ayliq_odenis numeric(12, 2),
-  faiz numeric(12, 2),
 
   -- Cihaz
   model text,

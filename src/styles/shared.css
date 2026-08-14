@@ -318,6 +318,117 @@
   border-color: var(--color-accent);
 }
 
+.form-group--invalid label {
+  color: var(--color-accent);
+}
+
+.form-group--invalid input,
+.form-group--invalid select,
+.form-group--invalid textarea,
+.form-group--invalid .searchable-select__control input {
+  border-color: var(--color-accent);
+  background: color-mix(in srgb, var(--color-accent) 6%, white);
+}
+
+.form-group__error {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: var(--color-accent);
+}
+
+/* Searchable combobox (müştəri / təklif / seçim) */
+.searchable-select {
+  position: relative;
+}
+
+.searchable-select__control {
+  position: relative;
+  max-width: 400px;
+}
+
+.searchable-select__control input {
+  width: 100%;
+  max-width: 100%;
+  padding-right: 56px;
+}
+
+.searchable-select__control--open input {
+  border-color: var(--color-accent);
+}
+
+.searchable-select__clear,
+.searchable-select__chevron {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  border: none;
+  background: transparent;
+  color: var(--color-text-muted);
+  line-height: 1;
+}
+
+.searchable-select__clear {
+  right: 28px;
+  cursor: pointer;
+  font-size: 18px;
+  padding: 0 4px;
+}
+
+.searchable-select__chevron {
+  right: 10px;
+  pointer-events: none;
+  font-size: 12px;
+}
+
+.searchable-select__list {
+  position: absolute;
+  z-index: 40;
+  left: 0;
+  right: 0;
+  max-width: 400px;
+  max-height: 260px;
+  overflow: auto;
+  margin: 4px 0 0;
+  padding: 4px 0;
+  list-style: none;
+  background: #fff;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
+}
+
+.searchable-select__empty {
+  padding: 10px 12px;
+  font-size: 13px;
+  color: var(--color-text-muted);
+}
+
+.searchable-select__option {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: none;
+  background: transparent;
+  padding: 8px 12px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--color-text);
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.searchable-select__option:hover,
+.searchable-select__option--highlight {
+  background: rgba(31, 77, 58, 0.08);
+}
+
+.searchable-select__option--active {
+  font-weight: 600;
+  color: var(--color-table-header, #1f4d3a);
+}
+
 .form-row {
   display: flex;
   flex-wrap: wrap;

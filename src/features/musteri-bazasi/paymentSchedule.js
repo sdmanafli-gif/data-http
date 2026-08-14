@@ -12,8 +12,8 @@
  * Custom override: row.odenis_qrafiki (jsonb array) when present.
  *
  * Matching: İlkin + Aylıq ödənişlər cover schedule FIFO.
- * Faiz Borc is excluded (stays separate).
- * Penalty (display only): 0.5% of aylıq ödəniş × delay days.
+ * Faiz Borc payments cover per-line cərimə FIFO (earliest installments first).
+ * Penalty (display): 0.5% of aylıq ödəniş × delay days.
  */
 
 /** Daily penalty rate vs monthly installment amount */
@@ -124,6 +124,24 @@ export function buildPaymentSchedule(row) {
   }
 
   return schedule
+}
+
+/**
+ * Build schedule for a new credit sale, optionally overriding ilkin amount/date
+ * (used when down payment is partial and remaining is due later → Yığım).
+ */
+export function buildSaleScheduleWithIlkin(row, { ilkinMebleg, ilkinTarix } = {}) {
+  const base = buildPaymentSchedule(row)
+  if (!base.length) return null
+  const patched = base.map((line) => {
+    if (line.type !== 'ilkin') return line
+    return {
+      ...line,
+      mebleg: ilkinMebleg != null ? Number(ilkinMebleg) : line.mebleg,
+      tarix: ilkinTarix ? String(ilkinTarix).slice(0, 10) : line.tarix,
+    }
+  })
+  return normalizeScheduleLines(patched, row)
 }
 
 /** Normalize a custom/auto schedule line list for storage & display. */
@@ -255,7 +273,7 @@ function formatAz(n) {
 
 /**
  * Apply İlkin/Aylıq payments onto schedule (FIFO by due date).
- * Faiz tip is ignored.
+ * Then allocate Faiz payments onto per-line cərimə (FIFO: first installments first).
  */
 export function matchPaymentsToSchedule(schedule, payments, opts = {}) {
   const today = opts.today || toYmd(new Date())
@@ -272,6 +290,8 @@ export function matchPaymentsToSchedule(schedule, payments, opts = {}) {
     coveredAt: null,
     delayDays: 0,
     penalty: 0,
+    penaltyPaid: 0,
+    penaltyRemaining: 0,
     status: 'gozleyir',
   }))
 
@@ -309,6 +329,8 @@ export function matchPaymentsToSchedule(schedule, payments, opts = {}) {
       line.status = 'odenib'
       line.delayDays = 0
       line.penalty = 0
+      line.penaltyPaid = 0
+      line.penaltyRemaining = 0
       continue
     }
 
@@ -323,6 +345,8 @@ export function matchPaymentsToSchedule(schedule, payments, opts = {}) {
       delay > 0 && aylıq > 0
         ? Math.round(aylıq * PENALTY_RATE_PER_DAY * delay * 100) / 100
         : 0
+    line.penaltyPaid = 0
+    line.penaltyRemaining = line.penalty
 
     if (line.remaining <= 0) {
       line.status = delay > 0 ? 'odenib_gec' : 'odenib'
@@ -335,29 +359,127 @@ export function matchPaymentsToSchedule(schedule, payments, opts = {}) {
     }
   }
 
+  // Faiz ödənişləri → cərimə örtülməsi (əvvəlki sətirlər / vaxtı keçənlər əvvəl)
+  const faizPays = (payments || [])
+    .filter((p) => p && p.tip === 'faiz')
+    .map((p) => ({
+      mebleg: Number(p.mebleg) || 0,
+      tarix: p.tarix ? String(p.tarix).slice(0, 10) : today,
+    }))
+    .filter((p) => p.mebleg > 0)
+    .sort((a, b) => {
+      if (a.tarix !== b.tarix) return a.tarix.localeCompare(b.tarix)
+      return 0
+    })
+
+  for (const pay of faizPays) {
+    let left = pay.mebleg
+    for (const line of lines) {
+      if (left <= 0) break
+      if (line.penaltyRemaining <= 0) continue
+      const take = Math.min(line.penaltyRemaining, left)
+      line.penaltyPaid = Math.round((line.penaltyPaid + take) * 100) / 100
+      line.penaltyRemaining = Math.round((line.penaltyRemaining - take) * 100) / 100
+      left = Math.round((left - take) * 100) / 100
+      if (line.penaltyRemaining <= 0.001) line.penaltyRemaining = 0
+    }
+  }
+
   return lines
 }
 
-export function matchedScheduleTotals(matched) {
+export function matchedScheduleTotals(matched, payments = []) {
   let owed = 0
   let paid = 0
   let remaining = 0
   let penalty = 0
+  let penaltyPaidAllocated = 0
+  let penaltyRemaining = 0
   let delayMax = 0
   for (const line of matched || []) {
     owed += Number(line.owed) || 0
     paid += Number(line.paid) || 0
     remaining += Number(line.remaining) || 0
     penalty += Number(line.penalty) || 0
+    penaltyPaidAllocated += Number(line.penaltyPaid) || 0
+    penaltyRemaining += Number(line.penaltyRemaining) || 0
     delayMax = Math.max(delayMax, Number(line.delayDays) || 0)
   }
+
+  let faizPaid = 0
+  for (const p of payments || []) {
+    if (p?.tip === 'faiz') faizPaid += Number(p.mebleg) || 0
+  }
+  faizPaid = Math.round(faizPaid * 100) / 100
+  const cerimeQaliq = Math.max(0, Math.round((penalty - faizPaid) * 100) / 100)
+
   return {
     owed,
     paid,
     remaining,
-    penalty,
+    penalty: Math.round(penalty * 100) / 100,
+    /** Sum of Faiz Borc payments from ödənişlər */
+    penaltyPaid: faizPaid,
+    /** Cərimə − faiz ödənilib (not below 0) */
+    penaltyRemaining: cerimeQaliq,
+    penaltyPaidAllocated: Math.round(penaltyPaidAllocated * 100) / 100,
     delayMax,
     count: (matched || []).length,
+  }
+}
+
+/**
+ * Debt due as of today from matched schedule lines (unpaid amounts with tarix ≤ today).
+ * Helps answer: "customer missed N months — how much do they owe today?"
+ */
+export function dueAsOfTodayTotals(matched, today = toYmd(new Date())) {
+  const asOf = String(today).slice(0, 10)
+  let dueNow = 0
+  let overdue = 0
+  let dueToday = 0
+  let overdueLines = 0
+  let overdueAylik = 0
+  let penaltyDue = 0
+  let oldestOverdue = null
+
+  for (const line of matched || []) {
+    const tarix = line.tarix ? String(line.tarix).slice(0, 10) : ''
+    if (!tarix || tarix > asOf) continue
+
+    const penRem = Number(line.penaltyRemaining ?? line.penalty) || 0
+    if (penRem > 0) {
+      penaltyDue = Math.round((penaltyDue + penRem) * 100) / 100
+    }
+
+    const rem = Number(line.remaining) || 0
+    if (rem <= 0.001) continue
+
+    dueNow = Math.round((dueNow + rem) * 100) / 100
+
+    if (tarix < asOf) {
+      overdue = Math.round((overdue + rem) * 100) / 100
+      overdueLines += 1
+      if (line.type === 'ayliq') overdueAylik += 1
+      if (!oldestOverdue || tarix < oldestOverdue) oldestOverdue = tarix
+    } else {
+      dueToday = Math.round((dueToday + rem) * 100) / 100
+    }
+  }
+
+  return {
+    asOf,
+    /** Unpaid schedule amounts due on or before today */
+    dueNow,
+    /** Strictly overdue (before today) */
+    overdue,
+    /** Due exactly today */
+    dueToday,
+    overdueLines,
+    /** Count of unpaid monthly installments past due */
+    overdueAylik,
+    penaltyDue,
+    dueWithPenalty: Math.round((dueNow + penaltyDue) * 100) / 100,
+    oldestOverdue,
   }
 }
 

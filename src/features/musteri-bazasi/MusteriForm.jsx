@@ -2,17 +2,16 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { supabase, fetchAllPages } from '../../lib/supabase'
 import MusteriSelect from './MusteriSelect'
-import SuggestInput from './SuggestInput'
 import RecordModule from '../../components/RecordModule'
 import SenedlerField from '../../components/SenedlerField'
 import PaymentScheduleList from './PaymentScheduleList'
+import MusteriDynamicField from './MusteriDynamicField'
 import { useColumnConfig } from './useColumnConfig'
 import { applyKeyOrder, moveItem } from './columnOrder'
 import {
   MUSTERI_TABLE,
   MUSTERILER_TABLE,
   NEW_MUSTERI_VALUE,
-  SUGGEST_FIELDS,
   emptyMusteriForm,
   toMusteriPayload,
   toMusterilerPayload,
@@ -26,89 +25,11 @@ import {
   getRowValue,
   buildMusteriViewSections,
 } from './constants'
+import { fetchNextMusteriNumbers, fetchNextIcloudNumber, formatIcloudEmail, formatItunesEmail, parseIcloudNumber, isAutoItunesEmail } from './nextRecordNumbers'
 import '../../styles/shared.css'
 import '../../components/record-module.css'
 import './musteri-table.css'
 import './musteri-schedule.css'
-
-function DynamicField({ col, value, onChange, computedDisplay, suggestions }) {
-  if (col.type === 'files') return null
-  if (col.readonly) {
-    return (
-      <div className="form-group" key={col.key}>
-        <label>
-          {col.label}
-          {col.key === 'faiz' ? '' : ' (avtomatik)'}
-        </label>
-        <input readOnly value={computedDisplay ?? (value === '' || value == null ? '—' : String(value))} />
-        {col.key === 'faiz' && (
-          <p style={{ margin: '4px 0 0', fontSize: 11, color: 'var(--color-text-muted)' }}>
-            Cərimə məbləği — gələcəkdə ayrı cədvəldən avtomatik gələcək
-          </p>
-        )}
-      </div>
-    )
-  }
-
-  if (SUGGEST_FIELDS.has(col.key)) {
-    return (
-      <SuggestInput
-        key={col.key}
-        id={`field-${col.key}`}
-        label={col.label}
-        value={value}
-        onChange={onChange}
-        options={suggestions?.[col.key] || []}
-        required={col.required}
-      />
-    )
-  }
-
-  if (col.type === 'select') {
-    const hint =
-      col.key === 'veziyyet'
-        ? 'Avtomatik: alış və satış 0 → Bitib; qalan borc = 0 → Bitib. Məhkəmə əl ilə seçiləndə dəyişmir.'
-        : null
-    return (
-      <div className="form-group" key={col.key}>
-        <label>{col.label}{col.required ? ' *' : ''}</label>
-        <select value={value ?? ''} onChange={(e) => onChange(e.target.value)} required={col.required}>
-          <option value="">— Seçin —</option>
-          {(col.options || []).map((o) => (
-            <option key={o} value={o}>{o}</option>
-          ))}
-        </select>
-        {hint && (
-          <p style={{ margin: '4px 0 0', fontSize: 11, color: 'var(--color-text-muted)' }}>{hint}</p>
-        )}
-      </div>
-    )
-  }
-
-  const inputType =
-    col.type === 'date' ? 'date' : col.type === 'number' || col.type === 'money' ? 'number' : 'text'
-
-  const dateHint =
-    col.key === 'birinci_ayliq_odenis_tarixi'
-      ? 'Kredit ödəniş cədvəli bu tarixdən başlayır; növbəti aylar eyni gündə hesablanır. Ödəniş günündən üstünlük götürür.'
-      : null
-
-  return (
-    <div className="form-group" key={col.key}>
-      <label>{col.label}{col.required ? ' *' : ''}</label>
-      <input
-        type={inputType}
-        step={col.type === 'money' || col.type === 'number' ? '0.01' : undefined}
-        value={value ?? ''}
-        onChange={(e) => onChange(e.target.value)}
-        required={col.required}
-      />
-      {dateHint && (
-        <p style={{ margin: '4px 0 0', fontSize: 11, color: 'var(--color-text-muted)' }}>{dateHint}</p>
-      )}
-    </div>
-  )
-}
 
 function uniqueSorted(values) {
   return [...new Set(values.map((v) => String(v).trim()).filter(Boolean))].sort((a, b) =>
@@ -128,7 +49,7 @@ export default function MusteriForm() {
   const [record, setRecord] = useState(null)
   const [editing, setEditing] = useState(startInEdit)
   const [customers, setCustomers] = useState([])
-  const [suggestions, setSuggestions] = useState({ model: [], reng: [], yaddas: [] })
+  const [suggestions, setSuggestions] = useState({ model: [], reng: [], yaddas: [], satici: [] })
   const [mode, setMode] = useState('pick')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -138,7 +59,7 @@ export default function MusteriForm() {
   const [overKey, setOverKey] = useState(null)
 
   const formColumns = useMemo(
-    () => columns.filter((c) => c.formVisible !== false && c.visible !== false && c.key !== 'sira_no'),
+    () => columns.filter((c) => c.formVisible !== false && c.visible !== false),
     [columns]
   )
 
@@ -166,7 +87,7 @@ export default function MusteriForm() {
 
   async function loadSuggestions() {
     const { data, error: e } = await fetchAllPages(() =>
-      supabase.from(MUSTERI_TABLE).select('model, reng, yaddas')
+      supabase.from(MUSTERI_TABLE).select('model, reng, yaddas, satici')
     )
     if (e) throw e
     const rows = data || []
@@ -174,6 +95,7 @@ export default function MusteriForm() {
       model: uniqueSorted(rows.map((r) => r.model)),
       reng: uniqueSorted(rows.map((r) => r.reng)),
       yaddas: uniqueSorted(rows.map((r) => r.yaddas)),
+      satici: uniqueSorted(rows.map((r) => r.satici)),
     })
   }
 
@@ -196,7 +118,24 @@ export default function MusteriForm() {
         } else {
           setRecord(null)
           setMode('pick')
-          setForm(emptyMusteriForm(columns))
+          const base = emptyMusteriForm(columns)
+          try {
+            const [next, appleN] = await Promise.all([
+              fetchNextMusteriNumbers(),
+              fetchNextIcloudNumber(),
+            ])
+            if (cancelled) return
+            setForm({
+              ...base,
+              sira_no: next.sira_no,
+              muqavile_nomresi: next.muqavile_nomresi,
+              icloud: formatIcloudEmail(appleN),
+              itunes: formatItunesEmail(appleN),
+            })
+          } catch {
+            if (cancelled) return
+            setForm(base)
+          }
           setEditing(true)
         }
       } catch (err) {
@@ -212,7 +151,17 @@ export default function MusteriForm() {
   }, [id, isEdit, colsLoading, startInEdit])
 
   function setField(col, value) {
-    setForm((prev) => setFormField(prev, col, value))
+    setForm((prev) => {
+      let next = setFormField(prev, col, value)
+      if (col.key === 'icloud') {
+        const newN = parseIcloudNumber(value)
+        const oldN = parseIcloudNumber(prev.icloud)
+        if (newN != null && (oldN == null || isAutoItunesEmail(prev.itunes, oldN) || !prev.itunes)) {
+          next = { ...next, itunes: formatItunesEmail(newN) }
+        }
+      }
+      return next
+    })
   }
 
   async function persistFormOrder(nextFormCols) {
@@ -274,13 +223,14 @@ export default function MusteriForm() {
     const satis = Number(form.satis_qiymeti) || 0
     const verilib = Number(form.verilib) || 0
     const faiz = Number(form.faiz) || 0
+    const saticiFaizi = Number(form.satici_faizi) || 0
     return {
-      gozlenilen_gelir: formatMoney(satis - alis),
-      faktiki_gelir: formatMoney(verilib + faiz - alis),
+      gozlenilen_gelir: formatMoney(satis - alis - saticiFaizi),
+      faktiki_gelir: formatMoney(verilib + faiz - alis - saticiFaizi),
       qalan_borc: formatMoney(satis - verilib),
       faiz: formatMoney(faiz),
     }
-  }, [form.alis_qiymeti, form.satis_qiymeti, form.verilib, form.faiz])
+  }, [form.alis_qiymeti, form.satis_qiymeti, form.verilib, form.faiz, form.satici_faizi])
 
   const showPersonFields = mode === 'new' || mode === 'existing'
   const selectValue = mode === 'new' ? NEW_MUSTERI_VALUE : form.musteri_id || ''
@@ -505,7 +455,7 @@ export default function MusteriForm() {
                     ⋮⋮
                   </span>
                   <div className="musteri-form-dnd__body">
-                    <DynamicField
+                    <MusteriDynamicField
                       col={
                         col.key === 'birinci_ayliq_odenis_tarixi' &&
                         Number(form.nece_ay) > 0

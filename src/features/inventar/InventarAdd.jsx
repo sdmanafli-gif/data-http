@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import SupplierModal from '../../components/SupplierModal'
+import SearchableSelect from '../../components/SearchableSelect'
 import { REF_NOV, REF_RENG, REF_MEMORY, buildOptions, buildMemoryOptions, getModelsForNov, normalizeColor, normalizeMemory } from '../mehsul-bazasi/referenceOptions'
 import { STATUS_OPTIONS, CONDITION_OPTIONS, SOHBE_OPTIONS, SIM_TYPE_OPTIONS, INVENTORY_LABELS } from './constants'
 import '../../styles/shared.css'
@@ -113,18 +114,45 @@ export default function InventarAdd() {
     }))
   }
 
-  function onSelectProduct(e) {
-    const id = e.target.value
-    setSelectedProductId(id)
+  function onSelectProduct(id) {
+    setSelectedProductId(id === '__new__' ? '' : id)
     setShowNewProduct(id === '__new__')
     if (id === '__new__') {
       setNewProduct({ type: '', model: '', color: '', memory: '' })
+      setForm((prev) => ({ ...prev, type: '', model: '', color: '', memory: '' }))
+    } else if (!id) {
       setForm((prev) => ({ ...prev, type: '', model: '', color: '', memory: '' }))
     } else {
       const p = products.find((x) => x.id === id)
       applyProduct(p)
     }
   }
+
+  const catalogueSelectOptions = useMemo(
+    () => [
+      {
+        value: '__new__',
+        label: '+ Yeni məhsul əlavə et',
+        keywords: 'yeni mehsul elave et new',
+      },
+      ...products.map((p) => ({
+        value: p.id,
+        label: `${p.type} · ${p.model} · ${p.color} · ${p.memory}`,
+        keywords: [p.type, p.model, p.color, p.memory].filter(Boolean).join(' '),
+      })),
+    ],
+    [products]
+  )
+
+  const supplierSelectOptions = useMemo(
+    () =>
+      suppliers.map((s) => ({
+        value: s.id,
+        label: s.name || '—',
+        keywords: s.name || '',
+      })),
+    [suppliers]
+  )
 
   function updateNewProduct(field, value) {
     setNewProduct((prev) => {
@@ -252,22 +280,15 @@ export default function InventarAdd() {
         Əvvəlcə məhsulu kataloqdan seçin və ya yeni məhsul əlavə edin (Növ, Model, Rəng, Yaddaş). Sonra qalan sahələri doldurun.
       </p>
 
-      <div className="form-group" style={{ marginBottom: 'var(--space-lg)' }}>
-        <label>Məhsul (kataloqdan)</label>
-        <select
-          value={showNewProduct ? '__new__' : selectedProductId}
-          onChange={onSelectProduct}
-          style={{ maxWidth: '100%' }}
-        >
-          <option value="">— Seçin —</option>
-          <option value="__new__">+ Yeni məhsul əlavə et</option>
-          {products.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.type} · {p.model} · {p.color} · {p.memory}
-            </option>
-          ))}
-        </select>
-      </div>
+      <SearchableSelect
+        id="inventar-product"
+        label="Məhsul (kataloqdan)"
+        options={catalogueSelectOptions}
+        value={showNewProduct ? '__new__' : selectedProductId}
+        onChange={onSelectProduct}
+        placeholder="Növ, model, rəng, yaddaş ilə axtar…"
+        emptyOption={{ value: '', label: '— Seçin —' }}
+      />
 
       {showNewProduct && (
         <div className="card" style={{ marginBottom: 'var(--space-lg)', padding: 'var(--space-md)' }}>
@@ -349,18 +370,18 @@ export default function InventarAdd() {
             <input type="number" min={0} value={form.quantity} onChange={(e) => updateForm('quantity', e.target.value)} />
           </div>
           <div className="form-group" style={{ flex: 2 }}>
-            <label>{INVENTORY_LABELS.supplier_id}</label>
-            <div style={{ display: 'flex', gap: 'var(--space-sm)', alignItems: 'flex-start' }}>
-              <select
-                value={form.supplier_id}
-                onChange={(e) => updateForm('supplier_id', e.target.value)}
-                style={{ flex: 1, maxWidth: 320 }}
-              >
-                <option value="">— Seçin —</option>
-                {suppliers.map((s) => (
-                  <option key={s.id} value={s.id}>{s.name}</option>
-                ))}
-              </select>
+            <div style={{ display: 'flex', gap: 'var(--space-sm)', alignItems: 'flex-end' }}>
+              <div style={{ flex: 1, maxWidth: 360 }}>
+                <SearchableSelect
+                  id="inventar-supplier"
+                  label={INVENTORY_LABELS.supplier_id}
+                  options={supplierSelectOptions}
+                  value={form.supplier_id}
+                  onChange={(v) => updateForm('supplier_id', v)}
+                  placeholder="Təchizatçı axtar…"
+                  emptyOption={{ value: '', label: '— Seçin —' }}
+                />
+              </div>
               <button type="button" className="btn btn--secondary" onClick={() => setShowSupplierModal(true)}>
                 Yeni təchizatçı
               </button>

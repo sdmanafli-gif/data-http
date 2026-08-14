@@ -1,0 +1,46 @@
+# Hourly backup → Cloudflare R2
+name: Backup to Cloudflare R2
+
+on:
+  schedule:
+    # Every hour at minute 5 (UTC)
+    - cron: '5 * * * *'
+  workflow_dispatch: {}
+
+concurrency:
+  group: backup-r2
+  cancel-in-progress: false
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install PostgreSQL client
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install backup dependencies
+        working-directory: scripts/backup
+        run: npm install
+
+      - name: Run backup
+        working-directory: scripts/backup
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+          BACKUP_BUCKETS: Mobideal
+          BACKUP_RETENTION_HOURS: '24'
+        run: node run-backup.mjs

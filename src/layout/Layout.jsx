@@ -94,6 +94,15 @@ export default function Layout({ children }) {
               {collapsed ? 'İ' : 'İstifadəçilər'}
             </NavLink>
           )}
+          <NavLink
+            to="/hesab/tehlukesizlik"
+            className={({ isActive }) =>
+              `layout__nav-link ${isActive ? 'layout__nav-link--active' : ''}`
+            }
+            title="Təhlükəsizlik"
+          >
+            {collapsed ? 'T' : 'Təhlükəsizlik'}
+          </NavLink>
           {!collapsed && (
             <div className="layout__user-info">
               <span className="layout__user-email">{profile?.email ?? '—'}</span>

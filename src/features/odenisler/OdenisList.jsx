@@ -44,7 +44,11 @@ export default function OdenisList() {
     setError(null)
     const term = search.trim().replace(/%/g, '\\%').replace(/_/g, '\\_')
     const { data, error: e } = await fetchAllPages(() => {
-      let q = supabase.from(ODENISLER_TABLE).select('*').order('tarix', { ascending: false })
+      let q = supabase
+        .from(ODENISLER_TABLE)
+        .select('*')
+        .order('created_at', { ascending: false })
+        .order('id', { ascending: false })
       if (tipFilter) q = q.eq('tip', tipFilter)
       if (term) {
         const asNum = Number(term)

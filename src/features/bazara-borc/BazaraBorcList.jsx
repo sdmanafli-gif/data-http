@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../../lib/supabase'
 import { confirmDelete } from '../../lib/confirmDelete'
+import SearchableSelect from '../../components/SearchableSelect'
 import '../../styles/shared.css'
 
 function formatMoney(n) {
@@ -110,15 +111,20 @@ export default function BazaraBorcList() {
       <h3 className="card__title">Yeni qeyd</h3>
       <form onSubmit={handleAdd} style={{ marginBottom: 'var(--space-xl)' }}>
         <div className="form-row">
-          <div className="form-group">
-            <label>Təchizatçı</label>
-            <select value={form.supplier_id} onChange={(e) => setForm((p) => ({ ...p, supplier_id: e.target.value }))} required>
-              <option value="">— Seçin —</option>
-              {suppliers.map((s) => (
-                <option key={s.id} value={s.id}>{s.name}</option>
-              ))}
-            </select>
-          </div>
+          <SearchableSelect
+            id="bazara-supplier"
+            label="Təchizatçı"
+            options={suppliers.map((s) => ({
+              value: s.id,
+              label: s.name || '—',
+              keywords: s.name || '',
+            }))}
+            value={form.supplier_id}
+            onChange={(v) => setForm((p) => ({ ...p, supplier_id: v }))}
+            placeholder="Təchizatçı axtar…"
+            emptyOption={{ value: '', label: '— Seçin —' }}
+            required
+          />
           <div className="form-group">
             <label>Məbləğ (AZN)</label>
             <input

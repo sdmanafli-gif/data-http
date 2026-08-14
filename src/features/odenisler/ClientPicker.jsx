@@ -1,9 +1,9 @@
-import { useMemo, useState } from 'react'
+import { useMemo } from 'react'
+import SearchableSelect from '../../components/SearchableSelect'
 import { clientOptionLabel } from './constants'
 
 /**
- * Searchable client picker by № or Ad Soyad.
- * Selecting fills id / sira_no / ad_soyad via onSelect.
+ * Searchable client picker by №, Ad Soyad, or model.
  */
 export default function ClientPicker({
   clients = [],
@@ -12,70 +12,41 @@ export default function ClientPicker({
   disabled,
   required = true,
 }) {
-  const [filter, setFilter] = useState('')
-
-  const filtered = useMemo(() => {
-    const q = filter.trim().toLowerCase()
-    if (!q) return clients
-    return clients.filter((c) => {
-      const no = c.sira_no != null ? String(c.sira_no) : ''
-      const name = String(c.ad_soyad || '').toLowerCase()
-      const model = String(c.model || '').toLowerCase()
-      return no.includes(q) || name.includes(q) || model.includes(q)
-    })
-  }, [clients, filter])
+  const options = useMemo(
+    () =>
+      (clients || []).map((c) => ({
+        value: c.id,
+        label: clientOptionLabel(c),
+        keywords: [c.sira_no, c.ad_soyad, c.model, c.imei_1, c.nomre_1]
+          .filter((x) => x != null && String(x).trim() !== '')
+          .join(' '),
+        raw: c,
+      })),
+    [clients]
+  )
 
   const selected = clients.find((c) => c.id === valueId)
 
-  function handleChange(e) {
-    const id = e.target.value
-    if (!id) {
-      onSelect?.(null)
-      return
-    }
-    const found = clients.find((c) => c.id === id)
-    onSelect?.(found || null)
-  }
-
   return (
-    <div className="form-group">
-      <label htmlFor="odenis-client-filter">Müştəri (№ və ya ad) *</label>
-      <input
-        id="odenis-client-filter"
-        type="search"
-        value={filter}
-        onChange={(e) => setFilter(e.target.value)}
-        placeholder="№ və ya ad ilə axtar…"
-        disabled={disabled}
-        autoComplete="off"
-        style={{ marginBottom: 8 }}
-      />
-      <select
+    <>
+      <SearchableSelect
         id="odenis-client"
+        label="Müştəri (№ və ya ad)"
+        options={options}
         value={valueId || ''}
-        onChange={handleChange}
+        onChange={(_v, opt) => onSelect?.(opt?.raw || null)}
+        placeholder="№, ad və ya model ilə axtar…"
+        emptyOption={{ value: '', label: '— Müştəri seçin —' }}
         disabled={disabled}
         required={required}
-      >
-        <option value="">— Müştəri seçin —</option>
-        {filtered.map((c) => (
-          <option key={c.id} value={c.id}>
-            {clientOptionLabel(c)}
-          </option>
-        ))}
-      </select>
+      />
       {selected && (
-        <p style={{ margin: '6px 0 0', fontSize: 12, color: 'var(--color-text-muted)' }}>
+        <p className="form-hint" style={{ marginTop: -8 }}>
           Seçildi: {selected.sira_no != null ? `#${selected.sira_no} · ` : ''}
           {selected.ad_soyad || '—'}
           {selected.model ? ` · ${selected.model}` : ''}
         </p>
       )}
-      {filter && filtered.length === 0 && (
-        <p style={{ margin: '6px 0 0', fontSize: 12, color: 'var(--color-accent)' }}>
-          Uyğun müştəri tapılmadı.
-        </p>
-      )}
-    </div>
+    </>
   )
 }

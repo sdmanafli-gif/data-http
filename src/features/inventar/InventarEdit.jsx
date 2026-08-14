@@ -1,8 +1,9 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import { confirmDelete } from '../../lib/confirmDelete'
 import SupplierModal from '../../components/SupplierModal'
+import SearchableSelect from '../../components/SearchableSelect'
 import { STATUS_OPTIONS, CONDITION_OPTIONS, SOHBE_OPTIONS, SIM_TYPE_OPTIONS, INVENTORY_LABELS } from './constants'
 import '../../styles/shared.css'
 
@@ -28,6 +29,16 @@ export default function InventarEdit() {
     load()
     loadSuppliers()
   }, [id])
+
+  const supplierSelectOptions = useMemo(
+    () =>
+      suppliers.map((s) => ({
+        value: s.id,
+        label: s.name || '—',
+        keywords: s.name || '',
+      })),
+    [suppliers]
+  )
 
   async function loadSuppliers() {
     const { data } = await supabase.from('suppliers').select('*').order('name')
@@ -186,14 +197,18 @@ export default function InventarEdit() {
             </div>
             <div className="form-row">
               <div className="form-group" style={{ flex: 2 }}>
-                <label>{INVENTORY_LABELS.supplier_id}</label>
-                <div style={{ display: 'flex', gap: 'var(--space-sm)' }}>
-                  <select value={form.supplier_id || ''} onChange={(e) => updateForm('supplier_id', e.target.value)} style={{ flex: 1, maxWidth: 320 }}>
-                    <option value="">— Seçin —</option>
-                    {suppliers.map((s) => (
-                      <option key={s.id} value={s.id}>{s.name}</option>
-                    ))}
-                  </select>
+                <div style={{ display: 'flex', gap: 'var(--space-sm)', alignItems: 'flex-end' }}>
+                  <div style={{ flex: 1, maxWidth: 360 }}>
+                    <SearchableSelect
+                      id="inventar-edit-supplier"
+                      label={INVENTORY_LABELS.supplier_id}
+                      options={supplierSelectOptions}
+                      value={form.supplier_id || ''}
+                      onChange={(v) => updateForm('supplier_id', v)}
+                      placeholder="Təchizatçı axtar…"
+                      emptyOption={{ value: '', label: '— Seçin —' }}
+                    />
+                  </div>
                   <button type="button" className="btn btn--secondary" onClick={() => setShowSupplierModal(true)}>Yeni təchizatçı</button>
                 </div>
               </div>

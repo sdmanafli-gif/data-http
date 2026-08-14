@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams, Link } from 'react-router-dom'
 import { supabase, fetchAllPages } from '../../lib/supabase'
 import { confirmDelete } from '../../lib/confirmDelete'
+import { uploadSenedlerFiles } from '../../lib/senedler'
 import { useColumnConfig } from './useColumnConfig'
 import SuggestInput from '../musteri-bazasi/SuggestInput'
 import RecordModule from '../../components/RecordModule'
@@ -21,6 +22,8 @@ import {
   formatCell,
   getRowValue,
   validateDepoNisye,
+  validateDepoDeviceCondition,
+  getDepoMissingRequiredFields,
   syncDepoPurchaseNisyeLedger,
 } from './constants'
 import { LEDGER_TABLE } from '../borc-nisye/constants'
@@ -28,25 +31,50 @@ import '../musteri-bazasi/musteri-table.css'
 import '../../styles/shared.css'
 import '../../components/record-module.css'
 
-function DynamicField({ col, value, onChange, suggestions }) {
+function DynamicField({
+  col,
+  value,
+  onChange,
+  suggestions,
+  forceReadonly = false,
+  required = false,
+  hint = null,
+  invalid = false,
+}) {
   if (col.type === 'files') return null
-  if (col.readonly) {
+  const readonly = forceReadonly || col.readonly
+  const isRequired = required || col.required
+  const groupClass = `form-group${invalid ? ' form-group--invalid' : ''}`
+
+  if (readonly) {
     return (
-      <div className="form-group">
-        <label>{col.label} (avtomatik)</label>
+      <div className={groupClass}>
+        <label>
+          {col.label}
+          {forceReadonly ? ' (avtomatik)' : ' (avtomatik)'}
+        </label>
         <input readOnly value={value === '' || value == null ? '—' : String(value)} />
+        {hint ? (
+          <p style={{ margin: '4px 0 0', fontSize: 11, color: 'var(--color-text-muted)' }}>{hint}</p>
+        ) : null}
       </div>
     )
   }
   if (SUGGEST_FIELDS.has(col.key)) {
     return (
-      <SuggestInput
-        id={`depo-${col.key}`}
-        label={col.label}
-        value={value}
-        onChange={onChange}
-        options={suggestions?.[col.key] || []}
-      />
+      <div className={groupClass}>
+        <SuggestInput
+          id={`depo-${col.key}`}
+          label={`${col.label}${isRequired ? ' *' : ''}`}
+          value={value}
+          onChange={onChange}
+          options={suggestions?.[col.key] || []}
+        />
+        {invalid ? <p className="form-group__error">Bu sahə mütləqdir</p> : null}
+        {hint && !invalid ? (
+          <p style={{ margin: '4px 0 0', fontSize: 11, color: 'var(--color-text-muted)' }}>{hint}</p>
+        ) : null}
+      </div>
     )
   }
   if (col.type === 'select') {
@@ -63,27 +91,46 @@ function DynamicField({ col, value, onChange, suggestions }) {
       options = options.map((v) => ({ value: v, label: v }))
     }
     return (
-      <div className="form-group">
-        <label>{col.label}</label>
-        <select value={value ?? ''} onChange={(e) => onChange(e.target.value)}>
+      <div className={groupClass}>
+        <label>
+          {col.label}
+          {isRequired ? ' *' : ''}
+        </label>
+        <select
+          value={value ?? ''}
+          onChange={(e) => onChange(e.target.value)}
+          aria-invalid={invalid}
+        >
           <option value="">— Seçin —</option>
           {options.map((o) => (
             <option key={o.value} value={o.value}>{o.label}</option>
           ))}
         </select>
+        {invalid ? <p className="form-group__error">Bu sahə mütləqdir</p> : null}
+        {hint && !invalid ? (
+          <p style={{ margin: '4px 0 0', fontSize: 11, color: 'var(--color-text-muted)' }}>{hint}</p>
+        ) : null}
       </div>
     )
   }
   const inputType = col.type === 'date' ? 'date' : col.type === 'number' || col.type === 'money' ? 'number' : 'text'
   return (
-    <div className="form-group">
-      <label>{col.label}</label>
+    <div className={groupClass}>
+      <label>
+        {col.label}
+        {isRequired ? ' *' : ''}
+      </label>
       <input
         type={inputType}
         step={col.type === 'money' || col.type === 'number' ? '0.01' : undefined}
         value={value ?? ''}
         onChange={(e) => onChange(e.target.value)}
+        aria-invalid={invalid}
       />
+      {invalid ? <p className="form-group__error">Bu sahə mütləqdir</p> : null}
+      {hint && !invalid ? (
+        <p style={{ margin: '4px 0 0', fontSize: 11, color: 'var(--color-text-muted)' }}>{hint}</p>
+      ) : null}
     </div>
   )
 }
@@ -107,6 +154,8 @@ export default function DepoForm() {
   const [saving, setSaving] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [error, setError] = useState(null)
+  const [pendingFiles, setPendingFiles] = useState([])
+  const [invalidKeys, setInvalidKeys] = useState(() => new Set())
 
   const formColumns = useMemo(() => {
     return columns
@@ -183,6 +232,19 @@ export default function DepoForm() {
   async function handleSubmit(e) {
     e.preventDefault()
     setError(null)
+    const missing = getDepoMissingRequiredFields(form)
+    if (missing.length) {
+      setInvalidKeys(new Set(missing.map((m) => m.key)))
+      setError(`Mütləq sahələr boşdur: ${missing.map((m) => m.label).join(', ')}`)
+      return
+    }
+    setInvalidKeys(new Set())
+    const conditionErr = validateDepoDeviceCondition(form)
+    if (conditionErr) {
+      setInvalidKeys(new Set(['veziyyet_cihaz']))
+      setError(conditionErr)
+      return
+    }
     const nisyeErr = validateDepoNisye(form)
     if (nisyeErr) {
       setError(nisyeErr)
@@ -214,6 +276,31 @@ export default function DepoForm() {
         savedRow = created
       }
       if (err) throw err
+
+      if (!isEdit && newId && pendingFiles.length > 0) {
+        const { files: uploaded, error: upErr } = await uploadSenedlerFiles(
+          'depo',
+          newId,
+          pendingFiles
+        )
+        if (uploaded.length) {
+          const nextSenedler = [...(savedRow?.senedler || []), ...uploaded]
+          const { data: withFiles, error: senedErr } = await supabase
+            .from(DEPO_TABLE)
+            .update({ senedler: nextSenedler, updated_at: new Date().toISOString() })
+            .eq('id', newId)
+            .select('*')
+            .single()
+          if (senedErr) throw senedErr
+          savedRow = withFiles
+          setPendingFiles([])
+        }
+        if (upErr && (!uploaded || uploaded.length === 0)) throw new Error(upErr)
+        if (upErr) {
+          // Partial upload — still navigate but keep message
+          setError(upErr)
+        }
+      }
 
       if (savedRow) {
         const { error: ledErr } = await syncDepoPurchaseNisyeLedger(supabase, savedRow)
@@ -326,23 +413,65 @@ export default function DepoForm() {
           </div>
         )}
       </div>
-      <form onSubmit={handleSubmit}>
+      <form onSubmit={handleSubmit} noValidate>
         <div className="form-row">
-          {formColumns.filter((c) => c.key !== 'senedler').map((col) => (
-            <DynamicField
-              key={col.key}
-              col={col}
-              value={getFieldValue(form, col)}
-              onChange={(v) => setForm((prev) => setFormField(prev, col, v))}
-              suggestions={suggestions}
-            />
-          ))}
+          {formColumns.filter((c) => c.key !== 'senedler').map((col) => {
+            const isYeni = form.veziyyet_cihaz === 'teze'
+            const isKohne = form.veziyyet_cihaz === 'kohne'
+            return (
+              <DynamicField
+                key={col.key}
+                col={col}
+                value={getFieldValue(form, col)}
+                onChange={(v) => {
+                  setForm((prev) => {
+                    let next = setFormField(prev, col, v)
+                    if (col.key === 'veziyyet_cihaz') {
+                      if (v === 'teze') {
+                        next = { ...next, battery_faiz: '100' }
+                      } else if (v === 'kohne' && prev.veziyyet_cihaz === 'teze') {
+                        next = { ...next, battery_faiz: '' }
+                      }
+                    }
+                    return next
+                  })
+                  if (v !== '' && v != null) {
+                    setInvalidKeys((prev) => {
+                      if (!prev.has(col.key)) return prev
+                      const next = new Set(prev)
+                      next.delete(col.key)
+                      return next
+                    })
+                  }
+                }}
+                suggestions={suggestions}
+                forceReadonly={col.key === 'battery_faiz' && isYeni}
+                required={
+                  col.key === 'veziyyet_cihaz' ||
+                  (form.odenis_novu === 'nisye' &&
+                    ['kimden_alinib', 'qaytarma_tarixi', 'alis_qiymeti'].includes(col.key))
+                }
+                invalid={invalidKeys.has(col.key)}
+                hint={
+                  col.key === 'veziyyet_cihaz'
+                    ? 'Yeni → battery 100%. Köhnə → battery istəyə bağlıdır.'
+                    : col.key === 'battery_faiz' && isYeni
+                      ? 'Yeni cihaz üçün avtomatik 100%'
+                      : col.key === 'battery_faiz' && isKohne
+                        ? 'Köhnə cihaz üçün battery istəyə bağlıdır'
+                        : null
+                }
+              />
+            )
+          })}
         </div>
         <div style={{ marginTop: 16 }}>
           <SenedlerField
             folder="depo"
             recordId={id || null}
             value={form.senedler}
+            pendingFiles={pendingFiles}
+            onPendingChange={setPendingFiles}
             onChange={async (next) => {
               setForm((f) => ({ ...f, senedler: next }))
               if (!id) return
