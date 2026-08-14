@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { supabase, fetchAllPages } from '../../lib/supabase'
 import { confirmDelete } from '../../lib/confirmDelete'
+import { useAuth } from '../../contexts/AuthContext'
 import { useColumnConfig } from './useColumnConfig'
 import ResizableDataTable from '../musteri-bazasi/ResizableDataTable'
 import { applyKeyOrder } from '../musteri-bazasi/columnOrder'
@@ -262,6 +263,7 @@ function buildByNov(availableRows) {
 
 export default function DepoList() {
   const navigate = useNavigate()
+  const { access } = useAuth()
   const { columns, loading: colsLoading, saveColumns } = useColumnConfig()
   const [items, setItems] = useState([])
   const [viewRows, setViewRows] = useState([])
@@ -276,7 +278,10 @@ export default function DepoList() {
 
   useEffect(() => setLocalCols(columns), [columns])
 
-  const visibleCols = useMemo(() => localCols.filter((c) => c.visible !== false), [localCols])
+  const visibleCols = useMemo(
+    () => access.filterColumns('depo', localCols).filter((c) => c.visible !== false),
+    [localCols, access]
+  )
 
   async function load() {
     setLoading(true)
@@ -284,6 +289,7 @@ export default function DepoList() {
     const term = search.trim().replace(/%/g, '\\%').replace(/_/g, '\\_')
     const { data, error: e } = await fetchAllPages(() => {
       let q = supabase.from(DEPO_TABLE).select('*').order('sira_no', { ascending: true })
+      q = access.applyDataFilters(q, 'depo')
       if (term) {
         q = q.or(
           `model.ilike.%${term}%,imei_1.ilike.%${term}%,imei_2.ilike.%${term}%,reng.ilike.%${term}%,kimden_alinib.ilike.%${term}%,nomre.ilike.%${term}%,sexsiyyet.ilike.%${term}%,serial_no.ilike.%${term}%`
@@ -314,6 +320,10 @@ export default function DepoList() {
   }, [search])
 
   async function handleDeleteRow(row) {
+    if (!access.canDelete('depo')) {
+      setError('Silmək üçün icazəniz yoxdur.')
+      return
+    }
     const label = row.model || (row.sira_no != null ? `#${row.sira_no}` : 'bu qeyd')
     if (!confirmDelete(`«${label}» Depodan silinsin?`)) return
     setDeletingId(row.id)
@@ -468,45 +478,65 @@ export default function DepoList() {
         </div>
       )}
 
-      {!loading && !colsLoading && (
+      {!loading && !colsLoading && access.canSeeSummary('depo') && (() => {
+        const keys = access.allowedSummaryCards('depo')
+        const show = (k) => keys == null || keys.includes(k)
+        return (
         <CollapsibleSummary title="Cəmlər" storageKey="summary:depo" defaultOpen>
           <div className="musteri-summary">
+            {show('availableMiqdar') && (
             <div className="musteri-summary__card">
               <div className="musteri-summary__label">Mövcud miqdar</div>
               <div className="musteri-summary__value">{totals.availableMiqdar}</div>
             </div>
+            )}
+            {show('availableAlisValue') && (
             <div className="musteri-summary__card">
               <div className="musteri-summary__label">Mövcud alış dəyəri</div>
               <div className="musteri-summary__value">{formatMoney(totals.availableAlisValue)}</div>
             </div>
+            )}
+            {show('allTimeAlisValue') && (
             <div className="musteri-summary__card">
               <div className="musteri-summary__label">İndiyədək ümumi alış</div>
               <div className="musteri-summary__value">{formatMoney(totals.allTimeAlisValue)}</div>
             </div>
+            )}
+            {show('availableLines') && (
             <div className="musteri-summary__card">
               <div className="musteri-summary__label">Mövcud sətir</div>
               <div className="musteri-summary__value">{totals.availableLines}</div>
             </div>
+            )}
+            {show('soldMiqdar') && (
             <div className="musteri-summary__card">
               <div className="musteri-summary__label">{STATUS_LABELS.sold} miqdar</div>
               <div className="musteri-summary__value">{totals.soldMiqdar}</div>
             </div>
+            )}
+            {show('soldAlisValue') && (
             <div className="musteri-summary__card">
               <div className="musteri-summary__label">{STATUS_LABELS.sold} alış dəyəri</div>
               <div className="musteri-summary__value">{formatMoney(totals.soldAlisValue)}</div>
             </div>
+            )}
+            {show('reservedReturned') && (
             <div className="musteri-summary__card">
               <div className="musteri-summary__label">{STATUS_LABELS.reserved} / {STATUS_LABELS.returned}</div>
               <div className="musteri-summary__value">
                 {totals.reservedMiqdar} / {totals.returnedMiqdar}
               </div>
             </div>
+            )}
+            {show('filterLines') && (
             <div className="musteri-summary__card musteri-summary__card--meta">
               <div className="musteri-summary__label">Filtrdə sətir / miqdar</div>
               <div className="musteri-summary__value">
                 {totals.allLines} / {totals.allMiqdar}
               </div>
             </div>
+            )}
+            {show('byNov') && (
             <div className="musteri-summary__card musteri-summary__card--wide">
               <div className="musteri-summary__label">
                 Mövcud modellər (növə görə)
@@ -591,9 +621,11 @@ export default function DepoList() {
                 </div>
               )}
             </div>
+            )}
           </div>
         </CollapsibleSummary>
-      )}
+        )
+      })()}
 
       <div className="card">
         {loading || colsLoading ? (
@@ -616,7 +648,7 @@ export default function DepoList() {
             }}
             renderActions={(row) => (
               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                {row.status === 'available' && (
+                {row.status === 'available' && access.canEdit('depo') && (
                   <button
                     type="button"
                     className="btn btn--primary"
@@ -625,15 +657,17 @@ export default function DepoList() {
                     Satış
                   </button>
                 )}
-                <button
-                  type="button"
-                  className="btn btn--danger"
-                  disabled={deletingId === row.id}
-                  onClick={() => handleDeleteRow(row)}
-                  style={{ padding: '4px 10px', fontSize: 12 }}
-                >
-                  {deletingId === row.id ? '…' : 'Sil'}
-                </button>
+                {access.canDelete('depo') && (
+                  <button
+                    type="button"
+                    className="btn btn--danger"
+                    disabled={deletingId === row.id}
+                    onClick={() => handleDeleteRow(row)}
+                    style={{ padding: '4px 10px', fontSize: 12 }}
+                  >
+                    {deletingId === row.id ? '…' : 'Sil'}
+                  </button>
+                )}
               </div>
             )}
           />

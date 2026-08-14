@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase, fetchAllPages } from '../../lib/supabase'
+import { useAuth } from '../../contexts/AuthContext'
 import ResizableDataTable from '../musteri-bazasi/ResizableDataTable'
 import CollapsibleSummary from '../../components/CollapsibleSummary'
 import { loadUiFlag, saveUiFlag } from '../../lib/uiPrefs'
@@ -31,6 +32,7 @@ function sumBalances(rows, keys) {
 
 export default function OverviewPage() {
   const navigate = useNavigate()
+  const { access } = useAuth()
   const [rows, setRows] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -40,6 +42,15 @@ export default function OverviewPage() {
   const [nisyeView, setNisyeView] = useState([])
   const [borcOpen, setBorcOpen] = useState(() => loadUiFlag('borc-nisye:borc-open', true))
   const [nisyeOpen, setNisyeOpen] = useState(() => loadUiFlag('borc-nisye:nisye-open', true))
+
+  const borcCols = useMemo(
+    () => access.filterColumns('borc-nisye', OVERVIEW_BORC_COLUMNS).filter((c) => c.visible !== false),
+    [access]
+  )
+  const nisyeCols = useMemo(
+    () => access.filterColumns('borc-nisye', OVERVIEW_NISYE_COLUMNS).filter((c) => c.visible !== false),
+    [access]
+  )
 
   useEffect(() => {
     saveUiFlag('borc-nisye:borc-open', borcOpen)
@@ -202,7 +213,7 @@ export default function OverviewPage() {
                   <p className="empty-state">Yüklənir…</p>
                 ) : (
                   <ResizableDataTable
-                    columns={OVERVIEW_BORC_COLUMNS}
+                    columns={borcCols}
                     rows={borcRows}
                     formatCell={formatCell}
                     getRowValue={getBalanceValue}
@@ -263,7 +274,7 @@ export default function OverviewPage() {
                   <p className="empty-state">Yüklənir…</p>
                 ) : (
                   <ResizableDataTable
-                    columns={OVERVIEW_NISYE_COLUMNS}
+                    columns={nisyeCols}
                     rows={nisyeRows}
                     formatCell={formatCell}
                     getRowValue={getBalanceValue}

@@ -17,11 +17,29 @@ function valueToneClass(key, value) {
   return 'musteri-summary__value--neutral'
 }
 
-export default function SummaryCards({ totals, rowCount, extraCards = [], storageKey = 'summary:musteri' }) {
+/**
+ * @param {string[]|null} [allowedKeys] null = all; [] = hide entirely
+ */
+export default function SummaryCards({
+  totals,
+  rowCount,
+  extraCards = [],
+  storageKey = 'summary:musteri',
+  allowedKeys = null,
+}) {
+  if (Array.isArray(allowedKeys) && allowedKeys.length === 0) return null
+
+  const allow = (key) => allowedKeys == null || allowedKeys.includes(key)
+  const cards = CARDS.filter((c) => allow(c.key))
+  const extras = extraCards.filter((c) => allow(c.key))
+  const showRowCount = allow('row_count')
+
+  if (cards.length === 0 && extras.length === 0 && !showRowCount) return null
+
   return (
     <CollapsibleSummary title="Cəmlər" storageKey={storageKey}>
       <div className="musteri-summary">
-        {CARDS.map((card) => {
+        {cards.map((card) => {
           const value = totals[card.key] ?? 0
           return (
             <div key={card.key} className="musteri-summary__card">
@@ -32,7 +50,7 @@ export default function SummaryCards({ totals, rowCount, extraCards = [], storag
             </div>
           )
         })}
-        {extraCards.map((card) => {
+        {extras.map((card) => {
           const value = card.value ?? 0
           const tone = card.format === 'raw' ? undefined : valueToneClass(card.key, value)
           return (
@@ -44,10 +62,12 @@ export default function SummaryCards({ totals, rowCount, extraCards = [], storag
             </div>
           )
         })}
-        <div className="musteri-summary__card musteri-summary__card--meta">
-          <div className="musteri-summary__label">Sətir sayı</div>
-          <div className="musteri-summary__value">{rowCount}</div>
-        </div>
+        {showRowCount && (
+          <div className="musteri-summary__card musteri-summary__card--meta">
+            <div className="musteri-summary__label">Sətir sayı</div>
+            <div className="musteri-summary__value">{rowCount}</div>
+          </div>
+        )}
       </div>
     </CollapsibleSummary>
   )

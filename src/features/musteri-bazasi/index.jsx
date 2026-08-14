@@ -1,4 +1,5 @@
 import { Routes, Route, useNavigate, useLocation } from 'react-router-dom'
+import { useAuth } from '../../contexts/AuthContext'
 import MusteriList from './MusteriList'
 import MusteriForm from './MusteriForm'
 import ColumnManager from './ColumnManager'
@@ -10,6 +11,7 @@ import '../../styles/shared.css'
 export default function MusteriBazasi() {
   const navigate = useNavigate()
   const location = useLocation()
+  const { access } = useAuth()
   const hideHeader =
     location.pathname.includes('/sutunlar') ||
     location.pathname.includes('/idxal') ||
@@ -27,12 +29,16 @@ export default function MusteriBazasi() {
             <button type="button" className="btn btn--secondary" onClick={() => navigate('/musteri-bazasi/tarixce')}>
               Tarixçə
             </button>
-            <button type="button" className="btn btn--secondary" onClick={() => navigate('/musteri-bazasi/idxal')}>
-              Excel idxal
-            </button>
-            <button type="button" className="btn btn--primary" onClick={() => navigate('/musteri-bazasi/yeni')}>
-              Yeni qeyd
-            </button>
+            {access.canCreate('musteri-bazasi') && (
+              <button type="button" className="btn btn--secondary" onClick={() => navigate('/musteri-bazasi/idxal')}>
+                Excel idxal
+              </button>
+            )}
+            {access.canCreate('musteri-bazasi') && (
+              <button type="button" className="btn btn--primary" onClick={() => navigate('/musteri-bazasi/yeni')}>
+                Yeni qeyd
+              </button>
+            )}
           </div>
         </div>
       )}

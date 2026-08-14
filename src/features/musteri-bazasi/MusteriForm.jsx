@@ -3,9 +3,9 @@ import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { supabase, fetchAllPages } from '../../lib/supabase'
 import MusteriSelect from './MusteriSelect'
 import RecordModule from '../../components/RecordModule'
-import SenedlerField from '../../components/SenedlerField'
 import PaymentScheduleList from './PaymentScheduleList'
 import MusteriDynamicField from './MusteriDynamicField'
+import MusteriNotesAndFiles from './MusteriNotesAndFiles'
 import { useColumnConfig } from './useColumnConfig'
 import { applyKeyOrder, moveItem } from './columnOrder'
 import {
@@ -24,6 +24,7 @@ import {
   setFormField,
   getRowValue,
   buildMusteriViewSections,
+  isMusteriSectionOmittedColumn,
 } from './constants'
 import { fetchNextMusteriNumbers, fetchNextIcloudNumber, formatIcloudEmail, formatItunesEmail, parseIcloudNumber, isAutoItunesEmail } from './nextRecordNumbers'
 import '../../styles/shared.css'
@@ -59,7 +60,13 @@ export default function MusteriForm() {
   const [overKey, setOverKey] = useState(null)
 
   const formColumns = useMemo(
-    () => columns.filter((c) => c.formVisible !== false && c.visible !== false),
+    () =>
+      columns.filter(
+        (c) =>
+          c.formVisible !== false &&
+          c.visible !== false &&
+          !isMusteriSectionOmittedColumn(c)
+      ),
     [columns]
   )
 
@@ -354,27 +361,36 @@ export default function MusteriForm() {
           </>
         }
       >
-        <details className="collapse-section">
-          <summary className="collapse-section__title">Sənədlər</summary>
-          <div className="collapse-section__body">
-            <SenedlerField
-              folder="musteri_bazasi"
-              recordId={record.id}
-              value={record.senedler}
-              onChange={async (next) => {
-                const { error: e } = await supabase
-                  .from(MUSTERI_TABLE)
-                  .update({ senedler: next, updated_at: new Date().toISOString() })
-                  .eq('id', record.id)
-                if (e) setError(e.message)
-                else {
-                  setRecord((r) => (r ? { ...r, senedler: next } : r))
-                  setForm((f) => ({ ...f, senedler: next }))
-                }
-              }}
-            />
-          </div>
-        </details>
+        <MusteriNotesAndFiles
+          asDetails
+          columns={columns}
+          form={form}
+          onKommentChange={async (v) => {
+            setForm((f) => ({ ...f, kommentler: v }))
+            const { error: e } = await supabase
+              .from(MUSTERI_TABLE)
+              .update({ kommentler: v, updated_at: new Date().toISOString() })
+              .eq('id', record.id)
+            if (e) setError(e.message)
+            else setRecord((r) => (r ? { ...r, kommentler: v } : r))
+          }}
+          senedlerProps={{
+            folder: 'musteri_bazasi',
+            recordId: record.id,
+            value: record.senedler,
+            onChange: async (next) => {
+              const { error: e } = await supabase
+                .from(MUSTERI_TABLE)
+                .update({ senedler: next, updated_at: new Date().toISOString() })
+                .eq('id', record.id)
+              if (e) setError(e.message)
+              else {
+                setRecord((r) => (r ? { ...r, senedler: next } : r))
+                setForm((f) => ({ ...f, senedler: next }))
+              }
+            },
+          }}
+        />
 
         <PaymentScheduleList
           record={record}
@@ -424,7 +440,7 @@ export default function MusteriForm() {
               Sahələri ⋮⋮ tutub yuxarı/aşağı sürükleyin — sıra həm formada, həm cədvəldə saxlanılır.
             </p>
             <div className="musteri-form-dnd">
-              {orderedFormCols.filter((c) => c.key !== 'senedler').map((col) => (
+              {orderedFormCols.map((col) => (
                 <div
                   key={col.key}
                   className={[
@@ -472,12 +488,15 @@ export default function MusteriForm() {
               ))}
             </div>
 
-            <div style={{ marginTop: 16 }}>
-              <SenedlerField
-                folder="musteri_bazasi"
-                recordId={id || null}
-                value={form.senedler}
-                onChange={async (next) => {
+            <MusteriNotesAndFiles
+              columns={columns}
+              form={form}
+              onKommentChange={(v) => setForm((f) => ({ ...f, kommentler: v }))}
+              senedlerProps={{
+                folder: 'musteri_bazasi',
+                recordId: id || null,
+                value: form.senedler,
+                onChange: async (next) => {
                   setForm((f) => ({ ...f, senedler: next }))
                   if (!id) return
                   const { error: e } = await supabase
@@ -486,9 +505,9 @@ export default function MusteriForm() {
                     .eq('id', id)
                   if (e) setError(e.message)
                   else setRecord((r) => (r ? { ...r, senedler: next } : r))
-                }}
-              />
-            </div>
+                },
+              }}
+            />
           </>
         )}
 

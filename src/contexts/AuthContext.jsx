@@ -1,5 +1,7 @@
-import { createContext, useCallback, useContext, useEffect, useState } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import { MFA_REQUIRED } from '../config/auth'
+import { createPermissionApi, fullPermissions } from '../config/permissions'
+import { useInactivityLogout } from '../hooks/useInactivityLogout'
 import { supabase, supabaseConfigured } from '../lib/supabase'
 
 const AuthContext = createContext(null)
@@ -293,21 +295,25 @@ export function AuthProvider({ children }) {
     return data?.totp ?? []
   }
 
-  async function createInvitation(email) {
+  async function createInvitation({ email, role = 'manager', permissions } = {}) {
     if (!supabase) throw new Error('Supabase konfiqurasiya olunmayıb.')
     const {
       data: { user },
     } = await supabase.auth.getUser()
     if (!user) throw new Error('Daxil olmamısınız.')
 
+    const assignRole = role === 'admin' ? 'admin' : 'manager'
+    const perms = permissions && typeof permissions === 'object' ? permissions : fullPermissions()
+
     const { data, error } = await supabase
       .from('invitations')
       .insert({
-        email: email.trim().toLowerCase(),
-        role: 'manager',
+        email: String(email || '').trim().toLowerCase(),
+        role: assignRole,
         invited_by: user.id,
+        permissions: perms,
       })
-      .select('id, email, token, role, status, expires_at, created_at')
+      .select('id, email, token, role, status, expires_at, created_at, permissions')
       .single()
 
     if (error) throw error
@@ -318,11 +324,124 @@ export function AuthProvider({ children }) {
     if (!supabase) throw new Error('Supabase konfiqurasiya olunmayıb.')
     const { data, error } = await supabase
       .from('invitations')
-      .select('id, email, token, role, status, expires_at, created_at, accepted_at')
+      .select('id, email, token, role, status, expires_at, created_at, accepted_at, permissions')
       .order('created_at', { ascending: false })
     if (error) throw error
     return data ?? []
   }
+
+  async function updateUserRole(userId, role) {
+    if (!supabase) throw new Error('Supabase konfiqurasiya olunmayıb.')
+    if (role !== 'admin' && role !== 'manager') throw new Error('Yanlış rol.')
+    const { error } = await supabase.from('profiles').update({ role, updated_at: new Date().toISOString() }).eq('id', userId)
+    if (error) throw error
+  }
+
+  async function updateUserPermissions(userId, permissions) {
+    if (!supabase) throw new Error('Supabase konfiqurasiya olunmayıb.')
+    const { error } = await supabase
+      .from('profiles')
+      .update({ permissions: permissions || fullPermissions(), updated_at: new Date().toISOString() })
+      .eq('id', userId)
+    if (error) throw error
+    if (session?.user?.id === userId) {
+      await fetchProfile(userId)
+    }
+  }
+
+  async function deleteUserAccount(userId) {
+    if (!supabase) throw new Error('Supabase konfiqurasiya olunmayıb.')
+    const { data, error } = await supabase.functions.invoke('delete-user', {
+      body: { userId },
+    })
+    if (error) throw error
+    if (data?.error) throw new Error(data.error)
+    return data
+  }
+
+  async function invokeAdminMfa(body) {
+    if (!supabase) throw new Error('Supabase konfiqurasiya olunmayıb.')
+
+    // Prefer DB RPCs (no Edge Function). Fall back to edge function if RPC missing.
+    const action = body?.action
+    const userId = body?.userId
+    try {
+      if (action === 'list') {
+        const { data, error } = await supabase.rpc('admin_mfa_list', {
+          target_user_id: userId,
+        })
+        if (error) throw error
+        return data
+      }
+      if (action === 'unenroll') {
+        const { data, error } = await supabase.rpc('admin_mfa_unenroll', {
+          target_user_id: userId,
+          factor_id: body.factorId,
+        })
+        if (error) throw error
+        return data
+      }
+      if (action === 'unenroll_all') {
+        const { data, error } = await supabase.rpc('admin_mfa_unenroll_all', {
+          target_user_id: userId,
+        })
+        if (error) throw error
+        return data
+      }
+    } catch (rpcErr) {
+      const msg = rpcErr?.message || String(rpcErr)
+      // If RPC not installed yet, try edge function
+      if (!/Could not find the function|schema cache|does not exist/i.test(msg)) {
+        throw new Error(msg)
+      }
+    }
+
+    const {
+      data: { session: active },
+    } = await supabase.auth.getSession()
+    if (!active?.access_token) throw new Error('Daxil olmamısınız.')
+
+    const { data, error } = await supabase.functions.invoke('admin-mfa', {
+      body,
+      headers: { Authorization: `Bearer ${active.access_token}` },
+    })
+
+    if (error) {
+      throw new Error(
+        'MFA idarəetməsi hazır deyil. Bir dəfə işə salın: node --env-file=.env.local scripts/setup-admin-mfa-rpc.mjs'
+      )
+    }
+    if (data?.error) throw new Error(typeof data.error === 'string' ? data.error : JSON.stringify(data.error))
+    return data
+  }
+
+  async function adminListMfaFactors(userId) {
+    const data = await invokeAdminMfa({ action: 'list', userId })
+    const raw = data?.factors ?? data ?? []
+    if (Array.isArray(raw)) return raw
+    if (Array.isArray(raw?.factors)) return raw.factors
+    if (Array.isArray(raw?.totp)) return raw.totp
+    if (Array.isArray(raw?.all)) return raw.all
+    return []
+  }
+
+  async function adminUnenrollMfa(userId, factorId) {
+    return invokeAdminMfa({ action: 'unenroll', userId, factorId })
+  }
+
+  async function adminUnenrollAllMfa(userId) {
+    return invokeAdminMfa({ action: 'unenroll_all', userId })
+  }
+
+  useInactivityLogout(Boolean(session?.user), () => {
+    signOut().catch(() => {})
+  })
+
+  const isAdmin = profile?.role === 'admin'
+  const access = useMemo(
+    () => createPermissionApi(profile?.permissions, isAdmin),
+    [profile?.permissions, isAdmin]
+  )
 
   const value = {
     session,
@@ -332,6 +451,7 @@ export function AuthProvider({ children }) {
     mfaLoading,
     mfaRequired: MFA_REQUIRED,
     configured: supabaseConfigured,
+    access,
     signIn,
     signUp,
     signOut,
@@ -343,8 +463,14 @@ export function AuthProvider({ children }) {
     refreshMfaStatus,
     createInvitation,
     listInvitations,
+    updateUserRole,
+    updateUserPermissions,
+    deleteUserAccount,
+    adminListMfaFactors,
+    adminUnenrollMfa,
+    adminUnenrollAllMfa,
     refreshProfile: () => (session?.user?.id ? fetchProfile(session.user.id) : null),
-    isAdmin: profile?.role === 'admin',
+    isAdmin,
     isManager: profile?.role === 'manager',
   }
 

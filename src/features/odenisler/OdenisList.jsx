@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase, fetchAllPages } from '../../lib/supabase'
+import { useAuth } from '../../contexts/AuthContext'
 import {
   ODENISLER_TABLE,
   PAYMENT_TYPES,
@@ -8,22 +9,15 @@ import {
   formatMoney,
   formatDate,
   sumPaymentsByType,
+  ODENIS_TABLE_COLUMNS,
 } from './constants'
 import ResizableDataTable from '../musteri-bazasi/ResizableDataTable'
 import CollapsibleSummary from '../../components/CollapsibleSummary'
 import '../musteri-bazasi/musteri-table.css'
 import '../../styles/shared.css'
 
-const ODENIS_COLUMNS = [
-  { key: 'tarix', label: 'Tarix', type: 'date', visible: true, width: 120 },
-  { key: 'sira_no', label: '#', type: 'number', visible: true, width: 70 },
-  { key: 'ad_soyad', label: 'Ad Soyad Ata adı', type: 'text', visible: true, width: 200 },
-  { key: 'tip_label', label: 'Tip', type: 'text', visible: true, width: 130 },
-  { key: 'mebleg', label: 'Məbləğ', type: 'money', visible: true, width: 120 },
-  { key: 'qeyd', label: 'Qeyd', type: 'text', visible: true, width: 180 },
-]
-
 function formatOdenisCell(value, col) {
+  if (col?.key === 'tip') return tipLabel(value)
   if (col?.type === 'money') return formatMoney(value)
   if (col?.type === 'date' || col?.key === 'tarix') return formatDate(value)
   if (value === null || value === undefined || value === '') return '—'
@@ -32,12 +26,18 @@ function formatOdenisCell(value, col) {
 
 export default function OdenisList() {
   const navigate = useNavigate()
+  const { access } = useAuth()
   const [items, setItems] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [search, setSearch] = useState('')
   const [tipFilter, setTipFilter] = useState('')
   const [viewRows, setViewRows] = useState([])
+
+  const visibleCols = useMemo(
+    () => access.filterColumns('odenisler', ODENIS_TABLE_COLUMNS).filter((c) => c.visible !== false),
+    [access]
+  )
 
   async function load() {
     setLoading(true)
@@ -46,7 +46,7 @@ export default function OdenisList() {
     const { data, error: e } = await fetchAllPages(() => {
       let q = supabase
         .from(ODENISLER_TABLE)
-        .select('*')
+        .select('*, musteri_bazasi(veziyyet)')
         .order('created_at', { ascending: false })
         .order('id', { ascending: false })
       if (tipFilter) q = q.eq('tip', tipFilter)
@@ -64,7 +64,16 @@ export default function OdenisList() {
       setError(e.message)
       setItems([])
     } else {
-      setItems(data || [])
+      setItems(
+        (data || []).map((row) => {
+          const related = row.musteri_bazasi
+          const veziyyet = Array.isArray(related)
+            ? related[0]?.veziyyet
+            : related?.veziyyet
+          const { musteri_bazasi: _join, ...rest } = row
+          return { ...rest, veziyyet: veziyyet || null }
+        })
+      )
     }
     setLoading(false)
   }
@@ -74,16 +83,7 @@ export default function OdenisList() {
     return () => clearTimeout(t)
   }, [search, tipFilter])
 
-  const rows = useMemo(
-    () =>
-      (items || []).map((r) => ({
-        ...r,
-        tip_label: tipLabel(r.tip),
-      })),
-    [items]
-  )
-
-  const totals = useMemo(() => sumPaymentsByType(viewRows.length ? viewRows : rows), [viewRows, rows])
+  const totals = useMemo(() => sumPaymentsByType(viewRows.length ? viewRows : items), [viewRows, items])
 
   if (error) {
     return (
@@ -117,40 +117,54 @@ export default function OdenisList() {
         </div>
       </div>
 
-      {!loading && (
+      {!loading && access.canSeeSummary('odenisler') && (() => {
+        const keys = access.allowedSummaryCards('odenisler')
+        const show = (k) => keys == null || keys.includes(k)
+        return (
         <CollapsibleSummary title="Cəmlər" storageKey="summary:odenisler">
           <div className="musteri-summary">
+            {show('ilkin') && (
             <div className="musteri-summary__card">
               <div className="musteri-summary__label">İlkin</div>
               <div className="musteri-summary__value">{formatMoney(totals.ilkin)}</div>
             </div>
+            )}
+            {show('ayliq') && (
             <div className="musteri-summary__card">
               <div className="musteri-summary__label">Aylıq</div>
               <div className="musteri-summary__value">{formatMoney(totals.ayliq)}</div>
             </div>
+            )}
+            {show('faiz') && (
             <div className="musteri-summary__card">
               <div className="musteri-summary__label">Faiz</div>
               <div className="musteri-summary__value">{formatMoney(totals.faiz)}</div>
             </div>
+            )}
+            {show('cemi') && (
             <div className="musteri-summary__card">
               <div className="musteri-summary__label">Cəmi</div>
               <div className="musteri-summary__value">{formatMoney(totals.cemi)}</div>
             </div>
+            )}
+            {show('row_count') && (
             <div className="musteri-summary__card musteri-summary__card--meta">
               <div className="musteri-summary__label">Sətir sayı</div>
-              <div className="musteri-summary__value">{viewRows.length || rows.length}</div>
+              <div className="musteri-summary__value">{viewRows.length || items.length}</div>
             </div>
+            )}
           </div>
         </CollapsibleSummary>
-      )}
+        )
+      })()}
 
       <div className="card">
         {loading ? (
           <p className="empty-state">Yüklənir…</p>
         ) : (
           <ResizableDataTable
-            columns={ODENIS_COLUMNS}
-            rows={rows}
+            columns={visibleCols}
+            rows={items}
             formatCell={formatOdenisCell}
             onRowOpen={(row) => navigate(`/odenisler/${row.id}`)}
             onDisplayRowsChange={setViewRows}

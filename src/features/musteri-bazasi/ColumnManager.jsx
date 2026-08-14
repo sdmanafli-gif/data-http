@@ -24,7 +24,7 @@ export default function ColumnManager({
   title = 'Sütunları idarə et',
   backTo = '/musteri-bazasi',
   description =
-    'Siyahı və forma eyni sıranı istifadə edir. Sütunu yuxarı/aşağı aparın, gizlədin və ya yeni sütun əlavə edin.',
+    'Siyahı, forma və kredit satış eyni sütun ayarlarını istifadə edir. Sütunu gizlədin və ya özəl sütunu silin — kredit satışdan da çıxır.',
 } = {}) {
   const isMehkeme = tableKey === MEHKEME_COLUMN_SETTINGS_KEY
   const { columns: saved, loading, error: loadError, saveColumns } = useColumnConfig({ tableKey })

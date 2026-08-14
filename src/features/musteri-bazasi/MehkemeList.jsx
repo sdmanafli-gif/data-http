@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { supabase, fetchAllPages } from '../../lib/supabase'
+import { useAuth } from '../../contexts/AuthContext'
 import { useColumnConfig } from './useColumnConfig'
 import ResizableDataTable from './ResizableDataTable'
 import SummaryCards from './SummaryCards'
@@ -35,6 +36,7 @@ function parseAmount(raw) {
  */
 export default function MehkemeList() {
   const navigate = useNavigate()
+  const { access } = useAuth()
   const { columns, loading: colsLoading, saveColumns } = useColumnConfig({
     tableKey: MEHKEME_COLUMN_SETTINGS_KEY,
   })
@@ -54,8 +56,8 @@ export default function MehkemeList() {
   }, [columns])
 
   const visibleCols = useMemo(
-    () => (localCols || []).filter((c) => c.visible !== false),
-    [localCols]
+    () => access.filterColumns('mehkeme', localCols || []).filter((c) => c.visible !== false),
+    [localCols, access]
   )
 
   async function load() {
@@ -68,6 +70,7 @@ export default function MehkemeList() {
         .select('*')
         .eq('veziyyet', 'Məhkəmə')
         .order('sira_no', { ascending: true })
+      q = access.applyDataFilters(q, 'mehkeme')
       if (statusFilter) q = q.eq('mehkeme_status', statusFilter)
       if (term) {
         const parts = [
@@ -282,6 +285,7 @@ export default function MehkemeList() {
           totals={totals}
           rowCount={viewRows.length}
           storageKey="summary:mehkeme"
+          allowedKeys={access.allowedSummaryCards('mehkeme')}
           extraCards={[
             {
               key: 'rusum_odenilib',

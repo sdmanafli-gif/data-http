@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
 import { useAuth } from '../contexts/AuthContext'
 import { ROLE_LABELS } from '../config/auth'
+import { fullPermissions } from '../config/permissions'
+import PermissionEditor from '../components/PermissionEditor'
 import '../styles/shared.css'
 
 function inviteUrl(token) {
@@ -11,6 +13,8 @@ function inviteUrl(token) {
 export default function InviteUser() {
   const { createInvitation, listInvitations, isAdmin, isManager } = useAuth()
   const [email, setEmail] = useState('')
+  const [role, setRole] = useState('manager')
+  const [permissions, setPermissions] = useState(() => fullPermissions())
   const [loading, setLoading] = useState(false)
   const [listLoading, setListLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -45,7 +49,11 @@ export default function InviteUser() {
     }
     setLoading(true)
     try {
-      const inv = await createInvitation(email)
+      const inv = await createInvitation({
+        email,
+        role: isAdmin ? role : 'manager',
+        permissions: isAdmin ? permissions : fullPermissions(),
+      })
       const link = inviteUrl(inv.token)
       setInviteLink(link)
       setSuccess(`Dəvət yaradıldı: ${inv.email}. Rol: ${ROLE_LABELS[inv.role] ?? inv.role}.`)
@@ -80,7 +88,7 @@ export default function InviteUser() {
       <div className="card">
         <h1 className="card__title">İstifadəçi dəvət et</h1>
         <p style={{ color: 'var(--color-text-muted)', fontSize: '13px', marginBottom: 'var(--space-lg)' }}>
-          Dəvət olunan şəxs <strong>Menecer</strong> rolunu alır. Linki ona göndərin — qeydiyyatdan sonra daxil ola biləcək.
+          Qeydiyyat yalnız dəvət linki ilə mümkündür. Dəvətdən əvvəl görünüş və icazələri təyin edin.
         </p>
         <form onSubmit={handleSubmit}>
           <div className="form-group">
@@ -94,6 +102,24 @@ export default function InviteUser() {
               required
             />
           </div>
+
+          {isAdmin && (
+            <div className="form-group">
+              <label htmlFor="invite-role">Rol</label>
+              <select id="invite-role" value={role} onChange={(e) => setRole(e.target.value)}>
+                <option value="manager">{ROLE_LABELS.manager}</option>
+                <option value="admin">{ROLE_LABELS.admin}</option>
+              </select>
+            </div>
+          )}
+
+          {isAdmin && (
+            <div className="form-group">
+              <label>İcazələr (tab, sütun, məlumat, əməliyyat)</label>
+              <PermissionEditor value={permissions} onChange={setPermissions} />
+            </div>
+          )}
+
           {error && <p style={{ color: 'var(--color-accent)', marginBottom: 'var(--space-md)' }}>{error}</p>}
           {success && (
             <p style={{ color: '#1f6b3a', marginBottom: 'var(--space-md)' }}>{success}</p>

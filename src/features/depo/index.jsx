@@ -1,4 +1,5 @@
 import { Routes, Route, useNavigate, useLocation } from 'react-router-dom'
+import { useAuth } from '../../contexts/AuthContext'
 import DepoList from './DepoList'
 import DepoForm from './DepoForm'
 import ColumnManager from './ColumnManager'
@@ -10,6 +11,7 @@ import '../../styles/shared.css'
 export default function DepoFeature() {
   const navigate = useNavigate()
   const location = useLocation()
+  const { access } = useAuth()
   const hideHeader =
     location.pathname.includes('/sutunlar') ||
     location.pathname.includes('/idxal') ||
@@ -26,12 +28,16 @@ export default function DepoFeature() {
             <button type="button" className="btn btn--secondary" onClick={() => navigate('/depo/tarixce')}>
               Tarixçə
             </button>
-            <button type="button" className="btn btn--secondary" onClick={() => navigate('/depo/idxal')}>
-              Excel idxal
-            </button>
-            <button type="button" className="btn btn--primary" onClick={() => navigate('/depo/yeni')}>
-              Yeni qeyd
-            </button>
+            {access.canCreate('depo') && (
+              <button type="button" className="btn btn--secondary" onClick={() => navigate('/depo/idxal')}>
+                Excel idxal
+              </button>
+            )}
+            {access.canCreate('depo') && (
+              <button type="button" className="btn btn--primary" onClick={() => navigate('/depo/yeni')}>
+                Yeni qeyd
+              </button>
+            )}
           </div>
         </div>
       )}

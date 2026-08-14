@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { supabase, fetchAllPages } from '../../lib/supabase'
+import { useAuth } from '../../contexts/AuthContext'
 import { confirmDelete } from '../../lib/confirmDelete'
 import SuggestInput from '../musteri-bazasi/SuggestInput'
 import RecordModule from '../../components/RecordModule'
@@ -32,6 +33,7 @@ export default function LedgerForm() {
   const [searchParams] = useSearchParams()
   const isEdit = Boolean(id)
   const navigate = useNavigate()
+  const { access } = useAuth()
   const prefKime = searchParams.get('kime') || ''
   const startInEdit = searchParams.get('edit') === '1'
   const [form, setForm] = useState(() => ({ ...emptyLedgerForm(), kime: prefKime }))
@@ -43,7 +45,13 @@ export default function LedgerForm() {
   const [deleting, setDeleting] = useState(false)
   const [error, setError] = useState(null)
 
-  const viewColumns = useMemo(() => DEFAULT_COLUMNS.filter((c) => c.visible !== false), [])
+  const viewColumns = useMemo(
+    () =>
+      access
+        .filterColumns('borc-nisye', DEFAULT_COLUMNS)
+        .filter((c) => c.visible !== false),
+    [access]
+  )
 
   useEffect(() => {
     let cancelled = false

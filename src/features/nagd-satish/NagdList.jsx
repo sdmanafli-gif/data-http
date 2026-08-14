@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { supabase, fetchAllPages } from '../../lib/supabase'
+import { useAuth } from '../../contexts/AuthContext'
 import { useColumnConfig } from './useColumnConfig'
 import ResizableDataTable from '../musteri-bazasi/ResizableDataTable'
 import { applyKeyOrder } from '../musteri-bazasi/columnOrder'
@@ -17,6 +18,7 @@ function sumField(rows, key) {
 
 export default function NagdList() {
   const navigate = useNavigate()
+  const { access } = useAuth()
   const { columns, loading: colsLoading, saveColumns } = useColumnConfig()
   const [items, setItems] = useState([])
   const [viewRows, setViewRows] = useState([])
@@ -27,7 +29,10 @@ export default function NagdList() {
   const resizeTimer = useRef(null)
 
   useEffect(() => setLocalCols(columns), [columns])
-  const visibleCols = useMemo(() => localCols.filter((c) => c.visible !== false), [localCols])
+  const visibleCols = useMemo(
+    () => access.filterColumns('nagd-satish', localCols).filter((c) => c.visible !== false),
+    [localCols, access]
+  )
 
   async function load() {
     setLoading(true)
@@ -99,32 +104,46 @@ export default function NagdList() {
         <Link to="/nagd-satish/sutunlar" className="btn btn--secondary">Sütunları idarə et</Link>
       </div>
 
-      {!loading && !colsLoading && (
+      {!loading && !colsLoading && access.canSeeSummary('nagd-satish') && (() => {
+        const keys = access.allowedSummaryCards('nagd-satish')
+        const show = (k) => keys == null || keys.includes(k)
+        return (
         <CollapsibleSummary title="Cəmlər" storageKey="summary:nagd">
           <div className="musteri-summary">
+            {show('alis') && (
             <div className="musteri-summary__card">
               <div className="musteri-summary__label">Ümumi alış</div>
               <div className="musteri-summary__value">{formatMoney(totals.alis)}</div>
             </div>
+            )}
+            {show('satis') && (
             <div className="musteri-summary__card">
               <div className="musteri-summary__label">Ümumi satış</div>
               <div className="musteri-summary__value">{formatMoney(totals.satis)}</div>
             </div>
+            )}
+            {show('xeyir') && (
             <div className="musteri-summary__card">
               <div className="musteri-summary__label">Ümumi xeyir</div>
               <div className="musteri-summary__value">{formatMoney(totals.xeyir)}</div>
             </div>
+            )}
+            {show('xeyirFaizle') && (
             <div className="musteri-summary__card">
               <div className="musteri-summary__label">Xeyir (faizlə)</div>
               <div className="musteri-summary__value">{formatMoney(totals.xeyirFaizle)}</div>
             </div>
+            )}
+            {show('row_count') && (
             <div className="musteri-summary__card musteri-summary__card--meta">
               <div className="musteri-summary__label">Sətir sayı</div>
               <div className="musteri-summary__value">{viewRows.length}</div>
             </div>
+            )}
           </div>
         </CollapsibleSummary>
-      )}
+        )
+      })()}
 
       <div className="card">
         {loading || colsLoading ? (

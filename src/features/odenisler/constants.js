@@ -1,4 +1,5 @@
 import { formatDate } from '../../lib/formatDate'
+import { VEZIYYET_OPTIONS } from '../musteri-bazasi/constants'
 
 export const ODENISLER_TABLE = 'odenisler'
 export const MUSTERI_TABLE = 'musteri_bazasi'
@@ -10,6 +11,31 @@ export const PAYMENT_TYPES = [
 ]
 
 export const PAYMENT_TYPE_MAP = Object.fromEntries(PAYMENT_TYPES.map((t) => [t.value, t]))
+
+/** Fixed list columns for Ödənişlər (also used by permission editor). */
+export const ODENIS_TABLE_COLUMNS = [
+  { key: 'tarix', label: 'Tarix', type: 'date', visible: true, width: 120 },
+  { key: 'sira_no', label: '#', type: 'number', visible: true, width: 70 },
+  { key: 'ad_soyad', label: 'Ad Soyad Ata adı', type: 'text', visible: true, width: 200 },
+  {
+    key: 'veziyyet',
+    label: 'Vəziyyət',
+    type: 'select',
+    options: [...VEZIYYET_OPTIONS],
+    visible: true,
+    width: 120,
+  },
+  {
+    key: 'tip',
+    label: 'Tip',
+    type: 'select',
+    options: PAYMENT_TYPES.map((t) => t.value),
+    visible: true,
+    width: 130,
+  },
+  { key: 'mebleg', label: 'Məbləğ', type: 'money', visible: true, width: 120 },
+  { key: 'qeyd', label: 'Qeyd', type: 'text', visible: true, width: 180 },
+]
 
 export function tipLabel(tip) {
   return PAYMENT_TYPE_MAP[tip]?.label || tip || '—'
