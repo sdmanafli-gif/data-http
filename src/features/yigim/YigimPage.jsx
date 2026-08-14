@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { supabase, fetchAllPages } from '../../lib/supabase'
 import {
@@ -15,6 +15,8 @@ import {
 } from '../musteri-bazasi/paymentSchedule'
 import ResizableDataTable from '../musteri-bazasi/ResizableDataTable'
 import CollapsibleSummary from '../../components/CollapsibleSummary'
+import { applyKeyOrder } from '../musteri-bazasi/columnOrder'
+import { useColumnConfig } from './useColumnConfig'
 import '../../styles/shared.css'
 import '../musteri-bazasi/musteri-table.css'
 import '../musteri-bazasi/musteri-schedule.css'
@@ -38,22 +40,6 @@ const STATUS_FILTERS = [
   { value: 'late', label: 'Gecikmiş' },
   { value: 'paid', label: 'Ödənib' },
   { value: 'partial', label: 'Qismən' },
-]
-
-const YIGIM_COLS = [
-  { key: 'tarix', label: 'Vaxtı', type: 'date' },
-  { key: 'sira_no', label: '#', type: 'number' },
-  { key: 'ad_soyad', label: 'Müştəri', type: 'text' },
-  { key: 'veziyyet', label: 'Vəziyyət', type: 'text' },
-  { key: 'model', label: 'Model', type: 'text' },
-  { key: 'label', label: 'Növ', type: 'text' },
-  { key: 'owed', label: 'Məbləğ', type: 'money' },
-  { key: 'paid', label: 'Ödənilib', type: 'money' },
-  { key: 'remaining', label: 'Qalan', type: 'money' },
-  { key: 'faktiki_gelir', label: 'Faktiki gəlir', type: 'money' },
-  { key: 'delayDays', label: 'Gecikmə', type: 'number' },
-  { key: 'penalty', label: 'Cərimə', type: 'money' },
-  { key: 'statusText', label: 'Status', type: 'text' },
 ]
 
 function profileFaktikiGelir(m) {
@@ -216,6 +202,9 @@ export function buildYigimRows(musteriler, payments) {
 
 export default function YigimPage() {
   const now = new Date()
+  const { columns, loading: colsLoading, saveColumns } = useColumnConfig()
+  const [localCols, setLocalCols] = useState([])
+  const resizeTimer = useRef(null)
   const [period, setPeriod] = useState('month')
   const [year, setYear] = useState(now.getFullYear())
   const [month, setMonth] = useState(now.getMonth())
@@ -229,6 +218,42 @@ export default function YigimPage() {
   const [rows, setRows] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+
+  useEffect(() => {
+    setLocalCols(columns)
+  }, [columns])
+
+  const visibleCols = useMemo(
+    () => localCols.filter((c) => c.visible !== false),
+    [localCols]
+  )
+
+  const handleReorder = useCallback(
+    async (orderedVisible) => {
+      const next = applyKeyOrder(localCols, orderedVisible.map((c) => c.key))
+      setLocalCols(next)
+      try {
+        await saveColumns(next)
+      } catch (err) {
+        setError(err.message)
+      }
+    },
+    [localCols, saveColumns]
+  )
+
+  const handleResize = useCallback(
+    (key, width) => {
+      setLocalCols((prev) => {
+        const next = prev.map((c) => (c.key === key ? { ...c, width } : c))
+        clearTimeout(resizeTimer.current)
+        resizeTimer.current = setTimeout(() => {
+          saveColumns(next).catch((err) => setError(err.message))
+        }, 400)
+        return next
+      })
+    },
+    [saveColumns]
+  )
 
   async function load() {
     setLoading(true)
@@ -383,7 +408,7 @@ export default function YigimPage() {
     return ''
   }
 
-  function renderYigimFooter(displayRows) {
+  function renderYigimFooter(displayRows, footerColumns) {
     let owed = 0
     let paid = 0
     let remaining = 0
@@ -400,24 +425,39 @@ export default function YigimPage() {
     }
     let faktiki = 0
     for (const v of faktikiByMusteri.values()) faktiki += v
+
+    const totalsByKey = {
+      owed: formatMoney(owed),
+      paid: formatMoney(paid),
+      remaining: formatMoney(remaining),
+      faktiki_gelir: formatMoney(faktiki),
+      penalty:
+        penalty > 0 ? (
+          <span className="musteri-schedule__overdue">{formatMoney(penalty)}</span>
+        ) : (
+          formatMoney(0)
+        ),
+    }
+
     return (
       <tr className="yigim-table-totals">
-        <td colSpan={6}>Cəmi ({displayRows.length} sətir)</td>
-        <td className="num">{formatMoney(owed)}</td>
-        <td className="num">{formatMoney(paid)}</td>
-        <td className="num">{formatMoney(remaining)}</td>
-        <td className="num" title="Unikal müştərilərin faktiki gəlir cəmi">
-          {formatMoney(faktiki)}
-        </td>
-        <td>—</td>
-        <td className="num">
-          {penalty > 0 ? (
-            <span className="musteri-schedule__overdue">{formatMoney(penalty)}</span>
-          ) : (
-            formatMoney(0)
-          )}
-        </td>
-        <td>—</td>
+        {footerColumns.map((col, i) => {
+          if (i === 0) {
+            return (
+              <td key={col.key}>
+                Cəmi ({displayRows.length} sətir)
+              </td>
+            )
+          }
+          if (col.key in totalsByKey) {
+            return (
+              <td key={col.key} className="num" title={col.key === 'faktiki_gelir' ? 'Unikal müştərilərin faktiki gəlir cəmi' : undefined}>
+                {totalsByKey[col.key]}
+              </td>
+            )
+          }
+          return <td key={col.key}>—</td>
+        })}
       </tr>
     )
   }
@@ -440,18 +480,6 @@ export default function YigimPage() {
 
   return (
     <>
-      <div className="page-header">
-        <div>
-          <h1>Yığım</h1>
-          <p style={{ margin: '4px 0 0', color: 'var(--color-text-muted)', fontSize: 13 }}>
-            Ödəniş qrafikinə görə toplanmalı məbləğlər · {title}
-          </p>
-        </div>
-        <button type="button" className="btn btn--secondary" onClick={load} disabled={loading}>
-          Yenilə
-        </button>
-      </div>
-
       <div
         style={{
           display: 'flex',
@@ -534,11 +562,18 @@ export default function YigimPage() {
             placeholder="№, ad, model, nömrə…"
           />
         </div>
+
+        <button type="button" className="btn btn--secondary" onClick={load} disabled={loading}>
+          Yenilə
+        </button>
+        <Link to="/yigim/sutunlar" className="btn btn--secondary">
+          Sütunları idarə et
+        </Link>
       </div>
 
       {error && <p style={{ color: 'var(--color-accent)' }}>{error}</p>}
 
-      {!loading && (
+      {!loading && !colsLoading && (
         <CollapsibleSummary title="Cəmlər" storageKey="summary:yigim">
           <div className="musteri-summary">
             <div className="musteri-summary__card">
@@ -576,17 +611,19 @@ export default function YigimPage() {
       )}
 
       <div className="card">
-        {loading ? (
+        {loading || colsLoading ? (
           <p className="empty-state">Yüklənir…</p>
         ) : (
           <ResizableDataTable
-            columns={YIGIM_COLS}
+            columns={visibleCols}
             rows={periodFiltered}
             formatCell={formatYigimCell}
             getRowValue={yigimGetValue}
             renderCell={renderYigimCell}
             getRowClassName={getYigimRowClass}
             renderFooter={renderYigimFooter}
+            onReorderColumns={handleReorder}
+            onResizeColumn={handleResize}
             onDisplayRowsChange={setViewRows}
             emptyText="Bu filtrə uyğun yığım yoxdur."
             prefsKey="yigim"

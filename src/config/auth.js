@@ -5,6 +5,13 @@
  */
 export const PUBLIC_SIGNUP_ENABLED = true
 
+/**
+ * When true, every user must enroll TOTP MFA and verify a one-time code on each login.
+ * Requires MFA (TOTP) enabled in Supabase Dashboard → Authentication → Multi-Factor.
+ * Set false to allow password-only login until a user chooses to enroll.
+ */
+export const MFA_REQUIRED = true
+
 export const ROLE_LABELS = {
   admin: 'Admin',
   manager: 'Menecer',

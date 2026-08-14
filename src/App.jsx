@@ -5,6 +5,8 @@ import SignIn from './pages/SignIn'
 import SignUp from './pages/SignUp'
 import InviteUser from './pages/InviteUser'
 import UserList from './pages/UserList'
+import MfaChallenge from './pages/MfaChallenge'
+import MfaEnroll from './pages/MfaEnroll'
 import MusteriBazasi from './features/musteri-bazasi'
 import MehkemeList from './features/musteri-bazasi/MehkemeList'
 import ColumnManager from './features/musteri-bazasi/ColumnManager'
@@ -51,8 +53,9 @@ function AppRoutes() {
       <Routes>
         <Route path="/admin/invite" element={<InviteUser />} />
         <Route path="/admin/users" element={<UserList />} />
+        <Route path="/hesab/tehlukesizlik" element={<MfaEnroll forced={false} />} />
         <Route path="/musteri-bazasi/*" element={<MusteriBazasi />} />
-        <Route path="/yigim" element={<YigimPage />} />
+        <Route path="/yigim/*" element={<YigimPage />} />
         <Route path="/mehkeme/*" element={<MehkemeFeature />} />
         <Route path="/odenisler/*" element={<OdenislerFeature />} />
         <Route path="/depo/*" element={<DepoFeature />} />
@@ -89,7 +92,7 @@ function MissingConfig() {
 }
 
 function App() {
-  const { session, loading, configured } = useAuth()
+  const { session, loading, configured, mfa } = useAuth()
 
   if (!configured) {
     return <MissingConfig />
@@ -119,6 +122,16 @@ function App() {
         <Route path="*" element={<SignIn />} />
       </Routes>
     )
+  }
+
+  // Password OK but MFA factor enrolled → need one-time code
+  if (mfa.needsChallenge) {
+    return <MfaChallenge />
+  }
+
+  // MFA required and not enrolled yet → force setup
+  if (mfa.needsEnroll) {
+    return <MfaEnroll forced />
   }
 
   return <AppRoutes />

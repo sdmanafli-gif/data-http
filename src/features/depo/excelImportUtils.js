@@ -58,7 +58,15 @@ const ALIASES = {
   nov: 'nov',
   'növ': 'nov',
   'təzə / köhnə': 'veziyyet_cihaz',
+  'yeni / kohne': 'veziyyet_cihaz',
+  'yeni / köhnə': 'veziyyet_cihaz',
+  status: 'veziyyet_cihaz',
   condition: 'veziyyet_cihaz',
+  yeni: 'veziyyet_cihaz',
+  teze: 'veziyyet_cihaz',
+  kohne: 'veziyyet_cihaz',
+  'köhnə': 'veziyyet_cihaz',
+  təzə: 'veziyyet_cihaz',
   sim: 'sim_type',
   miqdar: 'miqdar',
   qnt: 'miqdar',
@@ -196,7 +204,7 @@ export function coerceValue(raw, col) {
   }
   if (col.key === 'veziyyet_cihaz') {
     const s = String(raw).trim().toLowerCase()
-    if (s.includes('tez') || s === 'new') return 'teze'
+    if (s.includes('tez') || s.includes('yeni') || s === 'new') return 'teze'
     if (s.includes('kohn') || s === 'used') return 'kohne'
     return ['teze', 'kohne'].includes(s) ? s : null
   }
@@ -218,5 +226,6 @@ export function excelRowToForm(excelRow, mapping, columnsByKey) {
   }
   if (!form.status) form.status = 'available'
   if (!form.miqdar) form.miqdar = '1'
+  if (form.veziyyet_cihaz === 'teze') form.battery_faiz = '100'
   return form
 }

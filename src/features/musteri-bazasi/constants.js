@@ -19,7 +19,7 @@ export const MEHKEME_NATIVE_KEYS = [
 ]
 
 /** Fields with select-or-type suggestions from existing DB values */
-export const SUGGEST_FIELDS = new Set(['model', 'reng', 'yaddas'])
+export const SUGGEST_FIELDS = new Set(['model', 'reng', 'yaddas', 'satici'])
 
 /**
  * Faiz = cərimə məbləği (penalty).
@@ -44,7 +44,7 @@ export const FIELD_TYPES = [
  * group: person = müştəri fields | record = sale/device | meta = auto
  */
 export const DEFAULT_COLUMNS = [
-  { key: 'sira_no', label: '# / №', type: 'number', visible: true, formVisible: false, readonly: true, system: true, group: 'meta' },
+  { key: 'sira_no', label: 'Müştərinin nömrəsi', type: 'number', visible: true, formVisible: true, readonly: false, system: true, group: 'meta' },
   { key: 'ad_soyad', label: 'Ad Soyad Ata adı', type: 'text', visible: true, formVisible: true, readonly: false, system: true, group: 'person', required: true },
   { key: 'nomre_1', label: 'Nömrə 1', type: 'text', visible: true, formVisible: true, readonly: false, system: true, group: 'person' },
   { key: 'nomre_2', label: 'Nömrə 2', type: 'text', visible: true, formVisible: true, readonly: false, system: true, group: 'person' },
@@ -55,6 +55,8 @@ export const DEFAULT_COLUMNS = [
   { key: 'alis_qiymeti', label: 'Alış qiyməti', type: 'money', visible: true, formVisible: true, readonly: false, system: true, group: 'record' },
   { key: 'satis_qiymeti', label: 'Satış qiyməti', type: 'money', visible: true, formVisible: true, readonly: false, system: true, group: 'record' },
   { key: 'verilib', label: 'Verilib', type: 'money', visible: true, formVisible: true, readonly: false, system: true, group: 'record' },
+  { key: 'satici', label: 'Satıcı', type: 'text', visible: true, formVisible: true, readonly: false, system: true, group: 'record' },
+  { key: 'satici_faizi', label: 'Satıcı Faizi', type: 'money', visible: true, formVisible: true, readonly: false, system: true, group: 'record' },
   { key: 'gozlenilen_gelir', label: 'Gözlənilən gəlir', type: 'money', visible: true, formVisible: true, readonly: true, system: true, group: 'meta' },
   { key: 'faktiki_gelir', label: 'Faktiki gəlir', type: 'money', visible: true, formVisible: true, readonly: true, system: true, group: 'meta' },
   { key: 'qalan_borc', label: 'Qalan borc', type: 'money', visible: true, formVisible: true, readonly: true, system: true, group: 'meta' },
@@ -108,11 +110,14 @@ export const MUSTERI_VIEW_SECTIONS = [
     alwaysVisible: true,
     keys: [
       'sira_no',
+      'muqavile_nomresi',
       'ad_soyad',
       'nomre_1',
       'alis_qiymeti',
       'satis_qiymeti',
       'verilib',
+      'satici',
+      'satici_faizi',
       'qalan_borc',
       'ayliq_odenis',
       'nece_ay',
@@ -160,7 +165,7 @@ export const MUSTERI_VIEW_SECTIONS = [
     id: 'diger',
     title: 'Digər',
     defaultOpen: false,
-    keys: ['kimden_alinib', 'muqavile_nomresi', 'kommentler'],
+    keys: ['kimden_alinib', 'kommentler'],
   },
   {
     id: 'mehkeme',
@@ -194,6 +199,52 @@ export function buildMusteriViewSections(columns = DEFAULT_COLUMNS) {
   }
 
   const rest = visible.filter((c) => !used.has(c.key))
+  if (rest.length) {
+    sections.push({
+      id: 'elave',
+      title: 'Əlavə sahələr',
+      defaultOpen: false,
+      columns: rest,
+    })
+  }
+
+  return sections
+}
+
+/**
+ * Form layout sections (same categories as detail view).
+ * Includes form-visible columns + custom columns; skips files by default.
+ */
+export function buildMusteriFormSections(columns = DEFAULT_COLUMNS, opts = {}) {
+  const skip = opts.skipKeys instanceof Set ? opts.skipKeys : new Set(opts.skipKeys || [])
+  const formCols = (columns || []).filter(
+    (c) =>
+      c &&
+      c.key &&
+      c.type !== 'files' &&
+      c.key !== 'senedler' &&
+      c.formVisible !== false &&
+      !skip.has(c.key)
+  )
+  const byKey = new Map(formCols.map((c) => [c.key, c]))
+  const used = new Set()
+  const sections = []
+
+  for (const section of MUSTERI_VIEW_SECTIONS) {
+    const cols = section.keys.map((key) => byKey.get(key)).filter(Boolean)
+    cols.forEach((c) => used.add(c.key))
+    if (cols.length) {
+      sections.push({
+        id: section.id,
+        title: section.title,
+        defaultOpen: section.defaultOpen,
+        alwaysVisible: Boolean(section.alwaysVisible),
+        columns: cols,
+      })
+    }
+  }
+
+  const rest = formCols.filter((c) => !used.has(c.key))
   if (rest.length) {
     sections.push({
       id: 'elave',
@@ -272,9 +323,12 @@ export function mergeColumnConfig(saved) {
         const base = byKey.get(c.key)
         byKey.set(c.key, {
           ...base,
-          label: c.label || base.label,
+          label: c.key === 'sira_no' ? base.label : c.label || base.label,
           visible: c.visible !== false,
-          formVisible: c.formVisible !== false && c.visible !== false,
+          formVisible:
+            c.key === 'sira_no'
+              ? true
+              : c.formVisible !== false && c.visible !== false,
           order: typeof c.order === 'number' ? c.order : i,
           width: typeof c.width === 'number' ? c.width : base.width,
         })
@@ -364,7 +418,7 @@ export function moneyCellClass(col, value) {
   const n = value === null || value === undefined || value === '' ? null : Number(value)
   const finite = n != null && Number.isFinite(n)
 
-  if (key === 'alis_qiymeti' || key === 'satis_qiymeti' || key === 'ayliq_odenis') {
+  if (key === 'alis_qiymeti' || key === 'satis_qiymeti' || key === 'ayliq_odenis' || key === 'satici_faizi') {
     return 'num num--neutral'
   }
   if (key === 'verilib' || key === 'gozlenilen_gelir') {
@@ -392,16 +446,17 @@ export function formatCell(value, col) {
 export function emptyMusteriForm(columns = DEFAULT_COLUMNS) {
   const base = {
     musteri_id: '',
+    sira_no: '',
     extra: {},
     veziyyet: 'Qalıb',
     veziyyet_manual: false,
     senedler: [],
   }
   for (const col of columns) {
-    if (col.key === 'sira_no' || col.key === 'senedler') continue
+    if (col.key === 'senedler') continue
     if (col.custom) {
       base.extra[col.key] = ''
-    } else if (col.key === 'verilib' || col.key === 'faiz') {
+    } else if (col.key === 'verilib' || col.key === 'faiz' || col.key === 'satici_faizi') {
       base[col.key] = '0'
     } else if (col.key === 'veziyyet') {
       base.veziyyet = 'Qalıb'
@@ -523,6 +578,7 @@ export function toMusterilerPayload(form) {
 const SYSTEM_DB_KEYS = [
   'musteri_id', 'ad_soyad', 'alis_qiymeti', 'satis_qiymeti', 'verilib',
   'verilme_tarixi', 'bitme_tarixi', 'nece_ay', 'odenis_gunu', 'birinci_ayliq_odenis_tarixi', 'ayliq_odenis', 'faiz',
+  'satici', 'satici_faizi',
   'model', 'reng', 'icloud', 'icloud_bagli_nomre', 'itunes', 'itunes_bagli_nomre',
   'imei_1', 'imei_2', 'yaddas', 'kimden_alinib', 'battery_faiz', 'muqavile_nomresi',
   'nomre_1', 'nomre_2', 'nomre_3', 'nomre_4', 'nomre_5', 'zamin', 'kommentler', 'veziyyet',
@@ -547,8 +603,11 @@ export function toMusteriPayload(form, musteriId, columns = DEFAULT_COLUMNS) {
     const raw = form[key]
     if (type === 'checkbox' || key === 'mehkeme_isare') {
       payload[key] = Boolean(raw === true || raw === 'true' || raw === '1' || raw === 1)
-    } else if (type === 'money' || type === 'number') {
-      let n = key === 'verilib' || key === 'faiz' ? (numOrNull(raw) ?? 0) : numOrNull(raw)
+    } else     if (type === 'money' || type === 'number') {
+      let n =
+        key === 'verilib' || key === 'faiz' || key === 'satici_faizi'
+          ? (numOrNull(raw) ?? 0)
+          : numOrNull(raw)
       if (key === 'odenis_gunu' && n !== null) {
         n = Math.min(31, Math.max(1, Math.trunc(n)))
       }

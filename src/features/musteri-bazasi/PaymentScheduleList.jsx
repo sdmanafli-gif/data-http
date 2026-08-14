@@ -9,8 +9,8 @@ import {
   scheduleTotals,
   matchPaymentsToSchedule,
   matchedScheduleTotals,
+  dueAsOfTodayTotals,
   statusLabel,
-  PENALTY_RATE_PER_DAY,
   resolvePaymentSchedule,
   scheduleIsCustom,
   normalizeScheduleLines,
@@ -18,18 +18,13 @@ import {
 } from './paymentSchedule'
 
 function snapshotFileName(record) {
-  const sira =
-    record?.sira_no != null && String(record.sira_no).trim() !== ''
-      ? String(record.sira_no).trim()
-      : null
   const raw = String(record?.ad_soyad || 'musteri')
   const safe = raw
     .trim()
     .replace(/[<>:"/\\|?*]+/g, '')
     .replace(/\s+/g, '-')
     .slice(0, 60)
-  const parts = [sira ? `No-${sira}` : null, safe || 'musteri'].filter(Boolean)
-  return `odenis-qrafiki-${parts.join('-')}.png`
+  return `odenis-qrafiki-${safe || 'musteri'}.png`
 }
 
 /**
@@ -66,7 +61,7 @@ export default function PaymentScheduleList({ record, onRecordUpdated }) {
         .from(ODENISLER_TABLE)
         .select('id, tip, mebleg, tarix')
         .eq('musteri_bazasi_id', localRecord.id)
-        .in('tip', ['ilkin', 'ayliq'])
+        .in('tip', ['ilkin', 'ayliq', 'faiz'])
         .order('tarix', { ascending: true })
       if (cancelled) return
       if (e) {
@@ -100,7 +95,11 @@ export default function PaymentScheduleList({ record, onRecordUpdated }) {
   )
 
   const totals = useMemo(() => scheduleTotals(schedule), [schedule])
-  const matchTotals = useMemo(() => matchedScheduleTotals(matched), [matched])
+  const matchTotals = useMemo(
+    () => matchedScheduleTotals(matched, payments),
+    [matched, payments]
+  )
+  const dueNowTotals = useMemo(() => dueAsOfTodayTotals(matched), [matched])
   const ilkin = computeIlkinOdenis(localRecord)
 
   const displayRows = editing
@@ -111,6 +110,8 @@ export default function PaymentScheduleList({ record, onRecordUpdated }) {
         remaining: Number(item.mebleg) || 0,
         delayDays: 0,
         penalty: 0,
+        penaltyPaid: 0,
+        penaltyRemaining: 0,
         status: 'gozleyir',
       }))
     : matched
@@ -313,9 +314,6 @@ export default function PaymentScheduleList({ record, onRecordUpdated }) {
 
       <div ref={snapRef} className="musteri-schedule__snapshot">
         <div className="musteri-schedule__snap-heading">
-          {localRecord?.sira_no != null && String(localRecord.sira_no).trim() !== '' ? (
-            <strong className="musteri-schedule__snap-sira">№ {localRecord.sira_no}</strong>
-          ) : null}
           <strong>Ödəniş qrafiki</strong>
           {localRecord?.ad_soyad ? <span>{localRecord.ad_soyad}</span> : null}
           {localRecord?.model ? <span>{localRecord.model}</span> : null}
@@ -323,45 +321,91 @@ export default function PaymentScheduleList({ record, onRecordUpdated }) {
         </div>
 
         <div className="musteri-schedule__summary">
-          <div className="musteri-schedule__stat">
-            <span className="musteri-schedule__stat-label">İlkin ödəniş</span>
-            <span className="musteri-schedule__stat-value">{formatMoney(ilkin ?? totals.ilkin)}</span>
-          </div>
-          <div className="musteri-schedule__stat">
-            <span className="musteri-schedule__stat-label">
-              Aylıq × {Number(localRecord?.nece_ay) || '—'}
-            </span>
-            <span className="musteri-schedule__stat-value">{formatMoney(totals.aylıq)}</span>
-          </div>
-          <div className="musteri-schedule__stat">
-            <span className="musteri-schedule__stat-label">Qrafik cəmi</span>
-            <span className="musteri-schedule__stat-value">{formatMoney(totals.cemi)}</span>
+          <div className="musteri-schedule__summary-row">
+            <div className="musteri-schedule__stat">
+              <span className="musteri-schedule__stat-label">İlkin</span>
+              <span className="musteri-schedule__stat-value">{formatMoney(ilkin ?? totals.ilkin)}</span>
+            </div>
+            <div className="musteri-schedule__stat">
+              <span className="musteri-schedule__stat-label">
+                Aylıq × {Number(localRecord?.nece_ay) || '—'}
+              </span>
+              <span className="musteri-schedule__stat-value">
+                {formatMoney(Number(localRecord?.ayliq_odenis) || 0)}
+              </span>
+            </div>
+            <div className="musteri-schedule__stat">
+              <span className="musteri-schedule__stat-label">Qrafik cəmi</span>
+              <span className="musteri-schedule__stat-value">{formatMoney(totals.cemi)}</span>
+            </div>
+            {!editing && (
+              <>
+                <div className="musteri-schedule__stat">
+                  <span className="musteri-schedule__stat-label">Ödənilib</span>
+                  <span className="musteri-schedule__stat-value">{formatMoney(matchTotals.paid)}</span>
+                </div>
+                <div className="musteri-schedule__stat">
+                  <span className="musteri-schedule__stat-label">Qalan</span>
+                  <span className="musteri-schedule__stat-value">{formatMoney(matchTotals.remaining)}</span>
+                </div>
+              </>
+            )}
           </div>
           {!editing && (
-            <>
+            <div className="musteri-schedule__summary-row musteri-schedule__summary-row--penalty">
               <div className="musteri-schedule__stat">
-                <span className="musteri-schedule__stat-label">Ödənilib (qrafik)</span>
-                <span className="musteri-schedule__stat-value">{formatMoney(matchTotals.paid)}</span>
-              </div>
-              <div className="musteri-schedule__stat">
-                <span className="musteri-schedule__stat-label">Qalan (qrafik)</span>
-                <span className="musteri-schedule__stat-value">{formatMoney(matchTotals.remaining)}</span>
-              </div>
-              <div className="musteri-schedule__stat">
-                <span className="musteri-schedule__stat-label">Cərimə (cəmi)</span>
+                <span className="musteri-schedule__stat-label">Cərimə cəmi</span>
                 <span className="musteri-schedule__stat-value">{formatMoney(matchTotals.penalty)}</span>
               </div>
-            </>
+              <div className="musteri-schedule__stat">
+                <span className="musteri-schedule__stat-label">Cərimə ödənilib</span>
+                <span className="musteri-schedule__stat-value">{formatMoney(matchTotals.penaltyPaid)}</span>
+              </div>
+              <div className="musteri-schedule__stat">
+                <span className="musteri-schedule__stat-label">Cərimə qalıq</span>
+                <span className="musteri-schedule__stat-value musteri-schedule__stat-value--warn">
+                  {formatMoney(matchTotals.penaltyRemaining)}
+                </span>
+              </div>
+            </div>
           )}
         </div>
-        <p className="musteri-schedule__hint">
-          İlkin / Aylıq ödənişlər qrafiki sırayla örtür. Faiz Borc ayrıca saxlanılır.
-          Gecikmə cəriməsi = aylıq × {(PENALTY_RATE_PER_DAY * 100).toFixed(2)}% × gün (yalnız bu cədvəldə göstərilir).
-          {localRecord?.birinci_ayliq_odenis_tarixi
-            ? ` Birinci aylıq: ${formatDate(localRecord.birinci_ayliq_odenis_tarixi)}.`
-            : ''}
-          {editing ? ' Redaktə rejimində tarix və məbləği dəyişə bilərsiniz.' : ''}
-        </p>
+
+        {!editing && (
+          <div
+            className={`musteri-schedule__due-panel${dueNowTotals.dueNow > 0 || dueNowTotals.penaltyDue > 0 ? ' musteri-schedule__due-panel--owed' : ''}`}
+          >
+            <div className="musteri-schedule__due-main">
+              <span className="musteri-schedule__due-label">Bugünə olan borc</span>
+              <strong className="musteri-schedule__due-amount">
+                {formatMoney(dueNowTotals.dueNow)}
+              </strong>
+            </div>
+            <div className="musteri-schedule__due-meta">
+              <div className="musteri-schedule__stat">
+                <span className="musteri-schedule__stat-label">Gecikmiş</span>
+                <span className="musteri-schedule__stat-value">
+                  {dueNowTotals.overdueAylik} ay · {formatMoney(dueNowTotals.overdue)}
+                </span>
+              </div>
+              <div className="musteri-schedule__stat">
+                <span className="musteri-schedule__stat-label">Bu gün</span>
+                <span className="musteri-schedule__stat-value">{formatMoney(dueNowTotals.dueToday)}</span>
+              </div>
+              <div className="musteri-schedule__stat">
+                <span className="musteri-schedule__stat-label">Cərimə qalıq</span>
+                <span className="musteri-schedule__stat-value">{formatMoney(dueNowTotals.penaltyDue)}</span>
+              </div>
+              <div className="musteri-schedule__stat">
+                <span className="musteri-schedule__stat-label">Borc + cərimə</span>
+                <span className="musteri-schedule__stat-value musteri-schedule__stat-value--warn">
+                  {formatMoney(dueNowTotals.dueWithPenalty)}
+                </span>
+              </div>
+            </div>
+          </div>
+        )}
+
         {error && <p style={{ color: 'var(--color-accent)' }}>{error}</p>}
         {loadingPay && !editing ? (
           <p className="empty-state">Ödənişlər yüklənir…</p>
@@ -380,6 +424,7 @@ export default function PaymentScheduleList({ record, onRecordUpdated }) {
                       <th>Qalan</th>
                       <th>Gecikmə</th>
                       <th>Cərimə</th>
+                      <th>Cərimə qalıq</th>
                       <th>Status</th>
                     </>
                   )}
@@ -456,6 +501,17 @@ export default function PaymentScheduleList({ record, onRecordUpdated }) {
                         <td>
                           {item.penalty > 0 ? (
                             <span className="musteri-schedule__overdue">{formatMoney(item.penalty)}</span>
+                          ) : (
+                            '—'
+                          )}
+                        </td>
+                        <td>
+                          {(Number(item.penaltyRemaining) || 0) > 0 ? (
+                            <span className="musteri-schedule__overdue">
+                              {formatMoney(item.penaltyRemaining)}
+                            </span>
+                          ) : item.penalty > 0 ? (
+                            <span className="musteri-schedule__paid">{formatMoney(0)}</span>
                           ) : (
                             '—'
                           )}

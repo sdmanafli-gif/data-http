@@ -25,7 +25,7 @@ export const ODENIS_NOVU_OPTIONS = [
 export const ODENIS_NOVU_LABELS = Object.fromEntries(ODENIS_NOVU_OPTIONS.map((o) => [o.value, o.label]))
 
 export const CONDITION_OPTIONS = [
-  { value: 'teze', label: 'Təzə' },
+  { value: 'teze', label: 'Yeni' },
   { value: 'kohne', label: 'Köhnə' },
 ]
 
@@ -55,6 +55,7 @@ export const FIELD_TYPES = [
 export const DEFAULT_COLUMNS = [
   { key: 'model', label: 'Model', type: 'text', visible: true, formVisible: true, readonly: false, system: true, group: 'record' },
   { key: 'reng', label: 'Rəng', type: 'text', visible: true, formVisible: true, readonly: false, system: true, group: 'record' },
+  { key: 'veziyyet_cihaz', label: 'Status', type: 'select', visible: true, formVisible: true, readonly: false, system: true, group: 'record', options: ['teze', 'kohne'], required: true },
   { key: 'battery_faiz', label: 'Battery', type: 'number', visible: true, formVisible: true, readonly: false, system: true, group: 'record' },
   { key: 'alis_tarixi', label: 'Tarix', type: 'date', visible: true, formVisible: true, readonly: false, system: true, group: 'record' },
   { key: 'alis_qiymeti', label: 'Qiymət', type: 'money', visible: true, formVisible: true, readonly: false, system: true, group: 'record' },
@@ -73,7 +74,6 @@ export const DEFAULT_COLUMNS = [
   // Kept in DB / column manager, hidden from default sheet view
   { key: 'sira_no', label: '# / №', type: 'number', visible: false, formVisible: false, readonly: true, system: true, group: 'meta' },
   { key: 'nov', label: 'Növ', type: 'text', visible: false, formVisible: false, readonly: false, system: true, group: 'extra' },
-  { key: 'veziyyet_cihaz', label: 'Təzə / Köhnə', type: 'select', visible: false, formVisible: false, readonly: false, system: true, group: 'extra', options: ['teze', 'kohne'] },
   { key: 'sim_type', label: 'SIM növü', type: 'select', visible: false, formVisible: false, readonly: false, system: true, group: 'extra', options: ['sim', 'esim', 'both'] },
   { key: 'kommentler', label: 'Kommentlər', type: 'text', visible: false, formVisible: false, readonly: false, system: true, group: 'extra' },
   { key: 'senedler', label: 'Sənədlər', type: 'files', visible: true, formVisible: true, readonly: false, system: true, group: 'record' },
@@ -91,9 +91,19 @@ export function mergeColumnConfig(saved) {
         const base = byKey.get(c.key)
         byKey.set(c.key, {
           ...base,
-          label: c.label || base.label,
-          visible: typeof c.visible === 'boolean' ? c.visible : base.visible,
-          formVisible: typeof c.formVisible === 'boolean' ? c.formVisible : base.formVisible,
+          label: c.key === 'veziyyet_cihaz' ? base.label : c.label || base.label,
+          visible:
+            c.key === 'veziyyet_cihaz'
+              ? true
+              : typeof c.visible === 'boolean'
+                ? c.visible
+                : base.visible,
+          formVisible:
+            c.key === 'veziyyet_cihaz'
+              ? true
+              : typeof c.formVisible === 'boolean'
+                ? c.formVisible
+                : base.formVisible,
           order: typeof c.order === 'number' ? c.order : i,
           width: typeof c.width === 'number' ? c.width : base.width,
         })
@@ -115,7 +125,17 @@ export function mergeColumnConfig(saved) {
       }
     })
   }
-  return Array.from(byKey.values()).sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
+
+  const cols = Array.from(byKey.values()).sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
+  // Always place Status immediately before Battery
+  const statusIdx = cols.findIndex((c) => c.key === 'veziyyet_cihaz')
+  if (statusIdx >= 0) {
+    const [statusCol] = cols.splice(statusIdx, 1)
+    const batIdx = cols.findIndex((c) => c.key === 'battery_faiz')
+    if (batIdx >= 0) cols.splice(batIdx, 0, statusCol)
+    else cols.push(statusCol)
+  }
+  return cols.map((c, i) => ({ ...c, order: i }))
 }
 
 export function formatMoney(value) {
@@ -130,7 +150,7 @@ export function formatCell(value, col) {
   if (value === null || value === undefined || value === '') return '—'
   if (col.key === 'status') return STATUS_LABELS[value] || value
   if (col.key === 'odenis_novu') return ODENIS_NOVU_LABELS[value] || value
-  if (col.key === 'veziyyet_cihaz') return value === 'teze' ? 'Təzə' : value === 'kohne' ? 'Köhnə' : value
+  if (col.key === 'veziyyet_cihaz') return value === 'teze' ? 'Yeni' : value === 'kohne' ? 'Köhnə' : value
   if (col.key === 'battery_faiz') {
     const n = Number(value)
     if (Number.isNaN(n)) return String(value)
@@ -196,6 +216,9 @@ export function toDepoPayload(form, columns = DEFAULT_COLUMNS) {
     }
   }
   payload.status = form.status || 'available'
+  if (form.veziyyet_cihaz === 'teze') {
+    payload.battery_faiz = 100
+  }
   payload.senedler = parseSenedler(form.senedler)
 
   const extra = { ...(form.extra || {}) }
@@ -257,6 +280,37 @@ export function validateDepoNisye(form) {
     return 'Nisyə üçün alış qiyməti (məbləğ) mütləqdir.'
   }
   return null
+}
+
+/** Yeni → battery 100; Köhnə → battery optional. */
+export function validateDepoDeviceCondition(form) {
+  const status = form?.veziyyet_cihaz
+  if (!status) return 'Status seçilməlidir (Yeni və ya Köhnə).'
+  return null
+}
+
+/**
+ * Required empty fields for Depo form (for red highlight + message).
+ * @returns {{ key: string, label: string }[]}
+ */
+export function getDepoMissingRequiredFields(form) {
+  const missing = []
+  if (!form?.veziyyet_cihaz) {
+    missing.push({ key: 'veziyyet_cihaz', label: 'Status' })
+  }
+  if (form?.odenis_novu === 'nisye') {
+    if (!String(form.kimden_alinib || '').trim()) {
+      missing.push({ key: 'kimden_alinib', label: 'Hardan' })
+    }
+    if (!form.qaytarma_tarixi) {
+      missing.push({ key: 'qaytarma_tarixi', label: 'Qaytarma tarixi' })
+    }
+    const alis = Number(String(form.alis_qiymeti || '').replace(',', '.'))
+    if (!Number.isFinite(alis) || alis <= 0) {
+      missing.push({ key: 'alis_qiymeti', label: 'Qiymət' })
+    }
+  }
+  return missing
 }
 
 /**

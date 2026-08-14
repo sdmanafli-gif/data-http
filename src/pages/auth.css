@@ -51,3 +51,69 @@
   font-size: var(--font-size-sm, 13px);
   color: var(--color-text-muted);
 }
+
+.auth-text-btn {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--color-accent);
+  cursor: pointer;
+  font: inherit;
+  text-decoration: underline;
+}
+
+.auth-otp-input {
+  font-size: 1.5rem;
+  letter-spacing: 0.35em;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.mfa-enroll__qr {
+  display: flex;
+  justify-content: center;
+  margin: 0 0 var(--space-md);
+}
+
+.mfa-enroll__qr svg {
+  width: 180px;
+  height: 180px;
+}
+
+.mfa-enroll__secret {
+  font-size: var(--font-size-sm, 13px);
+  color: var(--color-text-muted);
+  word-break: break-all;
+  margin: 0 0 var(--space-md);
+}
+
+.mfa-enroll__secret code {
+  font-size: 12px;
+  background: var(--color-bg);
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.mfa-settings-card {
+  max-width: 480px;
+}
+
+.mfa-factor-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.mfa-factor-list__item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.btn--sm {
+  padding: 4px 10px;
+  font-size: 12px;
+}
