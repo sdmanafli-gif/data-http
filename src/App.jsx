@@ -17,6 +17,15 @@ import DepoFeature from './features/depo'
 import NagdSatishFeature from './features/nagd-satish'
 import BorcNisyeFeature from './features/borc-nisye'
 
+function RequireAccess({ children }) {
+  const { access } = useAuth()
+  const location = useLocation()
+  if (!access.canAccessPath(location.pathname)) {
+    return <Navigate to={access.firstAllowedPath()} replace />
+  }
+  return children
+}
+
 function MehkemeFeature() {
   const location = useLocation()
   const hideHeader = location.pathname.includes('/sutunlar')
@@ -48,21 +57,73 @@ function MehkemeFeature() {
 }
 
 function AppRoutes() {
+  const { access } = useAuth()
+  const home = access.firstAllowedPath()
+
   return (
     <Layout>
       <Routes>
         <Route path="/admin/invite" element={<InviteUser />} />
         <Route path="/admin/users" element={<UserList />} />
         <Route path="/hesab/tehlukesizlik" element={<MfaEnroll forced={false} />} />
-        <Route path="/musteri-bazasi/*" element={<MusteriBazasi />} />
-        <Route path="/yigim/*" element={<YigimPage />} />
-        <Route path="/mehkeme/*" element={<MehkemeFeature />} />
-        <Route path="/odenisler/*" element={<OdenislerFeature />} />
-        <Route path="/depo/*" element={<DepoFeature />} />
-        <Route path="/nagd-satish/*" element={<NagdSatishFeature />} />
-        <Route path="/borc-nisye/*" element={<BorcNisyeFeature />} />
-        <Route path="/" element={<Navigate to="/musteri-bazasi" replace />} />
-        <Route path="*" element={<Navigate to="/musteri-bazasi" replace />} />
+        <Route
+          path="/musteri-bazasi/*"
+          element={
+            <RequireAccess>
+              <MusteriBazasi />
+            </RequireAccess>
+          }
+        />
+        <Route
+          path="/yigim/*"
+          element={
+            <RequireAccess>
+              <YigimPage />
+            </RequireAccess>
+          }
+        />
+        <Route
+          path="/mehkeme/*"
+          element={
+            <RequireAccess>
+              <MehkemeFeature />
+            </RequireAccess>
+          }
+        />
+        <Route
+          path="/odenisler/*"
+          element={
+            <RequireAccess>
+              <OdenislerFeature />
+            </RequireAccess>
+          }
+        />
+        <Route
+          path="/depo/*"
+          element={
+            <RequireAccess>
+              <DepoFeature />
+            </RequireAccess>
+          }
+        />
+        <Route
+          path="/nagd-satish/*"
+          element={
+            <RequireAccess>
+              <NagdSatishFeature />
+            </RequireAccess>
+          }
+        />
+        <Route
+          path="/borc-nisye/*"
+          element={
+            <RequireAccess>
+              <BorcNisyeFeature />
+            </RequireAccess>
+          }
+        />
+        <Route path="/" element={<Navigate to={home} replace />} />
+        <Route path="*" element={<Navigate to={home} replace />} />
       </Routes>
     </Layout>
   )

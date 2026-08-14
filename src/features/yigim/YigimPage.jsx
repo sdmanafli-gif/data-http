@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { supabase, fetchAllPages } from '../../lib/supabase'
+import { useAuth } from '../../contexts/AuthContext'
 import {
   MUSTERI_TABLE,
   formatMoney,
@@ -202,6 +203,7 @@ export function buildYigimRows(musteriler, payments) {
 
 export default function YigimPage() {
   const now = new Date()
+  const { access } = useAuth()
   const { columns, loading: colsLoading, saveColumns } = useColumnConfig()
   const [localCols, setLocalCols] = useState([])
   const resizeTimer = useRef(null)
@@ -224,8 +226,8 @@ export default function YigimPage() {
   }, [columns])
 
   const visibleCols = useMemo(
-    () => localCols.filter((c) => c.visible !== false),
-    [localCols]
+    () => access.filterColumns('yigim', localCols).filter((c) => c.visible !== false),
+    [localCols, access]
   )
 
   const handleReorder = useCallback(
@@ -260,15 +262,16 @@ export default function YigimPage() {
     setError(null)
     try {
       const [{ data: musteriler, error: mErr }, { data: payments, error: pErr }] = await Promise.all([
-        fetchAllPages(() =>
-          supabase
+        fetchAllPages(() => {
+          let q = supabase
             .from(MUSTERI_TABLE)
             .select(
               'id, sira_no, ad_soyad, model, nomre_1, veziyyet, satis_qiymeti, alis_qiymeti, verilib, faiz, faktiki_gelir, ayliq_odenis, nece_ay, odenis_gunu, birinci_ayliq_odenis_tarixi, odenis_qrafiki, verilme_tarixi'
             )
             .eq('veziyyet', 'Qalıb')
             .order('sira_no', { ascending: true })
-        ),
+          return access.applyDataFilters(q, 'yigim')
+        }),
         fetchAllPages(() =>
           supabase
             .from(ODENISLER_TABLE)
@@ -462,6 +465,9 @@ export default function YigimPage() {
     )
   }
 
+  const yigimSummaryKeys = access.allowedSummaryCards('yigim')
+  const showYigimCard = (key) => yigimSummaryKeys == null || yigimSummaryKeys.includes(key)
+
   const title = periodTitle(period, { year, month, weekStart, customFrom, customTo })
 
   function shiftPeriod(dir) {
@@ -573,39 +579,53 @@ export default function YigimPage() {
 
       {error && <p style={{ color: 'var(--color-accent)' }}>{error}</p>}
 
-      {!loading && !colsLoading && (
+      {!loading && !colsLoading && access.canSeeSummary('yigim') && (
         <CollapsibleSummary title="Cəmlər" storageKey="summary:yigim">
           <div className="musteri-summary">
-            <div className="musteri-summary__card">
-              <div className="musteri-summary__label">Gözlənilən yığım</div>
-              <div className="musteri-summary__value">{formatMoney(totals.owed)}</div>
-            </div>
-            <div className="musteri-summary__card">
-              <div className="musteri-summary__label">Ödənilib</div>
-              <div className="musteri-summary__value">{formatMoney(totals.paid)}</div>
-            </div>
-            <div className="musteri-summary__card">
-              <div className="musteri-summary__label">Qalan / pending</div>
-              <div className="musteri-summary__value">{formatMoney(totals.remaining)}</div>
-            </div>
-            <div className="musteri-summary__card">
-              <div className="musteri-summary__label">Cərimə</div>
-              <div className="musteri-summary__value">{formatMoney(totals.penalty)}</div>
-            </div>
-            <div className="musteri-summary__card">
-              <div className="musteri-summary__label">Faktiki gəlir (müştərilər)</div>
-              <div className="musteri-summary__value">{formatMoney(totals.faktiki)}</div>
-            </div>
-            <div className="musteri-summary__card">
-              <div className="musteri-summary__label">Gecikmiş sətir</div>
-              <div className="musteri-summary__value">{totals.lateCount}</div>
-            </div>
-            <div className="musteri-summary__card musteri-summary__card--meta">
-              <div className="musteri-summary__label">Sətir / müştəri</div>
-              <div className="musteri-summary__value">
-                {totals.count} / {totals.musteriCount}
+            {showYigimCard('owed') && (
+              <div className="musteri-summary__card">
+                <div className="musteri-summary__label">Gözlənilən yığım</div>
+                <div className="musteri-summary__value">{formatMoney(totals.owed)}</div>
               </div>
-            </div>
+            )}
+            {showYigimCard('paid') && (
+              <div className="musteri-summary__card">
+                <div className="musteri-summary__label">Ödənilib</div>
+                <div className="musteri-summary__value">{formatMoney(totals.paid)}</div>
+              </div>
+            )}
+            {showYigimCard('remaining') && (
+              <div className="musteri-summary__card">
+                <div className="musteri-summary__label">Qalan / pending</div>
+                <div className="musteri-summary__value">{formatMoney(totals.remaining)}</div>
+              </div>
+            )}
+            {showYigimCard('penalty') && (
+              <div className="musteri-summary__card">
+                <div className="musteri-summary__label">Cərimə</div>
+                <div className="musteri-summary__value">{formatMoney(totals.penalty)}</div>
+              </div>
+            )}
+            {showYigimCard('faktiki') && (
+              <div className="musteri-summary__card">
+                <div className="musteri-summary__label">Faktiki gəlir (müştərilər)</div>
+                <div className="musteri-summary__value">{formatMoney(totals.faktiki)}</div>
+              </div>
+            )}
+            {showYigimCard('lateCount') && (
+              <div className="musteri-summary__card">
+                <div className="musteri-summary__label">Gecikmiş sətir</div>
+                <div className="musteri-summary__value">{totals.lateCount}</div>
+              </div>
+            )}
+            {showYigimCard('row_musteri') && (
+              <div className="musteri-summary__card musteri-summary__card--meta">
+                <div className="musteri-summary__label">Sətir / müştəri</div>
+                <div className="musteri-summary__value">
+                  {totals.count} / {totals.musteriCount}
+                </div>
+              </div>
+            )}
           </div>
         </CollapsibleSummary>
       )}

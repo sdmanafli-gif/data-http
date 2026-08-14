@@ -9,7 +9,7 @@ import './Layout.css'
 const SIDEBAR_KEY = 'mobideal_sidebar_collapsed'
 
 export default function Layout({ children }) {
-  const { profile, signOut, isAdmin, isManager } = useAuth()
+  const { profile, signOut, isAdmin, isManager, access } = useAuth()
   const roleLabel = profile?.role === 'admin' ? 'Admin' : 'Menecer'
   const [collapsed, setCollapsed] = useState(() => {
     try {
@@ -24,6 +24,13 @@ export default function Layout({ children }) {
       localStorage.setItem(SIDEBAR_KEY, collapsed ? '1' : '0')
     } catch (_) {}
   }, [collapsed])
+
+  const filteredSections = navSections
+    .map((section) => ({
+      ...section,
+      items: section.items.filter((item) => access?.canAccessPath?.(item.path) !== false),
+    }))
+    .filter((section) => section.items.length > 0)
 
   return (
     <div className={`layout ${collapsed ? 'layout--sidebar-collapsed' : ''}`}>
@@ -44,7 +51,7 @@ export default function Layout({ children }) {
         </div>
 
         <nav className="layout__nav">
-          {navSections.map((section, sectionIndex) => (
+          {filteredSections.map((section, sectionIndex) => (
             <div
               key={section.id}
               className={`layout__nav-section${sectionIndex > 0 ? ' layout__nav-section--divided' : ''}`}

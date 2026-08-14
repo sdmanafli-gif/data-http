@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase, fetchAllPages } from '../../lib/supabase'
+import { useAuth } from '../../contexts/AuthContext'
 import { loadUiFlag, saveUiFlag } from '../../lib/uiPrefs'
 import {
   SEXSI_KREDIT_TABLE,
@@ -36,8 +37,17 @@ function formatSexsiCell(value, col) {
  */
 export default function SexsiKreditPanel() {
   const navigate = useNavigate()
+  const { access } = useAuth()
   const [open, setOpen] = useState(() => loadUiFlag('borc-nisye:sexsi-kredit-open', true))
   const [kreditler, setKreditler] = useState([])
+
+  const visibleCols = useMemo(
+    () =>
+      access
+        .filterColumns('borc-nisye', SEXSI_KREDIT_COLUMNS)
+        .filter((c) => c.visible !== false),
+    [access]
+  )
   const [paymentsByKredit, setPaymentsByKredit] = useState(new Map())
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -179,7 +189,7 @@ export default function SexsiKreditPanel() {
               <p className="empty-state">Yüklənir…</p>
             ) : (
               <ResizableDataTable
-                columns={SEXSI_KREDIT_COLUMNS}
+                columns={visibleCols}
                 rows={rows}
                 formatCell={formatSexsiCell}
                 onRowOpen={(row) => navigate(`/borc-nisye/sexsi-kredit/${row.id}`)}

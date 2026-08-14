@@ -45,7 +45,7 @@ export default function OdenisForm() {
         const { data: clientRows, error: cErr } = await fetchAllPages(() =>
           supabase
             .from(MUSTERI_TABLE)
-            .select('id, sira_no, ad_soyad, model, ayliq_odenis, satis_qiymeti, verilib, faiz')
+            .select('id, sira_no, ad_soyad, model, ayliq_odenis, satis_qiymeti, verilib, faiz, veziyyet')
             .order('sira_no', { ascending: true })
         )
         if (cErr) throw cErr
@@ -53,11 +53,19 @@ export default function OdenisForm() {
         setClients(clientRows || [])
 
         if (isEdit) {
-          const { data, error: e } = await supabase.from(ODENISLER_TABLE).select('*').eq('id', id).single()
+          const { data, error: e } = await supabase
+            .from(ODENISLER_TABLE)
+            .select('*, musteri_bazasi(veziyyet)')
+            .eq('id', id)
+            .single()
           if (cancelled) return
           if (e) throw e
-          setRecord(data)
-          setForm(rowToForm(data))
+          const related = data.musteri_bazasi
+          const veziyyet = Array.isArray(related) ? related[0]?.veziyyet : related?.veziyyet
+          const { musteri_bazasi: _join, ...rest } = data
+          const row = { ...rest, veziyyet: veziyyet || null }
+          setRecord(row)
+          setForm(rowToForm(row))
           setEditing(startInEdit)
         } else {
           let prefill = {}
@@ -230,6 +238,7 @@ export default function OdenisForm() {
         columns={[
           { key: 'sira_no', label: '# / №' },
           { key: 'ad_soyad', label: 'Ad Soyad Ata adı' },
+          { key: 'veziyyet', label: 'Vəziyyət' },
           { key: 'tip', label: 'Tip' },
           { key: 'mebleg', label: 'Məbləğ' },
           { key: 'tarix', label: 'Tarix' },

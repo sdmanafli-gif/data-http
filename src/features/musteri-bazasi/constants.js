@@ -126,6 +126,9 @@ export const MUSTERI_VIEW_SECTIONS = [
       'verilme_tarixi',
       'bitme_tarixi',
       'veziyyet',
+      'gozlenilen_gelir',
+      'faktiki_gelir',
+      'faiz',
     ],
   },
   {
@@ -133,16 +136,6 @@ export const MUSTERI_VIEW_SECTIONS = [
     title: 'Əlaqə və zamin',
     defaultOpen: false,
     keys: ['nomre_2', 'nomre_3', 'nomre_4', 'nomre_5', 'zamin'],
-  },
-  {
-    id: 'odenis',
-    title: 'Digər ödəniş sahələri',
-    defaultOpen: false,
-    keys: [
-      'gozlenilen_gelir',
-      'faktiki_gelir',
-      'faiz',
-    ],
   },
   {
     id: 'cihaz',
@@ -159,13 +152,8 @@ export const MUSTERI_VIEW_SECTIONS = [
       'icloud_bagli_nomre',
       'itunes',
       'itunes_bagli_nomre',
+      'kimden_alinib',
     ],
-  },
-  {
-    id: 'diger',
-    title: 'Digər',
-    defaultOpen: false,
-    keys: ['kimden_alinib', 'kommentler'],
   },
   {
     id: 'mehkeme',
@@ -175,10 +163,54 @@ export const MUSTERI_VIEW_SECTIONS = [
   },
 ]
 
+/** Never group these into form/view categories (shown elsewhere or depo-only). */
+const MUSTERI_SECTION_OMIT_KEYS = new Set([
+  'senedler',
+  'kommentler',
+  'serial_no',
+  'model_no',
+  'nomre_6',
+  'nomre_7',
+])
+
+function normalizeAzLabel(label) {
+  return String(label || '')
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/ə/g, 'e')
+    .replace(/ı/g, 'i')
+    .replace(/ö/g, 'o')
+    .replace(/ü/g, 'u')
+    .replace(/ğ/g, 'g')
+    .replace(/ç/g, 'c')
+    .replace(/ş/g, 's')
+    .replace(/\s+/g, ' ')
+}
+
+/**
+ * Columns that must not appear inside category sections (incl. former «Əlavə sahələr»).
+ * Nömrə 6/7, Serial/Model No are excluded; Kommentlər lives next to files.
+ */
+export function isMusteriSectionOmittedColumn(col) {
+  if (!col?.key) return true
+  if (col.type === 'files') return true
+  const key = String(col.key)
+  if (MUSTERI_SECTION_OMIT_KEYS.has(key)) return true
+  if (/(^|_)nomre_?6($|_)/i.test(key) || /(^|_)nomre_?7($|_)/i.test(key)) return true
+  if (/serial_?no/i.test(key) || /model_?no/i.test(key) || /seriya_?no/i.test(key)) return true
+  const label = normalizeAzLabel(col.label)
+  if (/^nomre\s*[67]$/.test(label)) return true
+  if (label === 'serial no' || label === 'seriya no' || label === 'model no') return true
+  if (label === 'kommentler') return true
+  return false
+}
+
 /** Build collapsible section configs from the current column set. */
 export function buildMusteriViewSections(columns = DEFAULT_COLUMNS) {
   const visible = (columns || []).filter(
-    (c) => c.visible !== false && c.key !== 'senedler' && c.type !== 'files'
+    (c) => c.visible !== false && !isMusteriSectionOmittedColumn(c)
   )
   const byKey = new Map(visible.map((c) => [c.key, c]))
   const used = new Set()
@@ -198,17 +230,19 @@ export function buildMusteriViewSections(columns = DEFAULT_COLUMNS) {
     }
   }
 
-  const rest = visible.filter((c) => !used.has(c.key))
-  if (rest.length) {
-    sections.push({
-      id: 'elave',
-      title: 'Əlavə sahələr',
-      defaultOpen: false,
-      columns: rest,
-    })
-  }
-
+  // No «Əlavə sahələr» category — leftover / unwanted fields stay out of sections.
   return sections
+}
+
+/**
+ * Whether a Müştəri Bazası column is active on forms (list «Gizli» / Sil → off).
+ * Used by kredit satış so sale fields stay linked to column manager.
+ */
+export function isMusteriFormColumnActive(columns, key) {
+  if (!key) return false
+  const col = (columns || []).find((c) => c?.key === key)
+  if (!col) return false
+  return col.visible !== false && col.formVisible !== false
 }
 
 /**
@@ -221,10 +255,9 @@ export function buildMusteriFormSections(columns = DEFAULT_COLUMNS, opts = {}) {
     (c) =>
       c &&
       c.key &&
-      c.type !== 'files' &&
-      c.key !== 'senedler' &&
       c.formVisible !== false &&
-      !skip.has(c.key)
+      !skip.has(c.key) &&
+      !isMusteriSectionOmittedColumn(c)
   )
   const byKey = new Map(formCols.map((c) => [c.key, c]))
   const used = new Set()
@@ -244,16 +277,7 @@ export function buildMusteriFormSections(columns = DEFAULT_COLUMNS, opts = {}) {
     }
   }
 
-  const rest = formCols.filter((c) => !used.has(c.key))
-  if (rest.length) {
-    sections.push({
-      id: 'elave',
-      title: 'Əlavə sahələr',
-      defaultOpen: false,
-      columns: rest,
-    })
-  }
-
+  // No «Əlavə sahələr» category.
   return sections
 }
 

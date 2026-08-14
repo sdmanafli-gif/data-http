@@ -2,9 +2,9 @@ import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import RecordModule from '../../components/RecordModule'
-import SenedlerField from '../../components/SenedlerField'
 import PaymentScheduleList from './PaymentScheduleList'
 import ClientPaymentsPanel from '../odenisler/ClientPaymentsPanel'
+import MusteriNotesAndFiles from './MusteriNotesAndFiles'
 import { useColumnConfig } from './useColumnConfig'
 import {
   MUSTERI_TABLE,
@@ -58,29 +58,42 @@ export default function MusteriRecordModule({ record, onClose, onEdit, onUpdated
     >
       {error && <p style={{ color: 'var(--color-accent)' }}>{error}</p>}
 
-      <details className="collapse-section">
-        <summary className="collapse-section__title">Sənədlər</summary>
-        <div className="collapse-section__body">
-          <SenedlerField
-            folder="musteri_bazasi"
-            recordId={row.id}
-            value={row.senedler}
-            onChange={async (next) => {
-              const { error: e } = await supabase
-                .from(MUSTERI_TABLE)
-                .update({ senedler: next, updated_at: new Date().toISOString() })
-                .eq('id', row.id)
-              if (e) {
-                setError(e.message)
-                return
-              }
-              const updated = { ...row, senedler: next }
-              setRow(updated)
-              onUpdated?.(updated)
-            }}
-          />
-        </div>
-      </details>
+      <MusteriNotesAndFiles
+        asDetails
+        columns={columns}
+        form={row}
+        onKommentChange={async (v) => {
+          const { error: e } = await supabase
+            .from(MUSTERI_TABLE)
+            .update({ kommentler: v, updated_at: new Date().toISOString() })
+            .eq('id', row.id)
+          if (e) {
+            setError(e.message)
+            return
+          }
+          const updated = { ...row, kommentler: v }
+          setRow(updated)
+          onUpdated?.(updated)
+        }}
+        senedlerProps={{
+          folder: 'musteri_bazasi',
+          recordId: row.id,
+          value: row.senedler,
+          onChange: async (next) => {
+            const { error: e } = await supabase
+              .from(MUSTERI_TABLE)
+              .update({ senedler: next, updated_at: new Date().toISOString() })
+              .eq('id', row.id)
+            if (e) {
+              setError(e.message)
+              return
+            }
+            const updated = { ...row, senedler: next }
+            setRow(updated)
+            onUpdated?.(updated)
+          },
+        }}
+      />
 
       <PaymentScheduleList
         record={row}

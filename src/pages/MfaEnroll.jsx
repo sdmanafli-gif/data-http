@@ -17,6 +17,7 @@ export default function MfaEnroll({ forced = false }) {
     mfa,
     mfaLoading,
     mfaRequired,
+    isAdmin,
   } = useAuth()
 
   const [step, setStep] = useState('loading') // loading | ready | enroll | done
@@ -89,7 +90,8 @@ export default function MfaEnroll({ forced = false }) {
   }
 
   async function removeFactor(id) {
-    if (mfaRequired && factors.length <= 1) {
+    // Admins may remove even the last authenticator (for themselves).
+    if (mfaRequired && factors.length <= 1 && !isAdmin) {
       setError('MFA məcburidir — son authenticator silinə bilməz.')
       return
     }

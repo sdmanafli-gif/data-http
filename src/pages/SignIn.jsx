@@ -1,7 +1,5 @@
 import { useState } from 'react'
-import { Link } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
-import { PUBLIC_SIGNUP_ENABLED } from '../config/auth'
 import '../styles/shared.css'
 import './auth.css'
 
@@ -64,11 +62,9 @@ export default function SignIn() {
             {loading ? 'Yoxlanılır…' : 'Daxil ol'}
           </button>
         </form>
-        {PUBLIC_SIGNUP_ENABLED && (
-          <p className="auth-card__footer">
-            Hesabınız yoxdur? <Link to="/qeydiyyat">Qeydiyyat</Link>
-          </p>
-        )}
+        <p className="auth-card__footer" style={{ color: 'var(--color-text-muted)', fontSize: 13 }}>
+          Yeni hesab yalnız admin dəvəti ilə yaradılır.
+        </p>
       </div>
     </div>
   )

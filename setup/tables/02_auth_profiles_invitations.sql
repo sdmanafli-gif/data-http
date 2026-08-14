@@ -26,6 +26,7 @@ create table if not exists public.invitations (
   invited_by uuid references auth.users(id) on delete set null,
   status text not null default 'pending'
     check (status in ('pending', 'accepted', 'revoked')),
+  permissions jsonb not null default '{}'::jsonb,
   expires_at timestamptz default (now() + interval '14 days'),
   created_at timestamptz not null default now(),
   accepted_at timestamptz

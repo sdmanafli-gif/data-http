@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { supabase, fetchAllPages } from '../../lib/supabase'
+import { useAuth } from '../../contexts/AuthContext'
 import { useColumnConfig } from './useColumnConfig'
 import ResizableDataTable from './ResizableDataTable'
 import SummaryCards from './SummaryCards'
@@ -19,6 +20,7 @@ function sumField(rows, key) {
 
 export default function MusteriList() {
   const navigate = useNavigate()
+  const { access } = useAuth()
   const [searchParams, setSearchParams] = useSearchParams()
   const openId = searchParams.get('open')
   const { columns, loading: colsLoading, saveColumns } = useColumnConfig()
@@ -36,8 +38,8 @@ export default function MusteriList() {
   }, [columns])
 
   const visibleCols = useMemo(
-    () => localCols.filter((c) => c.visible !== false),
-    [localCols]
+    () => access.filterColumns('musteri-bazasi', localCols).filter((c) => c.visible !== false),
+    [localCols, access]
   )
 
   async function load() {
@@ -46,6 +48,7 @@ export default function MusteriList() {
     const term = search.trim().replace(/%/g, '\\%').replace(/_/g, '\\_')
     const { data, error: e } = await fetchAllPages(() => {
       let q = supabase.from(MUSTERI_TABLE).select('*').order('sira_no', { ascending: true })
+      q = access.applyDataFilters(q, 'musteri-bazasi')
       if (term) {
         const parts = [
           `ad_soyad.ilike.%${term}%`,
@@ -79,13 +82,13 @@ export default function MusteriList() {
     if (!openId || loading) return
     const found = items.find((r) => r.id === openId)
     if (found) {
-      setOpenRow(found)
+      if (access.rowInDataScope(found, 'musteri-bazasi')) setOpenRow(found)
       return
     }
     let cancelled = false
     ;(async () => {
       const { data } = await supabase.from(MUSTERI_TABLE).select('*').eq('id', openId).maybeSingle()
-      if (!cancelled && data) setOpenRow(data)
+      if (!cancelled && data && access.rowInDataScope(data, 'musteri-bazasi')) setOpenRow(data)
     })()
     return () => {
       cancelled = true
@@ -164,7 +167,12 @@ export default function MusteriList() {
       </div>
 
       {!loading && !colsLoading && (
-        <SummaryCards totals={totals} rowCount={viewRows.length} storageKey="summary:musteri" />
+        <SummaryCards
+          totals={totals}
+          rowCount={viewRows.length}
+          storageKey="summary:musteri"
+          allowedKeys={access.allowedSummaryCards('musteri-bazasi')}
+        />
       )}
 
       <div className="card">

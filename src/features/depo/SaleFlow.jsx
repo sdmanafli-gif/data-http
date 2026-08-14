@@ -4,7 +4,7 @@ import { supabase, fetchAllPages } from '../../lib/supabase'
 import MusteriSelect from '../musteri-bazasi/MusteriSelect'
 import SuggestInput from '../musteri-bazasi/SuggestInput'
 import MusteriSectionedFields from '../musteri-bazasi/MusteriSectionedFields'
-import SenedlerField from '../../components/SenedlerField'
+import MusteriNotesAndFiles from '../musteri-bazasi/MusteriNotesAndFiles'
 import { useColumnConfig } from '../musteri-bazasi/useColumnConfig'
 import {
   MUSTERI_TABLE,
@@ -19,6 +19,7 @@ import {
   setFormField,
   formatMoney,
   applyVeziyyetFromAmounts,
+  isMusteriFormColumnActive,
 } from '../musteri-bazasi/constants'
 import { fetchNextMusteriNumbers, offsetRecordNumbers, fetchNextIcloudNumber, formatIcloudEmail, formatItunesEmail, parseIcloudNumber, isAutoItunesEmail } from '../musteri-bazasi/nextRecordNumbers'
 import { computeIlkinOdenis, buildSaleScheduleWithIlkin, canBuildSchedule } from '../musteri-bazasi/paymentSchedule'
@@ -46,6 +47,8 @@ const DEPO_READONLY_KEYS = new Set([
   'yaddas',
   'imei_1',
   'imei_2',
+  'serial_no',
+  'model_no',
   'battery_faiz',
   'kimden_alinib',
 ])
@@ -56,22 +59,47 @@ const KREDIT_SKIP_KEYS = new Set([
   'satis_qiymeti',
   'veziyyet',
   'verilib',
+  // Hidden on satış (moved out of «Digər ödəniş sahələri»)
+  'gozlenilen_gelir',
+  'faktiki_gelir',
+  'faiz',
   // Per-device block below owns cihaz fields
   'model',
   'reng',
   'yaddas',
   'imei_1',
   'imei_2',
+  'serial_no',
+  'model_no',
   'battery_faiz',
   'icloud',
   'icloud_bagli_nomre',
   'itunes',
   'itunes_bagli_nomre',
+  'kimden_alinib',
 ])
 
-const KREDIT_OPEN_SECTIONS = new Set(['esas', 'elaqe', 'diger', 'odenis', 'elave'])
+const KREDIT_OPEN_SECTIONS = new Set(['esas', 'elaqe', 'cihaz'])
 
-const CIHAZ_EDITABLE_KEYS = ['icloud', 'icloud_bagli_nomre', 'itunes', 'itunes_bagli_nomre']
+/**
+ * Per-device cihaz fields on kredit satış.
+ * `musteriKey`: linked to Müştəri Bazası column manager (null = depo-only, always shown).
+ */
+const CIHAZ_LINE_FIELDS = [
+  { key: 'model', label: 'Model', editable: false, musteriKey: 'model' },
+  { key: 'reng', label: 'Rəng', editable: false, musteriKey: 'reng' },
+  { key: 'yaddas', label: 'Yaddaş', editable: false, musteriKey: 'yaddas' },
+  { key: 'imei_1', label: 'IMEI 1', editable: false, musteriKey: 'imei_1' },
+  { key: 'imei_2', label: 'IMEI 2', editable: false, musteriKey: 'imei_2' },
+  { key: 'serial_no', label: 'Seriya No', editable: false, musteriKey: null },
+  { key: 'model_no', label: 'Model No', editable: false, musteriKey: null },
+  { key: 'battery_faiz', label: 'Battery %', editable: false, musteriKey: 'battery_faiz' },
+  { key: 'kimden_alinib', label: 'Kimdən alınıb', editable: false, musteriKey: 'kimden_alinib' },
+  { key: 'icloud', label: 'iCloud', editable: true, musteriKey: 'icloud' },
+  { key: 'icloud_bagli_nomre', label: 'iCloud bağlı nömrə', editable: true, musteriKey: 'icloud_bagli_nomre' },
+  { key: 'itunes', label: 'iTunes', editable: true, musteriKey: 'itunes' },
+  { key: 'itunes_bagli_nomre', label: 'iTunes bağlı nömrə', editable: true, musteriKey: 'itunes_bagli_nomre' },
+]
 
 function uniqueSorted(values) {
   return [...new Set(values.map((v) => String(v).trim()).filter(Boolean))].sort((a, b) =>
@@ -87,6 +115,8 @@ function depoPrefill(item) {
     yaddas: item.yaddas || '',
     imei_1: item.imei_1 || '',
     imei_2: item.imei_2 || '',
+    serial_no: item.serial_no || '',
+    model_no: item.model_no || '',
     battery_faiz: item.battery_faiz != null ? String(item.battery_faiz) : '',
     kimden_alinib: item.kimden_alinib || '',
   }
@@ -119,6 +149,20 @@ export default function SaleFlow() {
   const location = useLocation()
   const navigate = useNavigate()
   const { columns, loading: colsLoading } = useColumnConfig()
+
+  /** Cihaz block fields that are still active in Müştəri Bazası column settings. */
+  const visibleCihazFields = useMemo(() => {
+    return CIHAZ_LINE_FIELDS.filter((f) => {
+      if (f.musteriKey == null) return true
+      return isMusteriFormColumnActive(columns, f.musteriKey)
+    }).map((f) => {
+      const col = f.musteriKey ? (columns || []).find((c) => c.key === f.musteriKey) : null
+      return {
+        ...f,
+        label: col?.label || f.label,
+      }
+    })
+  }, [columns])
 
   const initialIds = useMemo(() => {
     const fromState = location.state?.ids
@@ -1304,9 +1348,11 @@ export default function SaleFlow() {
                 </div>
               )}
 
+              {visibleCihazFields.length > 0 && (
+                <>
               <h3 className="card__title">Cihaz məlumatları</h3>
               <p style={{ margin: '0 0 12px', fontSize: 13, color: 'var(--color-text-muted)' }}>
-                Hər səbət məhsulu üçün ayrıca saxlanılır.
+                Hər səbət məhsulu üçün ayrıca saxlanılır. Sütunlar Müştəri Bazası ayarları ilə eynidir.
               </p>
               {basket.map((item, idx) => {
                 const cihaz = lineCihaz[item.id] || emptyLineCihaz(item)
@@ -1316,51 +1362,28 @@ export default function SaleFlow() {
                       Cihaz {idx + 1}: {item.model || '—'} · {item.reng || '—'} · {item.imei_1 || '—'}
                     </summary>
                     <div className="form-row" style={{ paddingTop: 8 }}>
-                      <div className="form-group">
-                        <label>Model (depodan)</label>
-                        <input readOnly value={cihaz.model || '—'} />
-                      </div>
-                      <div className="form-group">
-                        <label>Rəng (depodan)</label>
-                        <input readOnly value={cihaz.reng || '—'} />
-                      </div>
-                      <div className="form-group">
-                        <label>Yaddaş (depodan)</label>
-                        <input readOnly value={cihaz.yaddas || '—'} />
-                      </div>
-                      <div className="form-group">
-                        <label>IMEI 1 (depodan)</label>
-                        <input readOnly value={cihaz.imei_1 || '—'} />
-                      </div>
-                      <div className="form-group">
-                        <label>IMEI 2 (depodan)</label>
-                        <input readOnly value={cihaz.imei_2 || '—'} />
-                      </div>
-                      <div className="form-group">
-                        <label>Battery % (depodan)</label>
-                        <input readOnly value={cihaz.battery_faiz || '—'} />
-                      </div>
-                      {CIHAZ_EDITABLE_KEYS.map((key) => (
-                        <div className="form-group" key={key}>
+                      {visibleCihazFields.map((field) => (
+                        <div className="form-group" key={field.key}>
                           <label>
-                            {key === 'icloud'
-                              ? 'iCloud'
-                              : key === 'icloud_bagli_nomre'
-                                ? 'iCloud bağlı nömrə'
-                                : key === 'itunes'
-                                  ? 'iTunes'
-                                  : 'iTunes bağlı nömrə'}
+                            {field.label}
+                            {!field.editable ? ' (depodan)' : ''}
                           </label>
-                          <input
-                            value={cihaz[key] ?? ''}
-                            onChange={(e) => updateLineCihaz(item.id, key, e.target.value)}
-                          />
+                          {field.editable ? (
+                            <input
+                              value={cihaz[field.key] ?? ''}
+                              onChange={(e) => updateLineCihaz(item.id, field.key, e.target.value)}
+                            />
+                          ) : (
+                            <input readOnly value={cihaz[field.key] || '—'} />
+                          )}
                         </div>
                       ))}
                     </div>
                   </details>
                 )
               })}
+                </>
+              )}
 
               <MusteriSectionedFields
                 columns={columns}
@@ -1383,14 +1406,19 @@ export default function SaleFlow() {
                 requiredKeys={new Set(['ad_soyad', 'nece_ay', 'birinci_ayliq_odenis_tarixi'])}
               />
 
-              <div style={{ marginTop: 16 }}>
-                <SenedlerField
-                  folder="musteri_bazasi"
-                  recordId={null}
-                  value={musteriForm.senedler}
-                  onChange={(files) => setMusteriForm((prev) => ({ ...prev, senedler: files }))}
-                />
-              </div>
+              <MusteriNotesAndFiles
+                columns={columns}
+                form={musteriForm}
+                onKommentChange={(v) =>
+                  setMusteriForm((prev) => setFormField(prev, { key: 'kommentler' }, v))
+                }
+                senedlerProps={{
+                  folder: 'musteri_bazasi',
+                  recordId: null,
+                  value: musteriForm.senedler,
+                  onChange: (files) => setMusteriForm((prev) => ({ ...prev, senedler: files })),
+                }}
+              />
             </>
           )}
 
