@@ -102,3 +102,16 @@ export function loadUiFlag(flagKey, defaultValue = false) {
 export function saveUiFlag(flagKey, value) {
   setItem(FLAG_PREFIX + flagKey, value ? '1' : '0')
 }
+
+const PAGE_FILTER_PREFIX = 'mobideal_page_filters_v1:'
+
+/** Persist arbitrary page filter state (period, search, etc.). */
+export function loadPageFilters(pageKey, fallback = null) {
+  const parsed = safeParse(getItem(PAGE_FILTER_PREFIX + pageKey), null)
+  if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) return parsed
+  return fallback
+}
+
+export function savePageFilters(pageKey, value) {
+  setItem(PAGE_FILTER_PREFIX + (pageKey || 'default'), JSON.stringify(value || {}))
+}

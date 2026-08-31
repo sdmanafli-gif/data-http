@@ -81,6 +81,8 @@ export const DEFAULT_COLUMNS = [
   { key: 'yaddas', label: 'Yaddaş', type: 'text', visible: true, formVisible: true, readonly: false, system: true, group: 'record' },
   { key: 'imei_1', label: 'IMEI 1', type: 'text', visible: true, formVisible: true, readonly: false, system: true, group: 'record' },
   { key: 'imei_2', label: 'IMEI 2', type: 'text', visible: true, formVisible: true, readonly: false, system: true, group: 'record' },
+  { key: 'serial_no', label: 'Seriya No', type: 'text', visible: true, formVisible: true, readonly: false, system: true, group: 'record' },
+  { key: 'model_no', label: 'Model No', type: 'text', visible: true, formVisible: true, readonly: false, system: true, group: 'record' },
   { key: 'battery_faiz', label: 'Battery %', type: 'number', visible: true, formVisible: true, readonly: false, system: true, group: 'record' },
   { key: 'icloud', label: 'iCloud', type: 'text', visible: true, formVisible: true, readonly: false, system: true, group: 'record' },
   { key: 'icloud_bagli_nomre', label: 'iCloud bağlı nömrə', type: 'text', visible: true, formVisible: true, readonly: false, system: true, group: 'record' },
@@ -147,6 +149,8 @@ export const MUSTERI_VIEW_SECTIONS = [
       'yaddas',
       'imei_1',
       'imei_2',
+      'serial_no',
+      'model_no',
       'battery_faiz',
       'icloud',
       'icloud_bagli_nomre',
@@ -163,12 +167,10 @@ export const MUSTERI_VIEW_SECTIONS = [
   },
 ]
 
-/** Never group these into form/view categories (shown elsewhere or depo-only). */
+/** Never group these into form/view categories (shown elsewhere). */
 const MUSTERI_SECTION_OMIT_KEYS = new Set([
   'senedler',
   'kommentler',
-  'serial_no',
-  'model_no',
   'nomre_6',
   'nomre_7',
 ])
@@ -191,7 +193,7 @@ function normalizeAzLabel(label) {
 
 /**
  * Columns that must not appear inside category sections (incl. former «Əlavə sahələr»).
- * Nömrə 6/7, Serial/Model No are excluded; Kommentlər lives next to files.
+ * Nömrə 6/7 are excluded; Kommentlər lives next to files.
  */
 export function isMusteriSectionOmittedColumn(col) {
   if (!col?.key) return true
@@ -199,10 +201,8 @@ export function isMusteriSectionOmittedColumn(col) {
   const key = String(col.key)
   if (MUSTERI_SECTION_OMIT_KEYS.has(key)) return true
   if (/(^|_)nomre_?6($|_)/i.test(key) || /(^|_)nomre_?7($|_)/i.test(key)) return true
-  if (/serial_?no/i.test(key) || /model_?no/i.test(key) || /seriya_?no/i.test(key)) return true
   const label = normalizeAzLabel(col.label)
   if (/^nomre\s*[67]$/.test(label)) return true
-  if (label === 'serial no' || label === 'seriya no' || label === 'model no') return true
   if (label === 'kommentler') return true
   return false
 }
@@ -604,7 +604,7 @@ const SYSTEM_DB_KEYS = [
   'verilme_tarixi', 'bitme_tarixi', 'nece_ay', 'odenis_gunu', 'birinci_ayliq_odenis_tarixi', 'ayliq_odenis', 'faiz',
   'satici', 'satici_faizi',
   'model', 'reng', 'icloud', 'icloud_bagli_nomre', 'itunes', 'itunes_bagli_nomre',
-  'imei_1', 'imei_2', 'yaddas', 'kimden_alinib', 'battery_faiz', 'muqavile_nomresi',
+  'imei_1', 'imei_2', 'serial_no', 'model_no', 'yaddas', 'kimden_alinib', 'battery_faiz', 'muqavile_nomresi',
   'nomre_1', 'nomre_2', 'nomre_3', 'nomre_4', 'nomre_5', 'zamin', 'kommentler', 'veziyyet',
   'mehkeme_isare', 'rusum_odenilib', 'mehkeme_status', 'mehkeme_qeyd',
 ]

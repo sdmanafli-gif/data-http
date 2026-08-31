@@ -25,14 +25,18 @@ import {
   SIM_OPTIONS,
 } from '../features/depo/constants'
 import { DEFAULT_COLUMNS as YIGIM_COLUMNS } from '../features/yigim/constants'
-import { DEFAULT_COLUMNS as NAGD_COLUMNS } from '../features/nagd-satish/constants'
+import { DEFAULT_COLUMNS as NAGD_COLUMNS, SATIS_NOVU_MAP } from '../features/nagd-satish/constants'
 import {
   DEFAULT_COLUMNS as BORC_COLUMNS,
   ENTRY_TYPES,
   OVERVIEW_BORC_COLUMNS,
   OVERVIEW_NISYE_COLUMNS,
 } from '../features/borc-nisye/constants'
-import { PAYMENT_TYPES, ODENIS_TABLE_COLUMNS } from '../features/odenisler/constants'
+import {
+  PAYMENT_TYPES,
+  ODENIS_TABLE_COLUMNS,
+  ODENIS_USULU_MAP,
+} from '../features/odenisler/constants'
 
 export const INACTIVITY_LOGOUT_MS = 30 * 60 * 1000
 
@@ -194,7 +198,7 @@ export const APP_MODULES = [
     path: '/nagd-satish',
     label: 'Nağd satış',
     columns: colsFrom(NAGD_COLUMNS),
-    filterFields: filterFieldsFromColumns(NAGD_COLUMNS),
+    filterFields: filterFieldsFromColumns(NAGD_COLUMNS, { satis_novu: SATIS_NOVU_MAP }),
     summaryCards: SUMMARY_CARDS_BY_MODULE['nagd-satish'],
   },
   {
@@ -216,7 +220,10 @@ export const APP_MODULES = [
     path: '/odenisler',
     label: 'Ödənişlər',
     columns: colsFrom(ODENIS_TABLE_COLUMNS),
-    filterFields: filterFieldsFromColumns(ODENIS_TABLE_COLUMNS, { tip: ODENIS_TIP_LABELS }),
+    filterFields: filterFieldsFromColumns(ODENIS_TABLE_COLUMNS, {
+      tip: ODENIS_TIP_LABELS,
+      odenis_usulu: ODENIS_USULU_MAP,
+    }),
     summaryCards: SUMMARY_CARDS_BY_MODULE.odenisler,
   },
   {

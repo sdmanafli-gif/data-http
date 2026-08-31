@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { supabase, fetchAllPages } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
+import { loadPageFilters, savePageFilters } from '../../lib/uiPrefs'
 import {
   MUSTERI_TABLE,
   formatMoney,
@@ -42,6 +43,12 @@ const STATUS_FILTERS = [
   { value: 'paid', label: 'Ödənib' },
   { value: 'partial', label: 'Qismən' },
 ]
+
+const YIGIM_PAGE_FILTERS_KEY = 'yigim'
+
+function loadSavedYigimFilters() {
+  return loadPageFilters(YIGIM_PAGE_FILTERS_KEY, null)
+}
 
 function profileFaktikiGelir(m) {
   if (m?.faktiki_gelir != null && m.faktiki_gelir !== '') {
@@ -203,18 +210,42 @@ export function buildYigimRows(musteriler, payments) {
 
 export default function YigimPage() {
   const now = new Date()
+  const savedFilters = useMemo(() => loadSavedYigimFilters(), [])
   const { access } = useAuth()
   const { columns, loading: colsLoading, saveColumns } = useColumnConfig()
   const [localCols, setLocalCols] = useState([])
   const resizeTimer = useRef(null)
-  const [period, setPeriod] = useState('month')
-  const [year, setYear] = useState(now.getFullYear())
-  const [month, setMonth] = useState(now.getMonth())
-  const [weekStart, setWeekStart] = useState(() => startOfWeek(now))
-  const [customFrom, setCustomFrom] = useState('')
-  const [customTo, setCustomTo] = useState('')
-  const [statusFilter, setStatusFilter] = useState('pending')
-  const [search, setSearch] = useState('')
+  const [period, setPeriod] = useState(() =>
+    PERIODS.some((p) => p.value === savedFilters?.period) ? savedFilters.period : 'month'
+  )
+  const [year, setYear] = useState(() => {
+    const y = Number(savedFilters?.year)
+    return Number.isFinite(y) && y >= 2000 && y <= 2100 ? y : now.getFullYear()
+  })
+  const [month, setMonth] = useState(() => {
+    const m = Number(savedFilters?.month)
+    return Number.isFinite(m) && m >= 0 && m <= 11 ? m : now.getMonth()
+  })
+  const [weekStart, setWeekStart] = useState(() => {
+    if (savedFilters?.weekStart && /^\d{4}-\d{2}-\d{2}$/.test(savedFilters.weekStart)) {
+      const [y, m, d] = savedFilters.weekStart.split('-').map(Number)
+      return startOfWeek(new Date(y, m - 1, d))
+    }
+    return startOfWeek(now)
+  })
+  const [customFrom, setCustomFrom] = useState(() =>
+    typeof savedFilters?.customFrom === 'string' ? savedFilters.customFrom : ''
+  )
+  const [customTo, setCustomTo] = useState(() =>
+    typeof savedFilters?.customTo === 'string' ? savedFilters.customTo : ''
+  )
+  const [statusFilter, setStatusFilter] = useState(() => {
+    const s = savedFilters?.statusFilter
+    return STATUS_FILTERS.some((x) => x.value === s) ? s : 'pending'
+  })
+  const [search, setSearch] = useState(() =>
+    typeof savedFilters?.search === 'string' ? savedFilters.search : ''
+  )
   const [viewRows, setViewRows] = useState([])
 
   const [rows, setRows] = useState([])
@@ -224,6 +255,19 @@ export default function YigimPage() {
   useEffect(() => {
     setLocalCols(columns)
   }, [columns])
+
+  useEffect(() => {
+    savePageFilters(YIGIM_PAGE_FILTERS_KEY, {
+      period,
+      year,
+      month,
+      weekStart: toYmd(weekStart),
+      customFrom,
+      customTo,
+      statusFilter,
+      search,
+    })
+  }, [period, year, month, weekStart, customFrom, customTo, statusFilter, search])
 
   const visibleCols = useMemo(
     () => access.filterColumns('yigim', localCols).filter((c) => c.visible !== false),
@@ -359,11 +403,24 @@ export default function YigimPage() {
 
   function renderYigimCell(row, col, raw) {
     if (col.key === 'sira_no') {
-      return <Link to={`/musteri-bazasi?open=${row.musteriId}`}>{row.sira_no ?? '—'}</Link>
+      return (
+        <Link
+          to={`/musteri-bazasi/${row.musteriId}`}
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          {row.sira_no ?? '—'}
+        </Link>
+      )
     }
     if (col.key === 'ad_soyad') {
       return (
-        <Link to={`/musteri-bazasi?open=${row.musteriId}`} title={row.nomre_1 || undefined}>
+        <Link
+          to={`/musteri-bazasi/${row.musteriId}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          title={row.nomre_1 || undefined}
+        >
           {row.ad_soyad}
         </Link>
       )

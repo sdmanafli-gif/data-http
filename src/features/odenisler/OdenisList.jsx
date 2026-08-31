@@ -6,6 +6,7 @@ import {
   ODENISLER_TABLE,
   PAYMENT_TYPES,
   tipLabel,
+  usuluLabel,
   formatMoney,
   formatDate,
   sumPaymentsByType,
@@ -18,6 +19,7 @@ import '../../styles/shared.css'
 
 function formatOdenisCell(value, col) {
   if (col?.key === 'tip') return tipLabel(value)
+  if (col?.key === 'odenis_usulu') return usuluLabel(value)
   if (col?.type === 'money') return formatMoney(value)
   if (col?.type === 'date' || col?.key === 'tarix') return formatDate(value)
   if (value === null || value === undefined || value === '') return '—'

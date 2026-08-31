@@ -1,20 +1,25 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { supabase, fetchAllPages } from '../../lib/supabase'
+import { useAuth } from '../../contexts/AuthContext'
 import { confirmDelete } from '../../lib/confirmDelete'
 import ClientPicker from './ClientPicker'
 import RecordModule from '../../components/RecordModule'
 import {
   ODENISLER_TABLE,
   MUSTERI_TABLE,
+  ODENIS_KARTLAR_TABLE,
   PAYMENT_TYPES,
+  ODENIS_USULU_OPTIONS,
   emptyOdenisForm,
   toOdenisPayload,
   rowToForm,
   tipLabel,
+  usuluLabel,
   formatMoney,
   formatDate,
   syncMusteriPaymentTotals,
+  ensureOdenisKart,
 } from './constants'
 import '../../styles/shared.css'
 import '../../components/record-module.css'
@@ -24,12 +29,15 @@ export default function OdenisForm() {
   const [searchParams] = useSearchParams()
   const isEdit = Boolean(id)
   const navigate = useNavigate()
+  const { user } = useAuth()
   const prefMusteri = searchParams.get('musteri') || ''
   const startInEdit = searchParams.get('edit') === '1'
 
   const [form, setForm] = useState(() => emptyOdenisForm())
   const [record, setRecord] = useState(null)
   const [clients, setClients] = useState([])
+  const [knownCards, setKnownCards] = useState([])
+  const [enteringNewCard, setEnteringNewCard] = useState(false)
   const [editing, setEditing] = useState(!isEdit || startInEdit)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -42,15 +50,28 @@ export default function OdenisForm() {
       setLoading(true)
       setError(null)
       try {
-        const { data: clientRows, error: cErr } = await fetchAllPages(() =>
+        const [{ data: clientRows, error: cErr }, cardsRes, paysRes] = await Promise.all([
+          fetchAllPages(() =>
+            supabase
+              .from(MUSTERI_TABLE)
+              .select('id, sira_no, ad_soyad, model, ayliq_odenis, satis_qiymeti, verilib, faiz, veziyyet')
+              .order('sira_no', { ascending: true })
+          ),
+          supabase.from(ODENIS_KARTLAR_TABLE).select('kart_nomresi').order('kart_nomresi'),
           supabase
-            .from(MUSTERI_TABLE)
-            .select('id, sira_no, ad_soyad, model, ayliq_odenis, satis_qiymeti, verilib, faiz, veziyyet')
-            .order('sira_no', { ascending: true })
-        )
+            .from(ODENISLER_TABLE)
+            .select('kart_nomresi')
+            .eq('odenis_usulu', 'kart')
+            .not('kart_nomresi', 'is', null)
+            .limit(500),
+        ])
         if (cErr) throw cErr
         if (cancelled) return
         setClients(clientRows || [])
+        const fromTable = (cardsRes.data || []).map((r) => r.kart_nomresi).filter(Boolean)
+        const fromPays = (paysRes.data || []).map((r) => r.kart_nomresi).filter(Boolean)
+        const merged = [...new Set([...fromTable, ...fromPays])]
+        setKnownCards(merged.sort((a, b) => a.localeCompare(b, 'az')))
 
         if (isEdit) {
           const { data, error: e } = await supabase
@@ -66,6 +87,12 @@ export default function OdenisForm() {
           const row = { ...rest, veziyyet: veziyyet || null }
           setRecord(row)
           setForm(rowToForm(row))
+          setEnteringNewCard(
+            row.odenis_usulu === 'kart' &&
+              Boolean(row.kart_nomresi) &&
+              !(cardsRes.data || []).some((c) => c.kart_nomresi === row.kart_nomresi) &&
+              !(paysRes.data || []).some((c) => c.kart_nomresi === row.kart_nomresi)
+          )
           setEditing(startInEdit)
         } else {
           let prefill = {}
@@ -109,7 +136,6 @@ export default function OdenisForm() {
       musteri_bazasi_id: client.id,
       sira_no: client.sira_no != null ? String(client.sira_no) : '',
       ad_soyad: client.ad_soyad || '',
-      // Suggest aylıq amount when switching to aylıq tip and empty amount
       mebleg:
         f.tip === 'ayliq' && !f.mebleg && client.ayliq_odenis != null
           ? String(client.ayliq_odenis)
@@ -152,6 +178,14 @@ export default function OdenisForm() {
       setError('Tarix mütləqdir.')
       return
     }
+    if (payload.odenis_usulu === 'kart' && !payload.kart_nomresi) {
+      setError('Kart seçin və ya kart nömrəsini daxil edin.')
+      return
+    }
+
+    if (!isEdit && user?.id) {
+      payload.created_by = user.id
+    }
 
     setSaving(true)
     try {
@@ -170,6 +204,15 @@ export default function OdenisForm() {
         newId = created?.id
       }
       if (err) throw err
+
+      if (payload.odenis_usulu === 'kart' && payload.kart_nomresi) {
+        await ensureOdenisKart(supabase, payload.kart_nomresi, user?.id)
+        setKnownCards((prev) =>
+          prev.includes(payload.kart_nomresi)
+            ? prev
+            : [...prev, payload.kart_nomresi].sort((a, b) => a.localeCompare(b, 'az'))
+        )
+      }
 
       const syncIds = new Set([payload.musteri_bazasi_id])
       if (prevMusteriId && prevMusteriId !== payload.musteri_bazasi_id) {
@@ -241,12 +284,15 @@ export default function OdenisForm() {
           { key: 'veziyyet', label: 'Vəziyyət' },
           { key: 'tip', label: 'Tip' },
           { key: 'mebleg', label: 'Məbləğ' },
+          { key: 'odenis_usulu', label: 'Üsul' },
+          { key: 'kart_nomresi', label: 'Kart' },
           { key: 'tarix', label: 'Tarix' },
           { key: 'qeyd', label: 'Qeyd' },
         ]}
         row={record}
         formatCell={(value, col) => {
           if (col?.key === 'tip') return tipLabel(value)
+          if (col?.key === 'odenis_usulu') return usuluLabel(value)
           if (col?.key === 'mebleg') return formatMoney(value)
           if (col?.key === 'tarix') return formatDate(value)
           if (value == null || value === '') return '—'
@@ -351,6 +397,80 @@ export default function OdenisForm() {
             disabled={saving}
           />
         </div>
+
+        <div className="form-group">
+          <label htmlFor="odenis-usulu">Ödəniş üsulu *</label>
+          <select
+            id="odenis-usulu"
+            value={form.odenis_usulu || 'nagd'}
+            onChange={(e) => {
+              const usulu = e.target.value
+              setEnteringNewCard(false)
+              setForm((f) => ({
+                ...f,
+                odenis_usulu: usulu,
+                kart_nomresi: usulu === 'nagd' ? '' : f.kart_nomresi,
+              }))
+            }}
+            required
+            disabled={saving}
+          >
+            {ODENIS_USULU_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {form.odenis_usulu === 'kart' && (
+          <div className="form-group">
+            <label htmlFor="odenis-kart">Kart nömrəsi *</label>
+            {knownCards.length > 0 ? (
+              <select
+                id="odenis-kart"
+                value={
+                  enteringNewCard
+                    ? '__new__'
+                    : knownCards.includes(form.kart_nomresi)
+                      ? form.kart_nomresi
+                      : ''
+                }
+                onChange={(e) => {
+                  const v = e.target.value
+                  if (v === '__new__') {
+                    setEnteringNewCard(true)
+                    setForm((f) => ({ ...f, kart_nomresi: '' }))
+                  } else {
+                    setEnteringNewCard(false)
+                    setForm((f) => ({ ...f, kart_nomresi: v }))
+                  }
+                }}
+                disabled={saving}
+                required={!enteringNewCard}
+              >
+                <option value="">Kart seçin…</option>
+                {knownCards.map((c) => (
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
+                ))}
+                <option value="__new__">+ Yeni kart…</option>
+              </select>
+            ) : null}
+            {(knownCards.length === 0 || enteringNewCard) && (
+              <input
+                id="odenis-kart-input"
+                value={form.kart_nomresi}
+                onChange={(e) => setForm((f) => ({ ...f, kart_nomresi: e.target.value }))}
+                placeholder="Kart nömrəsini yazın"
+                required
+                disabled={saving}
+                style={{ marginTop: knownCards.length ? 8 : 0 }}
+              />
+            )}
+          </div>
+        )}
 
         <div className="form-group" style={{ gridColumn: '1 / -1' }}>
           <label htmlFor="odenis-qeyd">Qeyd</label>

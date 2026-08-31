@@ -54,6 +54,8 @@ export default function MusteriList() {
           `ad_soyad.ilike.%${term}%`,
           `model.ilike.%${term}%`,
           `imei_1.ilike.%${term}%`,
+          `serial_no.ilike.%${term}%`,
+          `model_no.ilike.%${term}%`,
           `nomre_1.ilike.%${term}%`,
           `muqavile_nomresi.ilike.%${term}%`,
         ]

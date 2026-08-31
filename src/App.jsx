@@ -5,6 +5,7 @@ import SignIn from './pages/SignIn'
 import SignUp from './pages/SignUp'
 import InviteUser from './pages/InviteUser'
 import UserList from './pages/UserList'
+import KassaDesk from './pages/KassaDesk'
 import MfaChallenge from './pages/MfaChallenge'
 import MfaEnroll from './pages/MfaEnroll'
 import MusteriBazasi from './features/musteri-bazasi'
@@ -65,6 +66,7 @@ function AppRoutes() {
       <Routes>
         <Route path="/admin/invite" element={<InviteUser />} />
         <Route path="/admin/users" element={<UserList />} />
+        <Route path="/admin/kassa" element={<KassaDesk />} />
         <Route path="/hesab/tehlukesizlik" element={<MfaEnroll forced={false} />} />
         <Route
           path="/musteri-bazasi/*"
