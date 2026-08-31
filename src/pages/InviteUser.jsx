@@ -11,7 +11,7 @@ function inviteUrl(token) {
 }
 
 export default function InviteUser() {
-  const { createInvitation, listInvitations, isAdmin, isManager } = useAuth()
+  const { createInvitation, listInvitations, isAdmin } = useAuth()
   const [email, setEmail] = useState('')
   const [role, setRole] = useState('manager')
   const [permissions, setPermissions] = useState(() => fullPermissions())
@@ -35,8 +35,9 @@ export default function InviteUser() {
   }
 
   useEffect(() => {
+    if (!isAdmin) return
     load()
-  }, [])
+  }, [isAdmin])
 
   async function handleSubmit(e) {
     e.preventDefault()
@@ -51,8 +52,8 @@ export default function InviteUser() {
     try {
       const inv = await createInvitation({
         email,
-        role: isAdmin ? role : 'manager',
-        permissions: isAdmin ? permissions : fullPermissions(),
+        role,
+        permissions,
       })
       const link = inviteUrl(inv.token)
       setInviteLink(link)
@@ -75,10 +76,10 @@ export default function InviteUser() {
     }
   }
 
-  if (!isAdmin && !isManager) {
+  if (!isAdmin) {
     return (
       <div className="card">
-        <p className="empty-state">Bu səhifəyə giriş yoxdur.</p>
+        <p className="empty-state">Bu səhifəyə yalnız admin daxil ola bilər.</p>
       </div>
     )
   }
@@ -103,22 +104,18 @@ export default function InviteUser() {
             />
           </div>
 
-          {isAdmin && (
-            <div className="form-group">
-              <label htmlFor="invite-role">Rol</label>
-              <select id="invite-role" value={role} onChange={(e) => setRole(e.target.value)}>
-                <option value="manager">{ROLE_LABELS.manager}</option>
-                <option value="admin">{ROLE_LABELS.admin}</option>
-              </select>
-            </div>
-          )}
+          <div className="form-group">
+            <label htmlFor="invite-role">Rol</label>
+            <select id="invite-role" value={role} onChange={(e) => setRole(e.target.value)}>
+              <option value="manager">{ROLE_LABELS.manager}</option>
+              <option value="admin">{ROLE_LABELS.admin}</option>
+            </select>
+          </div>
 
-          {isAdmin && (
-            <div className="form-group">
-              <label>İcazələr (tab, sütun, məlumat, əməliyyat)</label>
-              <PermissionEditor value={permissions} onChange={setPermissions} />
-            </div>
-          )}
+          <div className="form-group">
+            <label>İcazələr (tab, sütun, məlumat, əməliyyat)</label>
+            <PermissionEditor value={permissions} onChange={setPermissions} />
+          </div>
 
           {error && <p style={{ color: 'var(--color-accent)', marginBottom: 'var(--space-md)' }}>{error}</p>}
           {success && (

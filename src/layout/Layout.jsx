@@ -9,7 +9,7 @@ import './Layout.css'
 const SIDEBAR_KEY = 'mobideal_sidebar_collapsed'
 
 export default function Layout({ children }) {
-  const { profile, signOut, isAdmin, isManager, access } = useAuth()
+  const { profile, signOut, isAdmin, access } = useAuth()
   const roleLabel = profile?.role === 'admin' ? 'Admin' : 'Menecer'
   const [collapsed, setCollapsed] = useState(() => {
     try {
@@ -79,7 +79,7 @@ export default function Layout({ children }) {
         </nav>
 
         <div className="layout__user">
-          {(isAdmin || isManager) && (
+          {isAdmin && (
             <NavLink
               to="/admin/invite"
               className={({ isActive }) =>
