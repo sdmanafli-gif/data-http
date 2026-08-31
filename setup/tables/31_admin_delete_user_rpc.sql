@@ -58,7 +58,10 @@ begin
     raise exception 'Admin secrets not configured. Run scripts/setup-admin-delete-user-rpc.mjs';
   end if;
 
-  -- Remove Auth user (profiles / invitations FKs should cascade or set null)
+  -- Delete profile first so any open client session fails profile check immediately
+  delete from public.profiles where id = target_user_id;
+
+  -- Remove Auth user (invalidates refresh tokens / future getUser)
   select * into res from extensions.http((
     'DELETE',
     base_url || '/auth/v1/admin/users/' || target_user_id::text,
@@ -74,9 +77,6 @@ begin
   if res.status < 200 or res.status >= 300 then
     raise exception 'Delete user failed (%): %', res.status, coalesce(res.content, '');
   end if;
-
-  -- Ensure profile row is gone even if FK did not cascade
-  delete from public.profiles where id = target_user_id;
 
   return jsonb_build_object('ok', true);
 end;

@@ -6,6 +6,7 @@ import SignUp from './pages/SignUp'
 import InviteUser from './pages/InviteUser'
 import UserList from './pages/UserList'
 import KassaDesk from './pages/KassaDesk'
+import AccountGone from './pages/AccountGone'
 import MfaChallenge from './pages/MfaChallenge'
 import MfaEnroll from './pages/MfaEnroll'
 import MusteriBazasi from './features/musteri-bazasi'
@@ -155,7 +156,7 @@ function MissingConfig() {
 }
 
 function App() {
-  const { session, loading, configured, mfa } = useAuth()
+  const { session, profile, loading, configured, mfa, accessRevoked } = useAuth()
 
   if (!configured) {
     return <MissingConfig />
@@ -175,6 +176,10 @@ function App() {
         <p style={{ color: 'var(--color-text-muted)' }}>Yüklənir…</p>
       </div>
     )
+  }
+
+  if (accessRevoked || (session && !profile)) {
+    return <AccountGone />
   }
 
   if (!session) {

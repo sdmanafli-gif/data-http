@@ -20,10 +20,30 @@ const emptyMfa = {
   needsEnroll: false,
 }
 
+const ACCESS_REVOKED_KEY = 'mobideal_access_revoked'
+
+function readAccessRevokedFlag() {
+  try {
+    return sessionStorage.getItem(ACCESS_REVOKED_KEY) === '1'
+  } catch {
+    return false
+  }
+}
+
+function writeAccessRevokedFlag(on) {
+  try {
+    if (on) sessionStorage.setItem(ACCESS_REVOKED_KEY, '1')
+    else sessionStorage.removeItem(ACCESS_REVOKED_KEY)
+  } catch {
+    /* ignore */
+  }
+}
+
 export function AuthProvider({ children }) {
   const [session, setSession] = useState(null)
   const [profile, setProfile] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [accessRevoked, setAccessRevoked] = useState(() => readAccessRevokedFlag())
   const [mfa, setMfa] = useState(emptyMfa)
   const [mfaLoading, setMfaLoading] = useState(false)
 
@@ -92,22 +112,68 @@ export function AuthProvider({ children }) {
   }, [])
 
   async function fetchProfile(userId) {
-    if (!supabase) return
+    if (!supabase || !userId) return null
     try {
       const { data, error } = await supabase
         .from('profiles')
         .select('id, role, email, display_name, permissions')
         .eq('id', userId)
-        .single()
-      if (error) {
+        .maybeSingle()
+      if (error || !data) {
         setProfile(null)
-      } else {
-        setProfile(data)
+        return null
       }
+      setProfile(data)
+      return data
     } catch (_) {
       setProfile(null)
+      return null
     }
   }
+
+  async function revokeLocalAccess() {
+    writeAccessRevokedFlag(true)
+    setAccessRevoked(true)
+    setProfile(null)
+    setMfa(emptyMfa)
+    setSession(null)
+    if (supabase) {
+      try {
+        await supabase.auth.signOut({ scope: 'local' })
+      } catch (_) {
+        /* ignore */
+      }
+    }
+  }
+
+  /**
+   * Ensure Auth user + profile still exist. If admin deleted the account,
+   * kick out immediately and show the «2021» gone page.
+   */
+  const verifyAccountStillValid = useCallback(async (knownSession) => {
+    if (!supabase) return true
+    let active = knownSession
+    if (!active) {
+      const {
+        data: { session: s },
+      } = await supabase.auth.getSession()
+      active = s
+    }
+    if (!active?.user?.id) return true
+
+    const { data: userData, error: userErr } = await supabase.auth.getUser()
+    if (userErr || !userData?.user) {
+      await revokeLocalAccess()
+      return false
+    }
+
+    const prof = await fetchProfile(active.user.id)
+    if (!prof) {
+      await revokeLocalAccess()
+      return false
+    }
+    return true
+  }, [])
 
   useEffect(() => {
     if (!supabase) {
@@ -121,10 +187,18 @@ export function AuthProvider({ children }) {
       if (cancelled) return
       setSession(activeSession)
       if (activeSession?.user?.id) {
-        await Promise.all([
+        const [prof] = await Promise.all([
           fetchProfile(activeSession.user.id),
           refreshMfaStatus(activeSession),
         ])
+        if (cancelled) return
+        if (!prof) {
+          await revokeLocalAccess()
+          return
+        }
+        // Valid account again — clear prior revoke banner if they re-invited
+        writeAccessRevokedFlag(false)
+        setAccessRevoked(false)
       } else {
         setProfile(null)
         setMfa(emptyMfa)
@@ -170,8 +244,33 @@ export function AuthProvider({ children }) {
     }
   }, [refreshMfaStatus])
 
+  // Live kick: poll + re-check when tab becomes visible
+  useEffect(() => {
+    if (!supabase || !session?.user?.id) return undefined
+
+    const tick = () => {
+      verifyAccountStillValid(session).catch(() => {})
+    }
+
+    const intervalId = window.setInterval(tick, 20_000)
+    const onFocus = () => tick()
+    const onVis = () => {
+      if (document.visibilityState === 'visible') tick()
+    }
+    window.addEventListener('focus', onFocus)
+    document.addEventListener('visibilitychange', onVis)
+
+    return () => {
+      window.clearInterval(intervalId)
+      window.removeEventListener('focus', onFocus)
+      document.removeEventListener('visibilitychange', onVis)
+    }
+  }, [session, verifyAccountStillValid])
+
   async function signIn(email, password) {
     if (!supabase) throw new Error('Supabase konfiqurasiya olunmayıb.')
+    writeAccessRevokedFlag(false)
+    setAccessRevoked(false)
     const { data, error } = await supabase.auth.signInWithPassword({
       email: email.trim(),
       password,
@@ -208,6 +307,11 @@ export function AuthProvider({ children }) {
     if (supabase) await supabase.auth.signOut()
     setProfile(null)
     setMfa(emptyMfa)
+  }
+
+  function clearAccessRevoked() {
+    writeAccessRevokedFlag(false)
+    setAccessRevoked(false)
   }
 
   async function enrollTotp(friendlyName = 'Mobideal') {
@@ -482,6 +586,8 @@ export function AuthProvider({ children }) {
     user: session?.user ?? null,
     profile,
     loading,
+    accessRevoked,
+    clearAccessRevoked,
     mfa,
     mfaLoading,
     mfaRequired: MFA_REQUIRED,
