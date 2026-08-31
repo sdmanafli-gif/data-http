@@ -9,6 +9,13 @@ export const COLUMN_SETTINGS_KEY = 'nagd_satish'
 
 export const SUGGEST_FIELDS = new Set(['kime', 'model', 'reng', 'yaddas', 'kimden_alinib', 'satici'])
 
+export const SATIS_NOVU_OPTIONS = [
+  { value: 'nagd', label: 'Nağd' },
+  { value: 'nisye', label: 'Nisyə' },
+]
+
+export const SATIS_NOVU_MAP = Object.fromEntries(SATIS_NOVU_OPTIONS.map((o) => [o.value, o.label]))
+
 export const FIELD_TYPES = [
   { value: 'text', label: 'Mətn' },
   { value: 'number', label: 'Rəqəm' },
@@ -19,6 +26,17 @@ export const FIELD_TYPES = [
 
 export const DEFAULT_COLUMNS = [
   { key: 'tarix', label: 'Tarix', type: 'date', visible: true, formVisible: true, readonly: false, system: true, group: 'record' },
+  {
+    key: 'satis_novu',
+    label: 'Satış növü',
+    type: 'select',
+    visible: true,
+    formVisible: true,
+    readonly: false,
+    system: true,
+    group: 'record',
+    options: SATIS_NOVU_OPTIONS.map((o) => o.value),
+  },
   { key: 'kime', label: 'Kimə', type: 'text', visible: true, formVisible: true, readonly: false, system: true, group: 'record' },
   { key: 'model', label: 'Model', type: 'text', visible: true, formVisible: true, readonly: false, system: true, group: 'record' },
   { key: 'imei_1', label: 'İMEİ 1', type: 'text', visible: true, formVisible: true, readonly: false, system: true, group: 'record' },
@@ -89,6 +107,7 @@ export function formatMoney(value) {
 
 export function formatCell(value, col) {
   if (col?.type === 'files' || col?.key === 'senedler') return formatSenedlerCount(value)
+  if (col?.key === 'satis_novu') return SATIS_NOVU_MAP[value] || value || '—'
   if (value === null || value === undefined || value === '') return '—'
   if (col.type === 'money') return formatMoney(value)
   if (col.type === 'date') return formatDate(value)
@@ -99,6 +118,7 @@ export function emptyNagdForm(columns = DEFAULT_COLUMNS) {
   const base = {
     extra: {},
     tarix: new Date().toISOString().slice(0, 10),
+    satis_novu: 'nagd',
     satici_faizi: '0',
     senedler: [],
   }
@@ -106,6 +126,7 @@ export function emptyNagdForm(columns = DEFAULT_COLUMNS) {
     if (col.key === 'sira_no' || col.key === 'senedler' || GENERATED_KEYS.has(col.key)) continue
     if (col.custom) base.extra[col.key] = ''
     else if (col.key === 'tarix') base.tarix = new Date().toISOString().slice(0, 10)
+    else if (col.key === 'satis_novu') base.satis_novu = 'nagd'
     else if (col.key === 'satici_faizi') base.satici_faizi = '0'
     else base[col.key] = ''
   }
@@ -126,7 +147,7 @@ function textOrNull(v) {
 }
 
 const SYSTEM_DB_KEYS = [
-  'tarix', 'kime', 'model', 'imei_1', 'imei_2', 'serial_no', 'model_no', 'reng', 'yaddas',
+  'tarix', 'satis_novu', 'kime', 'model', 'imei_1', 'imei_2', 'serial_no', 'model_no', 'reng', 'yaddas',
   'kimden_alinib', 'alis_tarixi', 'alis_qiymeti', 'satis_qiymeti', 'satici', 'satici_faizi', 'kommentler',
 ]
 
@@ -141,6 +162,10 @@ export function toNagdPayload(form, columns = DEFAULT_COLUMNS) {
     const col = columns.find((c) => c.key === key)
     const type = col?.type || 'text'
     const raw = form[key]
+    if (key === 'satis_novu') {
+      payload.satis_novu = raw === 'nisye' ? 'nisye' : 'nagd'
+      continue
+    }
     if (type === 'money' || type === 'number') {
       let n = numOrNull(raw)
       if (key === 'satici_faizi') n = n ?? 0
@@ -218,9 +243,13 @@ export function slugifyColumnKey(label) {
 }
 
 /** Build nagd row payload from depo item + sale form */
-export function depoItemToNagdPayload(item, { kime, musteriId, tarix, alis, satis, satici, saticiFaizi, kommentler }) {
+export function depoItemToNagdPayload(
+  item,
+  { kime, musteriId, tarix, alis, satis, satici, saticiFaizi, kommentler, satisNovu }
+) {
   return {
     tarix: tarix || new Date().toISOString().slice(0, 10),
+    satis_novu: satisNovu === 'nisye' ? 'nisye' : 'nagd',
     kime: kime || null,
     musteri_id: musteriId || null,
     model: item.model || null,

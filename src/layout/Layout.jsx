@@ -101,6 +101,17 @@ export default function Layout({ children }) {
               {collapsed ? 'İ' : 'İstifadəçilər'}
             </NavLink>
           )}
+          {isAdmin && (
+            <NavLink
+              to="/admin/kassa"
+              className={({ isActive }) =>
+                `layout__nav-link ${isActive ? 'layout__nav-link--active' : ''}`
+              }
+              title="Kassa"
+            >
+              {collapsed ? 'K' : 'Kassa'}
+            </NavLink>
+          )}
           <NavLink
             to="/hesab/tehlukesizlik"
             className={({ isActive }) =>

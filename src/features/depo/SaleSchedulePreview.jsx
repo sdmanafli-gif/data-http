@@ -109,7 +109,7 @@ export default function SaleSchedulePreview({
     <div className="card">
       <h2 className="card__title">Ödəniş qrafiki — təsdiq</h2>
       <p style={{ marginTop: 0, color: 'var(--color-text-muted)', fontSize: 13 }}>
-        Satışı tamamlamazdan əvvəl qrafiki yaradın, yoxlayın və ya redaktə edin. Sonra təsdiq edin.
+        Çoxlu məhsul bir müştəri sətirində birləşdirilir. Qrafiki yaradın, yoxlayın və ya redaktə edin, sonra təsdiq edin.
       </p>
 
       {!generated && (

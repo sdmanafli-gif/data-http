@@ -21,7 +21,7 @@ import {
   applyVeziyyetFromAmounts,
   isMusteriFormColumnActive,
 } from '../musteri-bazasi/constants'
-import { fetchNextMusteriNumbers, offsetRecordNumbers, fetchNextIcloudNumber, formatIcloudEmail, formatItunesEmail, parseIcloudNumber, isAutoItunesEmail } from '../musteri-bazasi/nextRecordNumbers'
+import { fetchNextMusteriNumbers, fetchNextIcloudNumber, formatIcloudEmail, formatItunesEmail, parseIcloudNumber, isAutoItunesEmail } from '../musteri-bazasi/nextRecordNumbers'
 import { computeIlkinOdenis, buildSaleScheduleWithIlkin, canBuildSchedule } from '../musteri-bazasi/paymentSchedule'
 import { ODENISLER_TABLE, syncMusteriPaymentTotals } from '../odenisler/constants'
 import SaleSchedulePreview from './SaleSchedulePreview'
@@ -81,6 +81,22 @@ const KREDIT_SKIP_KEYS = new Set([
 
 const KREDIT_OPEN_SECTIONS = new Set(['esas', 'elaqe', 'cihaz'])
 
+/** Text/device fields joined with `/` when one credit sale has multiple products. */
+const KREDIT_JOIN_TEXT_KEYS = [
+  'model',
+  'reng',
+  'yaddas',
+  'imei_1',
+  'imei_2',
+  'serial_no',
+  'model_no',
+  'kimden_alinib',
+  'icloud',
+  'icloud_bagli_nomre',
+  'itunes',
+  'itunes_bagli_nomre',
+]
+
 /**
  * Per-device cihaz fields on kredit satış.
  * `musteriKey`: linked to Müştəri Bazası column manager (null = depo-only, always shown).
@@ -91,8 +107,8 @@ const CIHAZ_LINE_FIELDS = [
   { key: 'yaddas', label: 'Yaddaş', editable: false, musteriKey: 'yaddas' },
   { key: 'imei_1', label: 'IMEI 1', editable: false, musteriKey: 'imei_1' },
   { key: 'imei_2', label: 'IMEI 2', editable: false, musteriKey: 'imei_2' },
-  { key: 'serial_no', label: 'Seriya No', editable: false, musteriKey: null },
-  { key: 'model_no', label: 'Model No', editable: false, musteriKey: null },
+  { key: 'serial_no', label: 'Seriya No', editable: false, musteriKey: 'serial_no' },
+  { key: 'model_no', label: 'Model No', editable: false, musteriKey: 'model_no' },
   { key: 'battery_faiz', label: 'Battery %', editable: false, musteriKey: 'battery_faiz' },
   { key: 'kimden_alinib', label: 'Kimdən alınıb', editable: false, musteriKey: 'kimden_alinib' },
   { key: 'icloud', label: 'iCloud', editable: true, musteriKey: 'icloud' },
@@ -136,6 +152,74 @@ function emptyLineCihaz(item, appleIdNum = null) {
     base.itunes = formatItunesEmail(n)
   }
   return base
+}
+
+function joinSlash(parts) {
+  return (parts || []).map((p) => (p == null || p === '' ? '' : String(p).trim())).join('/')
+}
+
+/**
+ * One müştəri row for the whole basket: device fields joined with `/`, money summed.
+ */
+function buildCombinedKreditForm({
+  basket,
+  linePrices,
+  lineCihaz,
+  musteriForm,
+  paidTotal,
+}) {
+  const joined = {}
+  for (const key of KREDIT_JOIN_TEXT_KEYS) {
+    joined[key] = joinSlash(
+      basket.map((item) => {
+        const cihaz = lineCihaz[item.id] || emptyLineCihaz(item)
+        const v = cihaz[key]
+        return v == null ? '' : v
+      })
+    )
+  }
+
+  let alis = 0
+  let satis = 0
+  for (const item of basket) {
+    const lp = linePrices[item.id] || {}
+    alis += Number(lp.alis) || 0
+    satis += Number(lp.satis) || 0
+  }
+  alis = Math.round(alis * 100) / 100
+  satis = Math.round(satis * 100) / 100
+  const paid = Math.round((Number(paidTotal) || 0) * 100) / 100
+
+  const depoIds = basket.map((item) => item.id).filter(Boolean)
+  const batteryJoined = joinSlash(
+    basket.map((item) => {
+      const cihaz = lineCihaz[item.id] || emptyLineCihaz(item)
+      return cihaz.battery_faiz ?? ''
+    })
+  )
+  const firstBattery = (lineCihaz[basket[0]?.id] || emptyLineCihaz(basket[0])).battery_faiz
+
+  return {
+    ...musteriForm,
+    ...joined,
+    // Numeric DB column — keep first device; full list in extra
+    battery_faiz: firstBattery != null && firstBattery !== '' ? String(firstBattery) : '',
+    alis_qiymeti: String(alis),
+    satis_qiymeti: String(satis),
+    verilib: String(paid),
+    faiz: musteriForm.faiz === '' || musteriForm.faiz == null ? '0' : musteriForm.faiz,
+    veziyyet: 'Qalıb',
+    veziyyet_manual: false,
+    kommentler: musteriForm.kommentler,
+    senedler: musteriForm.senedler,
+    extra: {
+      ...(musteriForm.extra || {}),
+      depo_ids: depoIds,
+      line_alis: joinSlash(basket.map((item) => linePrices[item.id]?.alis ?? '')),
+      line_satis: joinSlash(basket.map((item) => linePrices[item.id]?.satis ?? '')),
+      line_battery_faiz: batteryJoined,
+    },
+  }
 }
 
 /**
@@ -618,12 +702,13 @@ export default function SaleFlow() {
       }
       setSaving(true)
       try {
+        const tip = form.ledger_tip || 'nisye_verdim'
         for (const item of basket) {
           const lp = linePrices[item.id]
           const mehsul = String(lineMehsul[item.id] ?? item.model ?? '').trim()
           const payload = depoItemToLedgerPayload(item, {
             kime,
-            tip: form.ledger_tip || 'nisye_verdim',
+            tip,
             tarix: form.verilme_tarixi,
             qaytarma_tarixi: form.qaytarma_tarixi || null,
             mebleg: lp.satis,
@@ -632,6 +717,23 @@ export default function SaleFlow() {
           })
           const { error: ledErr } = await supabase.from(LEDGER_TABLE).insert(payload)
           if (ledErr) throw ledErr
+
+          // Nisyə verdim: also record alış/satış/xeyir in Nağd satış (earned on sale date)
+          if (tip === 'nisye_verdim') {
+            const nagdPayload = depoItemToNagdPayload(item, {
+              kime,
+              tarix: form.verilme_tarixi,
+              alis: lp.alis,
+              satis: lp.satis,
+              satici: form.satici,
+              saticiFaizi: form.satici_faizi,
+              kommentler: form.kommentler,
+              satisNovu: 'nisye',
+            })
+            const { error: nagdErr } = await supabase.from(NAGD_TABLE).insert(nagdPayload)
+            if (nagdErr) throw nagdErr
+          }
+
           await markDepoSold(item)
         }
         navigate(counterpartPath(kime))
@@ -683,39 +785,34 @@ export default function SaleFlow() {
         return
       }
 
-      // Preview ödəniş qrafiki before creating müştəri records
-      const drafts = basket.map((item, index) => {
-        const lp = linePrices[item.id]
-        const satis = lp.satis
-        const itemIlkin =
-          basket.length === 1
-            ? Number(ilkinOdenis) || 0
-            : computeIlkinOdenis({
-                satis_qiymeti: satis,
-                ayliq_odenis: musteriForm.ayliq_odenis,
-                nece_ay: musteriForm.nece_ay,
-              }) ?? 0
-        const paidTotal = Number(ilkinOdenisVerilib) || 0
-        const paidForItem =
-          basket.length === 1 ? paidTotal : index === 0 ? Math.min(paidTotal, itemIlkin) : 0
-        const remainingForItem = Math.max(0, Math.round((itemIlkin - paidForItem) * 100) / 100)
-        const verilme =
-          musteriForm.verilme_tarixi || new Date().toISOString().slice(0, 10)
-        const ilkinDueDate =
-          remainingForItem > 0.009 ? ilkinQaliqTarixi || verilme : verilme
+      // One combined ödəniş qrafiki for the whole basket (single müştəri row)
+      const totalSatis = totals.satis
+      const itemIlkin = Number(ilkinOdenis) || 0
+      const paidForItem = Number(ilkinOdenisVerilib) || 0
+      const remainingForItem = Math.max(0, Math.round((itemIlkin - paidForItem) * 100) / 100)
+      const verilme =
+        musteriForm.verilme_tarixi || new Date().toISOString().slice(0, 10)
+      const ilkinDueDate =
+        remainingForItem > 0.009 ? ilkinQaliqTarixi || verilme : verilme
 
-        const scheduleRow = {
-          satis_qiymeti: Number(satis) || 0,
-          ayliq_odenis: Number(musteriForm.ayliq_odenis) || 0,
-          nece_ay: Number(musteriForm.nece_ay) || 0,
-          verilme_tarixi: verilme,
-          birinci_ayliq_odenis_tarixi: musteriForm.birinci_ayliq_odenis_tarixi,
-          odenis_gunu: musteriForm.odenis_gunu,
-        }
+      const scheduleRow = {
+        satis_qiymeti: Number(totalSatis) || 0,
+        ayliq_odenis: Number(musteriForm.ayliq_odenis) || 0,
+        nece_ay: Number(musteriForm.nece_ay) || 0,
+        verilme_tarixi: verilme,
+        birinci_ayliq_odenis_tarixi: musteriForm.birinci_ayliq_odenis_tarixi,
+        odenis_gunu: musteriForm.odenis_gunu,
+      }
 
-        return {
-          itemId: item.id,
-          label: `${item.model || 'Məhsul'} · ${item.reng || '—'} · ${item.imei_1 || '—'}`,
+      const label = basket
+        .map((item) => `${item.model || 'Məhsul'} · ${item.reng || '—'} · ${item.imei_1 || '—'}`)
+        .join(' / ')
+
+      const drafts = [
+        {
+          itemId: 'combined',
+          basketIds: basket.map((item) => item.id),
+          label,
           scheduleRow,
           itemIlkin,
           ilkinDueDate,
@@ -730,8 +827,8 @@ export default function SaleFlow() {
               }) || []
             )
           },
-        }
-      })
+        },
+      ]
       setScheduleDrafts(drafts)
       setStep(3)
       return
@@ -757,6 +854,7 @@ export default function SaleFlow() {
             satici: form.satici,
             saticiFaizi: form.satici_faizi,
             kommentler: form.kommentler,
+            satisNovu: 'nagd',
           })
           const { error: nagdErr } = await supabase.from(NAGD_TABLE).insert(payload)
           if (nagdErr) throw nagdErr
@@ -778,107 +876,94 @@ export default function SaleFlow() {
     setError(null)
     try {
       const musteriId = await ensureMusteriId()
-      const byItem = new Map((approvedDrafts || []).map((d) => [d.itemId, d]))
+      const draft =
+        (approvedDrafts || []).find((d) => d.itemId === 'combined') ||
+        (approvedDrafts || [])[0] ||
+        null
 
-      for (let index = 0; index < basket.length; index++) {
-        const item = basket[index]
-        const lp = linePrices[item.id]
-        const satis = lp.satis
-        const alis = lp.alis
-        const draft = byItem.get(item.id)
+      const paidTotal =
+        draft?.paidForItem != null ? draft.paidForItem : Number(ilkinOdenisVerilib) || 0
+      const itemIlkin =
+        draft?.itemIlkin != null ? draft.itemIlkin : Number(ilkinOdenis) || 0
 
-        const numbers = offsetRecordNumbers(musteriForm, index)
-        const cihaz = lineCihaz[item.id] || emptyLineCihaz(item)
+      const verilme =
+        musteriForm.verilme_tarixi || new Date().toISOString().slice(0, 10)
 
-        const itemIlkin =
-          draft?.itemIlkin != null
-            ? draft.itemIlkin
-            : basket.length === 1
-              ? Number(ilkinOdenis) || 0
-              : computeIlkinOdenis({
-                  satis_qiymeti: satis,
-                  ayliq_odenis: musteriForm.ayliq_odenis,
-                  nece_ay: musteriForm.nece_ay,
-                }) ?? 0
+      const saleForm = buildCombinedKreditForm({
+        basket,
+        linePrices,
+        lineCihaz,
+        musteriForm,
+        paidTotal,
+      })
 
-        const paidForItem =
-          draft?.paidForItem != null
-            ? draft.paidForItem
-            : basket.length === 1
-              ? Number(ilkinOdenisVerilib) || 0
-              : index === 0
-                ? Math.min(Number(ilkinOdenisVerilib) || 0, itemIlkin)
-                : 0
+      const payload = {
+        ...toMusteriPayload(saleForm, musteriId, columns),
+        depo_id: basket[0]?.id || null,
+        satis_novu: saleType,
+      }
 
-        const verilme =
-          musteriForm.verilme_tarixi || new Date().toISOString().slice(0, 10)
-
-        const saleForm = {
-          ...musteriForm,
-          ...depoPrefill(item),
-          icloud: cihaz.icloud ?? '',
-          icloud_bagli_nomre: cihaz.icloud_bagli_nomre ?? '',
-          itunes: cihaz.itunes ?? '',
-          itunes_bagli_nomre: cihaz.itunes_bagli_nomre ?? '',
-          muqavile_nomresi: numbers.muqavile_nomresi,
-          sira_no: numbers.sira_no,
-          kommentler: musteriForm.kommentler,
-          senedler: musteriForm.senedler,
-          extra: musteriForm.extra || {},
-          alis_qiymeti: alis,
-          satis_qiymeti: satis,
-          verilib: String(paidForItem),
-          faiz: musteriForm.faiz === '' || musteriForm.faiz == null ? '0' : musteriForm.faiz,
-          veziyyet: 'Qalıb',
-          veziyyet_manual: false,
+      const approvedLines = draft?.lines?.length ? draft.lines : null
+      if (approvedLines?.length) {
+        payload.odenis_qrafiki = approvedLines
+        const firstAyliq = approvedLines.find((l) => l.type === 'ayliq')
+        if (firstAyliq?.tarix) {
+          payload.birinci_ayliq_odenis_tarixi = firstAyliq.tarix
         }
-
-        const payload = {
-          ...toMusteriPayload(saleForm, musteriId, columns),
-          depo_id: item.id,
-          satis_novu: saleType,
+      } else if (draft?.scheduleRow && canBuildSchedule(draft.scheduleRow)) {
+        const qrafik = buildSaleScheduleWithIlkin(draft.scheduleRow, {
+          ilkinMebleg: itemIlkin,
+          ilkinTarix: draft.ilkinDueDate || verilme,
+        })
+        if (qrafik?.length) payload.odenis_qrafiki = qrafik
+      } else {
+        const scheduleRow = {
+          satis_qiymeti: Number(saleForm.satis_qiymeti) || 0,
+          ayliq_odenis: Number(saleForm.ayliq_odenis) || 0,
+          nece_ay: Number(saleForm.nece_ay) || 0,
+          verilme_tarixi: verilme,
+          birinci_ayliq_odenis_tarixi: saleForm.birinci_ayliq_odenis_tarixi,
+          odenis_gunu: saleForm.odenis_gunu,
         }
-
-        const approvedLines = draft?.lines?.length
-          ? draft.lines
-          : null
-        if (approvedLines?.length) {
-          payload.odenis_qrafiki = approvedLines
-          const firstAyliq = approvedLines.find((l) => l.type === 'ayliq')
-          if (firstAyliq?.tarix) {
-            payload.birinci_ayliq_odenis_tarixi = firstAyliq.tarix
-          }
-        } else if (draft?.scheduleRow && canBuildSchedule(draft.scheduleRow)) {
-          const qrafik = buildSaleScheduleWithIlkin(draft.scheduleRow, {
+        if (canBuildSchedule(scheduleRow)) {
+          const qrafik = buildSaleScheduleWithIlkin(scheduleRow, {
             ilkinMebleg: itemIlkin,
-            ilkinTarix: draft.ilkinDueDate || verilme,
+            ilkinTarix:
+              Math.max(0, itemIlkin - paidTotal) > 0.009
+                ? ilkinQaliqTarixi || verilme
+                : verilme,
           })
           if (qrafik?.length) payload.odenis_qrafiki = qrafik
         }
+      }
 
-        const { data: inserted, error: saleErr } = await supabase
-          .from(MUSTERI_TABLE)
-          .insert(payload)
-          .select('id, sira_no, ad_soyad')
-          .single()
-        if (saleErr) throw saleErr
+      const { data: inserted, error: saleErr } = await supabase
+        .from(MUSTERI_TABLE)
+        .insert(payload)
+        .select('id, sira_no, ad_soyad')
+        .single()
+      if (saleErr) throw saleErr
 
-        if (paidForItem > 0.009 && inserted?.id) {
-          const { error: payErr } = await supabase.from(ODENISLER_TABLE).insert({
-            musteri_bazasi_id: inserted.id,
-            sira_no: inserted.sira_no ?? null,
-            ad_soyad: inserted.ad_soyad || saleForm.ad_soyad,
-            tip: 'ilkin',
-            mebleg: paidForItem,
-            tarix: verilme,
-            qeyd: 'Kredit satış — ilkin ödəniş verilib',
-            updated_at: new Date().toISOString(),
-          })
-          if (payErr) throw payErr
-          const { error: syncErr } = await syncMusteriPaymentTotals(supabase, inserted.id)
-          if (syncErr) throw syncErr
-        }
+      if (paidTotal > 0.009 && inserted?.id) {
+        const { error: payErr } = await supabase.from(ODENISLER_TABLE).insert({
+          musteri_bazasi_id: inserted.id,
+          sira_no: inserted.sira_no ?? null,
+          ad_soyad: inserted.ad_soyad || saleForm.ad_soyad,
+          tip: 'ilkin',
+          mebleg: paidTotal,
+          tarix: verilme,
+          qeyd:
+            basket.length > 1
+              ? `Kredit satış (${basket.length} məhsul) — ilkin ödəniş verilib`
+              : 'Kredit satış — ilkin ödəniş verilib',
+          updated_at: new Date().toISOString(),
+        })
+        if (payErr) throw payErr
+        const { error: syncErr } = await syncMusteriPaymentTotals(supabase, inserted.id)
+        if (syncErr) throw syncErr
+      }
 
+      for (const item of basket) {
         await markDepoSold(item)
       }
 

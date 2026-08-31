@@ -9,39 +9,51 @@ function normImei(v) {
   return String(v || '').trim().replace(/\s/g, '')
 }
 
+/** Split joined IMEI values from multi-product credit sales (`a/b/c`). */
+function splitImeiField(v) {
+  return String(v || '')
+    .split('/')
+    .map((part) => normImei(part))
+    .filter(Boolean)
+}
+
 /**
- * Find Depo row for a müştəri credit: depo_id first, then IMEI 1 / IMEI 2.
+ * Find Depo row for a müştəri credit: depo_id / depo_ids first, then IMEI 1 / IMEI 2.
  */
 export async function findDepoForMusteri(supabase, musteri) {
-  if (musteri?.depo_id) {
-    const { data, error } = await supabase.from(DEPO_TABLE).select('*').eq('id', musteri.depo_id).maybeSingle()
+  const depoIds = []
+  if (musteri?.depo_id) depoIds.push(musteri.depo_id)
+  const extraIds = musteri?.extra?.depo_ids
+  if (Array.isArray(extraIds)) {
+    for (const id of extraIds) {
+      if (id && !depoIds.includes(id)) depoIds.push(id)
+    }
+  }
+
+  for (const depoId of depoIds) {
+    const { data, error } = await supabase.from(DEPO_TABLE).select('*').eq('id', depoId).maybeSingle()
     if (error) return { depo: null, error, match: null }
     if (data) return { depo: data, error: null, match: 'depo_id' }
   }
 
-  const imei1 = normImei(musteri?.imei_1)
-  const imei2 = normImei(musteri?.imei_2)
-  if (!imei1 && !imei2) {
+  const imeiCandidates = [
+    ...splitImeiField(musteri?.imei_1),
+    ...splitImeiField(musteri?.imei_2),
+  ]
+  const uniqueImeis = [...new Set(imeiCandidates)]
+  if (!uniqueImeis.length) {
     return { depo: null, error: null, match: null }
   }
 
   // Prefer exact filters over .or() with raw IMEI strings
   const candidates = []
-  if (imei1) {
-    const { data: d1, error: e1 } = await supabase.from(DEPO_TABLE).select('*').eq('imei_1', imei1).limit(10)
+  for (const imei of uniqueImeis) {
+    const { data: d1, error: e1 } = await supabase.from(DEPO_TABLE).select('*').eq('imei_1', imei).limit(10)
     if (e1) return { depo: null, error: e1, match: null }
     candidates.push(...(d1 || []))
-    const { data: d2, error: e2 } = await supabase.from(DEPO_TABLE).select('*').eq('imei_2', imei1).limit(10)
+    const { data: d2, error: e2 } = await supabase.from(DEPO_TABLE).select('*').eq('imei_2', imei).limit(10)
     if (e2) return { depo: null, error: e2, match: null }
     candidates.push(...(d2 || []))
-  }
-  if (imei2) {
-    const { data: d3, error: e3 } = await supabase.from(DEPO_TABLE).select('*').eq('imei_1', imei2).limit(10)
-    if (e3) return { depo: null, error: e3, match: null }
-    candidates.push(...(d3 || []))
-    const { data: d4, error: e4 } = await supabase.from(DEPO_TABLE).select('*').eq('imei_2', imei2).limit(10)
-    if (e4) return { depo: null, error: e4, match: null }
-    candidates.push(...(d4 || []))
   }
 
   const byId = new Map()
@@ -49,14 +61,16 @@ export async function findDepoForMusteri(supabase, musteri) {
   const rows = [...byId.values()]
   if (!rows.length) return { depo: null, error: null, match: null }
 
-  // Prefer sold / returned, then exact both-IMEI match
+  // Prefer sold / returned, then exact IMEI match
   const scored = rows.map((r) => {
     let score = 0
     if (r.status === 'sold' || r.status === 'returned') score += 10
-    if (imei1 && normImei(r.imei_1) === imei1) score += 5
-    if (imei2 && normImei(r.imei_2) === imei2) score += 5
-    if (imei1 && normImei(r.imei_2) === imei1) score += 2
-    if (imei2 && normImei(r.imei_1) === imei2) score += 2
+    const r1 = normImei(r.imei_1)
+    const r2 = normImei(r.imei_2)
+    for (const imei of uniqueImeis) {
+      if (r1 === imei) score += 5
+      if (r2 === imei) score += 2
+    }
     return { r, score }
   })
   scored.sort((a, b) => b.score - a.score)
@@ -73,6 +87,8 @@ export function musteriToDepoForm(musteri, existingDepo = null) {
     yaddas: musteri.yaddas != null ? String(musteri.yaddas) : base.yaddas,
     imei_1: musteri.imei_1 != null ? String(musteri.imei_1) : base.imei_1,
     imei_2: musteri.imei_2 != null ? String(musteri.imei_2) : base.imei_2,
+    serial_no: musteri.serial_no != null ? String(musteri.serial_no) : base.serial_no,
+    model_no: musteri.model_no != null ? String(musteri.model_no) : base.model_no,
     battery_faiz:
       musteri.battery_faiz != null && musteri.battery_faiz !== ''
         ? String(musteri.battery_faiz)

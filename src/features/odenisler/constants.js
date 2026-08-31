@@ -3,6 +3,11 @@ import { VEZIYYET_OPTIONS } from '../musteri-bazasi/constants'
 
 export const ODENISLER_TABLE = 'odenisler'
 export const MUSTERI_TABLE = 'musteri_bazasi'
+export const ODENIS_KARTLAR_TABLE = 'odenis_kartlar'
+export const KASSA_CIXARISLAR_TABLE = 'kassa_cixarislar'
+
+/** Kassa only tracks payments/withdrawals from this date (inclusive). */
+export const KASSA_TRACKING_FROM = '2026-08-31'
 
 export const PAYMENT_TYPES = [
   { value: 'ilkin', label: 'İlkin Ödəniş', covers: 'ilkin' },
@@ -11,6 +16,13 @@ export const PAYMENT_TYPES = [
 ]
 
 export const PAYMENT_TYPE_MAP = Object.fromEntries(PAYMENT_TYPES.map((t) => [t.value, t]))
+
+export const ODENIS_USULU_OPTIONS = [
+  { value: 'nagd', label: 'Nağd' },
+  { value: 'kart', label: 'Kart' },
+]
+
+export const ODENIS_USULU_MAP = Object.fromEntries(ODENIS_USULU_OPTIONS.map((o) => [o.value, o.label]))
 
 /** Fixed list columns for Ödənişlər (also used by permission editor). */
 export const ODENIS_TABLE_COLUMNS = [
@@ -34,11 +46,24 @@ export const ODENIS_TABLE_COLUMNS = [
     width: 130,
   },
   { key: 'mebleg', label: 'Məbləğ', type: 'money', visible: true, width: 120 },
+  {
+    key: 'odenis_usulu',
+    label: 'Üsul',
+    type: 'select',
+    options: ODENIS_USULU_OPTIONS.map((o) => o.value),
+    visible: true,
+    width: 90,
+  },
+  { key: 'kart_nomresi', label: 'Kart', type: 'text', visible: true, width: 140 },
   { key: 'qeyd', label: 'Qeyd', type: 'text', visible: true, width: 180 },
 ]
 
 export function tipLabel(tip) {
   return PAYMENT_TYPE_MAP[tip]?.label || tip || '—'
+}
+
+export function usuluLabel(usulu) {
+  return ODENIS_USULU_MAP[usulu] || usulu || '—'
 }
 
 export function formatMoney(value) {
@@ -58,6 +83,8 @@ export function emptyOdenisForm(prefill = {}) {
     tip: prefill.tip || 'ayliq',
     mebleg: prefill.mebleg != null ? String(prefill.mebleg) : '',
     tarix: prefill.tarix || new Date().toISOString().slice(0, 10),
+    odenis_usulu: prefill.odenis_usulu || 'nagd',
+    kart_nomresi: prefill.kart_nomresi || '',
     qeyd: prefill.qeyd || '',
   }
 }
@@ -70,6 +97,8 @@ function numOrNull(v) {
 
 export function toOdenisPayload(form) {
   const mebleg = numOrNull(form.mebleg)
+  const usulu = form.odenis_usulu === 'kart' ? 'kart' : 'nagd'
+  const kart = usulu === 'kart' ? String(form.kart_nomresi || '').trim() : null
   return {
     musteri_bazasi_id: form.musteri_bazasi_id || null,
     sira_no: form.sira_no === '' || form.sira_no == null ? null : Number(form.sira_no),
@@ -77,6 +106,8 @@ export function toOdenisPayload(form) {
     tip: form.tip,
     mebleg: mebleg == null ? null : mebleg,
     tarix: form.tarix || null,
+    odenis_usulu: usulu,
+    kart_nomresi: kart || null,
     qeyd: String(form.qeyd || '').trim() || null,
     updated_at: new Date().toISOString(),
   }
@@ -90,8 +121,36 @@ export function rowToForm(row) {
     tip: row.tip || 'ayliq',
     mebleg: row.mebleg == null ? '' : String(row.mebleg),
     tarix: row.tarix || '',
+    odenis_usulu: row.odenis_usulu === 'kart' ? 'kart' : 'nagd',
+    kart_nomresi: row.kart_nomresi || '',
     qeyd: row.qeyd || '',
   }
+}
+
+export function methodKey(usulu, kart) {
+  if (usulu === 'kart') return `kart:${String(kart || '').trim() || '—'}`
+  return 'nagd'
+}
+
+export function methodLabel(usulu, kart) {
+  if (usulu === 'kart') return `Kart · ${String(kart || '').trim() || '—'}`
+  return 'Nağd'
+}
+
+/**
+ * Ensure kart exists in odenis_kartlar for future dropdowns.
+ */
+export async function ensureOdenisKart(supabase, kartNomresi, createdBy) {
+  const kart = String(kartNomresi || '').trim()
+  if (!kart) return { error: null }
+  const { error } = await supabase.from(ODENIS_KARTLAR_TABLE).upsert(
+    {
+      kart_nomresi: kart,
+      created_by: createdBy || null,
+    },
+    { onConflict: 'kart_nomresi', ignoreDuplicates: true }
+  )
+  return { error }
 }
 
 export function clientOptionLabel(row) {
