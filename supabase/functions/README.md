@@ -4,11 +4,24 @@
 
 Older admin create-user flow. Prefer **Dəvət et** (`/admin/invite`) for new accounts.
 
-## delete-user (admin only)
+## delete-user
+
+**Recommended (RPC, no Edge Function):**
+
+```bash
+node --env-file=.env.local scripts/setup-admin-delete-user-rpc.mjs
+```
+
+Uses `admin_delete_user` RPC (same `private.app_secrets` as MFA admin tools).
+UI: **İstifadəçilər** → **Sil**.
+
+**Optional Edge Function fallback:**
+
+```bash
+npx supabase functions deploy delete-user
+```
 
 Allows an **admin** to delete a user from Supabase Auth. Body: `{ userId: string }`. Admins cannot delete their own account.
-
-Used from **İstifadəçilər** → Sil.
 
 ## Admin MFA (RPC — recommended)
 

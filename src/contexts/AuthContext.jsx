@@ -297,6 +297,9 @@ export function AuthProvider({ children }) {
 
   async function createInvitation({ email, role = 'manager', permissions } = {}) {
     if (!supabase) throw new Error('Supabase konfiqurasiya olunmayıb.')
+    if (profile?.role !== 'admin') {
+      throw new Error('Yalnız admin dəvət göndərə bilər.')
+    }
     const {
       data: { user },
     } = await supabase.auth.getUser()
@@ -322,6 +325,9 @@ export function AuthProvider({ children }) {
 
   async function listInvitations() {
     if (!supabase) throw new Error('Supabase konfiqurasiya olunmayıb.')
+    if (profile?.role !== 'admin') {
+      throw new Error('Yalnız admin dəvətlərə baxa bilər.')
+    }
     const { data, error } = await supabase
       .from('invitations')
       .select('id, email, token, role, status, expires_at, created_at, accepted_at, permissions')
@@ -351,11 +357,39 @@ export function AuthProvider({ children }) {
 
   async function deleteUserAccount(userId) {
     if (!supabase) throw new Error('Supabase konfiqurasiya olunmayıb.')
+    if (!userId) throw new Error('userId tələb olunur.')
+
+    // Prefer DB RPC (no Edge Function). Fall back to edge function if RPC missing.
+    try {
+      const { data, error } = await supabase.rpc('admin_delete_user', {
+        target_user_id: userId,
+      })
+      if (error) throw error
+      if (data?.error) throw new Error(typeof data.error === 'string' ? data.error : JSON.stringify(data.error))
+      return data ?? { ok: true }
+    } catch (rpcErr) {
+      const msg = rpcErr?.message || String(rpcErr)
+      if (!/Could not find the function|schema cache|does not exist/i.test(msg)) {
+        throw new Error(msg)
+      }
+    }
+
+    const {
+      data: { session: active },
+    } = await supabase.auth.getSession()
+    if (!active?.access_token) throw new Error('Daxil olmamısınız.')
+
     const { data, error } = await supabase.functions.invoke('delete-user', {
       body: { userId },
+      headers: { Authorization: `Bearer ${active.access_token}` },
     })
-    if (error) throw error
-    if (data?.error) throw new Error(data.error)
+
+    if (error) {
+      throw new Error(
+        'İstifadəçi silmə hazır deyil. Bir dəfə işə salın: node --env-file=.env.local scripts/setup-admin-delete-user-rpc.mjs'
+      )
+    }
+    if (data?.error) throw new Error(typeof data.error === 'string' ? data.error : JSON.stringify(data.error))
     return data
   }
 
