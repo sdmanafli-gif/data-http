@@ -340,7 +340,7 @@ export default function DepoForm() {
           record.reng,
           STATUS_LABELS[record.status] || record.status,
         ].filter(Boolean).join(' · ') || undefined}
-        columns={viewColumns.filter((c) => c.key !== 'senedler')}
+        columns={viewColumns.filter((c) => c.key !== 'senedler' && c.key !== 'kommentler')}
         row={record}
         formatCell={formatCell}
         getRowValue={getRowValue}
@@ -368,6 +368,12 @@ export default function DepoForm() {
           </>
         }
       >
+        {record.kommentler ? (
+          <div className="form-group" style={{ marginTop: 20, marginBottom: 0 }}>
+            <label>Komment</label>
+            <p style={{ margin: 0, whiteSpace: 'pre-wrap' }}>{record.kommentler}</p>
+          </div>
+        ) : null}
         <div style={{ marginTop: 20 }}>
           <SenedlerField
             folder="depo"
@@ -415,7 +421,7 @@ export default function DepoForm() {
       </div>
       <form onSubmit={handleSubmit} noValidate>
         <div className="form-row">
-          {formColumns.filter((c) => c.key !== 'senedler').map((col) => {
+          {formColumns.filter((c) => c.key !== 'senedler' && c.key !== 'kommentler').map((col) => {
             const isYeni = form.veziyyet_cihaz === 'teze'
             const isKohne = form.veziyyet_cihaz === 'kohne'
             return (
@@ -464,6 +470,18 @@ export default function DepoForm() {
               />
             )
           })}
+        </div>
+        <div className="form-group" style={{ marginTop: 16 }}>
+          <label>Komment</label>
+          <textarea
+            rows={3}
+            value={form.kommentler ?? ''}
+            onChange={(e) => {
+              const v = e.target.value
+              setForm((prev) => ({ ...prev, kommentler: v }))
+            }}
+            placeholder="Məhsul haqqında qeyd…"
+          />
         </div>
         <div style={{ marginTop: 16 }}>
           <SenedlerField
