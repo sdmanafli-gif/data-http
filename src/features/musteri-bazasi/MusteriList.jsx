@@ -7,7 +7,7 @@ import ResizableDataTable from './ResizableDataTable'
 import SummaryCards from './SummaryCards'
 import MusteriRecordModule from './MusteriRecordModule'
 import { applyKeyOrder } from './columnOrder'
-import { MUSTERI_TABLE } from './constants'
+import { MUSTERI_TABLE, formatCell } from './constants'
 import '../../styles/shared.css'
 import './musteri-schedule.css'
 
@@ -35,6 +35,32 @@ const OTHER_SEARCH_COLUMNS = [
   'satici',
   'kommentler',
 ]
+
+// Vəziyyət xanası: Bitib → qırmızı, Qalıb → yaşıl çərçivəli nişan
+const VEZIYYET_BADGE = {
+  Bitib: { background: '#c62828', color: '#fff' },
+  Qalıb: { background: '#2e7d32', color: '#fff' },
+}
+
+function renderMusteriCell(row, col, raw) {
+  if (col.key === 'veziyyet' && VEZIYYET_BADGE[raw]) {
+    return (
+      <span
+        style={{
+          ...VEZIYYET_BADGE[raw],
+          display: 'inline-block',
+          padding: '2px 10px',
+          borderRadius: 4,
+          fontWeight: 600,
+          lineHeight: 1.4,
+        }}
+      >
+        {raw}
+      </span>
+    )
+  }
+  return formatCell(raw, col)
+}
 
 function sumField(rows, key) {
   return rows.reduce((acc, row) => {
@@ -230,6 +256,7 @@ export default function MusteriList() {
             onReorderColumns={handleReorder}
             onResizeColumn={handleResize}
             onRowOpen={(row) => setOpenRow(row)}
+            renderCell={renderMusteriCell}
             onDisplayRowsChange={setViewRows}
             prefsKey="musteri_bazasi"
           />
