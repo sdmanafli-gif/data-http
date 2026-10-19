@@ -36,10 +36,11 @@ const OTHER_SEARCH_COLUMNS = [
   'kommentler',
 ]
 
-// Vəziyyət xanası: Bitib → qırmızı, Qalıb → yaşıl çərçivəli nişan
+// Vəziyyət xanası: Bitib → qırmızı, Qalıb → yaşıl, Məhkəmə → sarı nişan
 const VEZIYYET_BADGE = {
   Bitib: { background: '#c62828', color: '#fff' },
   Qalıb: { background: '#2e7d32', color: '#fff' },
+  Məhkəmə: { background: '#fbc02d', color: '#000' },
 }
 
 function renderMusteriCell(row, col, raw) {
