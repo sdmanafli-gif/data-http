@@ -19,6 +19,7 @@ function valueToneClass(key, value) {
 
 /**
  * @param {string[]|null} [allowedKeys] null = all; [] = hide entirely
+ * @param {Record<string,string>} [labels] optional label overrides per card key
  */
 export default function SummaryCards({
   totals,
@@ -26,6 +27,7 @@ export default function SummaryCards({
   extraCards = [],
   storageKey = 'summary:musteri',
   allowedKeys = null,
+  labels = {},
 }) {
   if (Array.isArray(allowedKeys) && allowedKeys.length === 0) return null
 
@@ -43,7 +45,7 @@ export default function SummaryCards({
           const value = totals[card.key] ?? 0
           return (
             <div key={card.key} className="musteri-summary__card">
-              <div className="musteri-summary__label">{card.label}</div>
+              <div className="musteri-summary__label">{labels[card.key] || card.label}</div>
               <div className={`musteri-summary__value ${valueToneClass(card.key, value)}`}>
                 {formatMoney(value)}
               </div>
