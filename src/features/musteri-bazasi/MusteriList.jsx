@@ -11,6 +11,31 @@ import { MUSTERI_TABLE } from './constants'
 import '../../styles/shared.css'
 import './musteri-schedule.css'
 
+// "IMEI, iCloud, nömrə və s." axtarışının baxdığı sütunlar (hamısı text tiplidir)
+const OTHER_SEARCH_COLUMNS = [
+  'imei_1',
+  'imei_2',
+  'icloud',
+  'icloud_bagli_nomre',
+  'itunes',
+  'itunes_bagli_nomre',
+  'nomre_1',
+  'nomre_2',
+  'nomre_3',
+  'nomre_4',
+  'nomre_5',
+  'muqavile_nomresi',
+  'model',
+  'reng',
+  'yaddas',
+  'serial_no',
+  'model_no',
+  'kimden_alinib',
+  'zamin',
+  'satici',
+  'kommentler',
+]
+
 function sumField(rows, key) {
   return rows.reduce((acc, row) => {
     const n = Number(row[key])
@@ -28,7 +53,9 @@ export default function MusteriList() {
   const [viewRows, setViewRows] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
-  const [search, setSearch] = useState('')
+  const [searchId, setSearchId] = useState('')
+  const [searchName, setSearchName] = useState('')
+  const [searchOther, setSearchOther] = useState('')
   const [localCols, setLocalCols] = useState([])
   const [openRow, setOpenRow] = useState(null)
   const resizeTimer = useRef(null)
@@ -45,24 +72,23 @@ export default function MusteriList() {
   async function load() {
     setLoading(true)
     setError(null)
-    const term = search.trim().replace(/%/g, '\\%').replace(/_/g, '\\_')
+    // PostgREST filter dəyərlərini pozan simvolları təmizləyir
+    const clean = (v) =>
+      v.trim().replace(/[,()"\\]/g, ' ').replace(/%/g, '\\%').replace(/_/g, '\\_').trim()
+    const idTerm = searchId.trim()
+    const nameTerm = clean(searchName)
+    const otherTerm = clean(searchOther)
     const { data, error: e } = await fetchAllPages(() => {
       let q = supabase.from(MUSTERI_TABLE).select('*').order('sira_no', { ascending: true })
       q = access.applyDataFilters(q, 'musteri-bazasi')
-      if (term) {
-        const parts = [
-          `ad_soyad.ilike.%${term}%`,
-          `model.ilike.%${term}%`,
-          `imei_1.ilike.%${term}%`,
-          `serial_no.ilike.%${term}%`,
-          `model_no.ilike.%${term}%`,
-          `nomre_1.ilike.%${term}%`,
-          `muqavile_nomresi.ilike.%${term}%`,
-        ]
-        if (/^\d+$/.test(term)) {
-          parts.push(`sira_no.eq.${Number(term)}`)
-        }
-        q = q.or(parts.join(','))
+      if (/^\d{1,9}$/.test(idTerm)) {
+        q = q.eq('sira_no', Number(idTerm))
+      }
+      if (nameTerm) {
+        q = q.ilike('ad_soyad', `%${nameTerm}%`)
+      }
+      if (otherTerm) {
+        q = q.or(OTHER_SEARCH_COLUMNS.map((c) => `${c}.ilike.%${otherTerm}%`).join(','))
       }
       return q
     })
@@ -78,7 +104,7 @@ export default function MusteriList() {
   useEffect(() => {
     const t = setTimeout(load, 250)
     return () => clearTimeout(t)
-  }, [search])
+  }, [searchId, searchName, searchOther])
 
   useEffect(() => {
     if (!openId || loading) return
@@ -159,9 +185,26 @@ export default function MusteriList() {
           marginBottom: 'var(--space-md)',
         }}
       >
+        <div className="form-group" style={{ marginBottom: 0, flex: '0 1 140px' }}>
+          <label>Müştəri №</label>
+          <input
+            value={searchId}
+            onChange={(e) => setSearchId(e.target.value.replace(/\D/g, '').slice(0, 9))}
+            inputMode="numeric"
+            placeholder="məs. 123"
+          />
+        </div>
+        <div className="form-group" style={{ marginBottom: 0, flex: '1 1 200px', maxWidth: 280 }}>
+          <label>Ad Soyad</label>
+          <input value={searchName} onChange={(e) => setSearchName(e.target.value)} placeholder="Ad və ya soyad…" />
+        </div>
         <div className="form-group" style={{ marginBottom: 0, flex: '1 1 240px', maxWidth: 360 }}>
-          <label>Axtarış (№, ad, model, IMEI, nömrə, müqavilə)</label>
-          <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="№ və ya mətn…" />
+          <label>IMEI, iCloud, nömrə və s.</label>
+          <input
+            value={searchOther}
+            onChange={(e) => setSearchOther(e.target.value)}
+            placeholder="IMEI, iCloud, telefon, model…"
+          />
         </div>
         <Link to="/musteri-bazasi/sutunlar" className="btn btn--secondary">
           Sütunları idarə et

@@ -81,7 +81,7 @@ export default function MehkemeList() {
           `muqavile_nomresi.ilike.%${term}%`,
           `mehkeme_qeyd.ilike.%${term}%`,
         ]
-        if (/^\d+$/.test(term)) parts.push(`sira_no.eq.${Number(term)}`)
+        if (/^\d{1,9}$/.test(term)) parts.push(`sira_no.eq.${Number(term)}`)
         q = q.or(parts.join(','))
       }
       return q
