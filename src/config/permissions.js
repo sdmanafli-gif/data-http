@@ -64,8 +64,9 @@ export const SUMMARY_CARDS_BY_MODULE = {
     { key: 'alis_qiymeti', label: 'Alış qiyməti' },
     { key: 'satis_qiymeti', label: 'Satış qiyməti' },
     { key: 'verilib', label: 'Verilib' },
-    { key: 'qalan_borc', label: 'Qalan borc' },
+    { key: 'qalan_borc', label: 'Qalan Yığım' },
     { key: 'faiz', label: 'Faiz (cərimə)' },
+    { key: 'menfeet', label: 'Mənfəət' },
     { key: 'row_count', label: 'Sətir sayı' },
   ],
   'nagd-satish': [
