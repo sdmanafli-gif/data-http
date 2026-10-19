@@ -197,11 +197,13 @@ function userLabel(profiles, userId) {
 }
 
 /**
- * Admin cash desk: payments collected by staff, by card, combined; withdrawals.
+ * Admin cash desk: payments collected by staff, by card, movements list; withdrawals.
  */
 export default function KassaDesk() {
   const { isAdmin, user } = useAuth()
-  const [tab, setTab] = useState('user') // user | card | combined
+  const [tab, setTab] = useState('user') // user | card | moves
+  const [moveUser, setMoveUser] = useState('all') // all | userId
+  const [moveLimit, setMoveLimit] = useState(100)
   const [payments, setPayments] = useState([])
   const [withdrawals, setWithdrawals] = useState([])
   const [profiles, setProfiles] = useState(new Map())
@@ -238,7 +240,7 @@ export default function KassaDesk() {
       let payQ = () => {
         let q = supabase
           .from(ODENISLER_TABLE)
-          .select('id, mebleg, tarix, created_at, created_by, odenis_usulu, kart_nomresi, ad_soyad, tip')
+          .select('id, mebleg, tarix, created_at, created_by, odenis_usulu, kart_nomresi, ad_soyad, sira_no, tip, qeyd')
           .gte('tarix', from)
           .not('created_by', 'is', null)
           .order('created_at', { ascending: false })
@@ -358,61 +360,6 @@ export default function KassaDesk() {
       .sort((a, b) => b.balance - a.balance || a.label.localeCompare(b.label, 'az'))
   }, [payments, withdrawals])
 
-  const combined = useMemo(() => {
-    const map = new Map()
-    for (const p of payments) {
-      if (!p.created_by) continue
-      const uid = p.created_by
-      const mKey = methodKey(p.odenis_usulu || 'nagd', p.kart_nomresi)
-      const key = `${uid}||${mKey}`
-      const cur = map.get(key) || {
-        key,
-        userId: uid,
-        method: mKey,
-        collected: 0,
-        deposited: 0,
-        withdrawn: 0,
-        count: 0,
-      }
-      cur.collected += Number(p.mebleg) || 0
-      cur.count += 1
-      map.set(key, cur)
-    }
-    for (const w of withdrawals) {
-      if (!w.odenis_usulu || !w.user_id) continue
-      const uid = w.user_id
-      const mKey = methodKey(w.odenis_usulu, w.kart_nomresi)
-      const key = `${uid}||${mKey}`
-      const cur = map.get(key) || {
-        key,
-        userId: uid,
-        method: mKey,
-        collected: 0,
-        deposited: 0,
-        withdrawn: 0,
-        count: 0,
-      }
-      if (isMedaxil(w)) cur.deposited += Number(w.mebleg) || 0
-      else cur.withdrawn += Number(w.mebleg) || 0
-      map.set(key, cur)
-    }
-    return [...map.values()]
-      .map((r) => ({
-        ...r,
-        collected: round2(r.collected),
-        deposited: round2(r.deposited),
-        withdrawn: round2(r.withdrawn),
-        balance: round2(r.collected + r.deposited - r.withdrawn),
-        userLabel: userLabel(profiles, r.userId),
-        methodLabel: r.method === 'nagd' ? 'Nağd' : methodLabel('kart', r.method.replace(/^kart:/, '')),
-      }))
-      .sort(
-        (a, b) =>
-          a.userLabel.localeCompare(b.userLabel, 'az') ||
-          a.methodLabel.localeCompare(b.methodLabel, 'az')
-      )
-  }, [payments, withdrawals, profiles])
-
   const cardOptions = useMemo(() => {
     const set = new Set()
     for (const p of payments) {
@@ -429,6 +376,55 @@ export default function KassaDesk() {
       .map((p) => ({ id: p.id, label: p.email || p.id }))
       .sort((a, b) => a.label.localeCompare(b.label, 'az'))
   }, [profiles])
+
+  // Kassa hərəkətləri: ödənişlər (gələn), mədaxil (gələn), çıxarış (çıxan) — bir siyahıda
+  const movements = useMemo(() => {
+    const list = []
+    for (const p of payments) {
+      if (!p.created_by) continue
+      if (moveUser !== 'all' && p.created_by !== moveUser) continue
+      const who = [p.sira_no != null ? `#${p.sira_no}` : null, p.ad_soyad].filter(Boolean).join(' · ')
+      list.push({
+        key: `p:${p.id}`,
+        tarix: p.tarix,
+        created_at: p.created_at,
+        userId: p.created_by,
+        kind: 'odenis',
+        kindLabel: p.tip === 'ilkin' ? 'Ödəniş (ilkin)' : 'Ödəniş',
+        who: who || '—',
+        method: methodLabel(p.odenis_usulu || 'nagd', p.kart_nomresi),
+        amount: Number(p.mebleg) || 0,
+        sign: 1,
+        qeyd: p.qeyd || '',
+      })
+    }
+    for (const w of withdrawals) {
+      if (!w.user_id) continue
+      if (moveUser !== 'all' && w.user_id !== moveUser) continue
+      const med = isMedaxil(w)
+      list.push({
+        key: `w:${w.id}`,
+        tarix: w.tarix,
+        created_at: w.created_at,
+        userId: w.user_id,
+        kind: med ? 'medaxil' : 'cixaris',
+        kindLabel: med ? 'Mədaxil' : 'Çıxarış',
+        who: '—',
+        method: w.odenis_usulu ? methodLabel(w.odenis_usulu, w.kart_nomresi) : 'Ümumi',
+        amount: Number(w.mebleg) || 0,
+        sign: med ? 1 : -1,
+        qeyd: w.qeyd || '',
+      })
+    }
+    list.sort(
+      (a, b) =>
+        String(b.tarix || '').localeCompare(String(a.tarix || '')) ||
+        String(b.created_at || '').localeCompare(String(a.created_at || ''))
+    )
+    const gelen = round2(list.filter((m) => m.sign > 0).reduce((s, m) => s + m.amount, 0))
+    const cixan = round2(list.filter((m) => m.sign < 0).reduce((s, m) => s + m.amount, 0))
+    return { list, gelen, cixan, qaliq: round2(gelen - cixan) }
+  }, [payments, withdrawals, moveUser])
 
   const totals = useMemo(() => {
     const collected = round2(payments.reduce((s, p) => s + (Number(p.mebleg) || 0), 0))
@@ -722,7 +718,7 @@ export default function KassaDesk() {
         {[
           { id: 'user', label: 'İstifadəçiyə görə' },
           { id: 'card', label: 'Karta / nağda görə' },
-          { id: 'combined', label: 'Birlikdə' },
+          { id: 'moves', label: 'Kassa hərəkətləri' },
         ].map((t) => (
           <button
             key={t.id}
@@ -811,41 +807,100 @@ export default function KassaDesk() {
             </table>
           </div>
         ) : (
+          <>
+          <div
+            style={{
+              display: 'flex',
+              flexWrap: 'wrap',
+              gap: 12,
+              alignItems: 'flex-end',
+              justifyContent: 'space-between',
+              marginBottom: 12,
+            }}
+          >
+            <h3 className="card__title" style={{ margin: 0 }}>Kassa hərəkətləri</h3>
+            <div className="form-group" style={{ marginBottom: 0, minWidth: 220 }}>
+              <label>İstifadəçi</label>
+              <select
+                value={moveUser}
+                onChange={(e) => {
+                  setMoveUser(e.target.value)
+                  setMoveLimit(100)
+                }}
+              >
+                <option value="all">Birlikdə (hamısı)</option>
+                {staffOptions.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+          <div className="musteri-summary" style={{ marginBottom: 12 }}>
+            <div className="musteri-summary__card">
+              <div className="musteri-summary__label">Gələn (ödəniş + mədaxil)</div>
+              <div className="musteri-summary__value">{formatMoney(movements.gelen)}</div>
+            </div>
+            <div className="musteri-summary__card">
+              <div className="musteri-summary__label">Çıxan</div>
+              <div className="musteri-summary__value">{formatMoney(movements.cixan)}</div>
+            </div>
+            <div className="musteri-summary__card">
+              <div className="musteri-summary__label">Qalıq</div>
+              <div className="musteri-summary__value">{formatMoney(movements.qaliq)}</div>
+            </div>
+          </div>
           <div className="table-wrap">
             <table className="data-table">
               <thead>
                 <tr>
-                  <th>İstifadəçi</th>
-                  <th>Üsul / Kart</th>
-                  <th style={{ textAlign: 'right' }}>Ödəniş sayı</th>
-                  <th style={{ textAlign: 'right' }}>Yığılıb</th>
-                  <th style={{ textAlign: 'right' }}>Mədaxil</th>
-                  <th style={{ textAlign: 'right' }}>Çıxarılıb</th>
-                  <th style={{ textAlign: 'right' }}>Qalıq</th>
+                  <th>Tarix</th>
+                  {moveUser === 'all' && <th>İstifadəçi</th>}
+                  <th>Növ</th>
+                  <th>Kimdən (müştəri)</th>
+                  <th>Üsul</th>
+                  <th style={{ textAlign: 'right' }}>Məbləğ</th>
+                  <th>Qeyd</th>
                 </tr>
               </thead>
               <tbody>
-                {combined.map((r) => (
-                  <tr key={r.key}>
-                    <td>{r.userLabel}</td>
-                    <td>{r.methodLabel}</td>
-                    <td style={{ textAlign: 'right' }}>{r.count}</td>
-                    <td style={{ textAlign: 'right' }}>{formatMoney(r.collected)}</td>
-                    <td style={{ textAlign: 'right' }}>{formatMoney(r.deposited)}</td>
-                    <td style={{ textAlign: 'right' }}>{formatMoney(r.withdrawn)}</td>
-                    <td style={{ textAlign: 'right' }}><strong>{formatMoney(r.balance)}</strong></td>
+                {movements.list.slice(0, moveLimit).map((m) => (
+                  <tr key={m.key}>
+                    <td>{formatDate(m.tarix)}</td>
+                    {moveUser === 'all' && <td>{userLabel(profiles, m.userId)}</td>}
+                    <td style={{ color: m.sign > 0 ? '#1f6b3a' : 'var(--color-accent)' }}>{m.kindLabel}</td>
+                    <td>{m.who}</td>
+                    <td>{m.method}</td>
+                    <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
+                      {m.sign > 0 ? '+' : '−'}
+                      {formatMoney(m.amount)}
+                    </td>
+                    <td>{m.qeyd || '—'}</td>
                   </tr>
                 ))}
-                {!combined.length && (
+                {!movements.list.length && (
                   <tr>
-                    <td colSpan={7} className="empty-state">
-                      Məlumat yoxdur.
+                    <td colSpan={moveUser === 'all' ? 7 : 6} className="empty-state">
+                      Bu tarix aralığında hərəkət yoxdur.
                     </td>
                   </tr>
                 )}
               </tbody>
             </table>
           </div>
+          {movements.list.length > moveLimit && (
+            <div style={{ marginTop: 12, textAlign: 'center' }}>
+              <button
+                type="button"
+                className="btn btn--secondary"
+                onClick={() => setMoveLimit((n) => n + 100)}
+              >
+                Daha çox göstər ({movements.list.length - moveLimit} qalıb)
+              </button>
+            </div>
+          )}
+          </>
         )}
       </div>
 
