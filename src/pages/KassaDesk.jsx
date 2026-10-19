@@ -185,6 +185,11 @@ function KartGelirleri() {
   )
 }
 
+/** kassa_cixarislar.nov: 'cixaris' (balansdan çıxır) və ya 'medaxil' (balansa əlavə olunur) */
+function isMedaxil(w) {
+  return w?.nov === 'medaxil'
+}
+
 function userLabel(profiles, userId) {
   if (!userId) return 'Naməlum'
   const p = profiles.get(userId)
@@ -210,6 +215,7 @@ export default function KassaDesk() {
   const [wdTarix, setWdTarix] = useState(() => new Date().toISOString().slice(0, 10))
   const [wdScope, setWdScope] = useState('all') // all | nagd | kart:xxx
   const [wdQeyd, setWdQeyd] = useState('')
+  const [wdNov, setWdNov] = useState('cixaris') // cixaris | medaxil
   const [editingWdId, setEditingWdId] = useState(null)
   const [saving, setSaving] = useState(false)
   const [deletingId, setDeletingId] = useState(null)
@@ -283,7 +289,7 @@ export default function KassaDesk() {
     for (const p of payments) {
       if (!p.created_by) continue
       const uid = p.created_by
-      const cur = map.get(uid) || { userId: uid, collected: 0, withdrawn: 0, count: 0 }
+      const cur = map.get(uid) || { userId: uid, collected: 0, deposited: 0, withdrawn: 0, count: 0 }
       cur.collected += Number(p.mebleg) || 0
       cur.count += 1
       map.set(uid, cur)
@@ -291,16 +297,18 @@ export default function KassaDesk() {
     for (const w of withdrawals) {
       const uid = w.user_id
       if (!uid) continue
-      const cur = map.get(uid) || { userId: uid, collected: 0, withdrawn: 0, count: 0 }
-      cur.withdrawn += Number(w.mebleg) || 0
+      const cur = map.get(uid) || { userId: uid, collected: 0, deposited: 0, withdrawn: 0, count: 0 }
+      if (isMedaxil(w)) cur.deposited += Number(w.mebleg) || 0
+      else cur.withdrawn += Number(w.mebleg) || 0
       map.set(uid, cur)
     }
     return [...map.values()]
       .map((r) => ({
         ...r,
         collected: round2(r.collected),
+        deposited: round2(r.deposited),
         withdrawn: round2(r.withdrawn),
-        balance: round2(r.collected - r.withdrawn),
+        balance: round2(r.collected + r.deposited - r.withdrawn),
         label: userLabel(profiles, r.userId),
       }))
       .sort((a, b) => b.balance - a.balance || a.label.localeCompare(b.label, 'az'))
@@ -314,6 +322,7 @@ export default function KassaDesk() {
         key,
         label: methodLabel(p.odenis_usulu || 'nagd', p.kart_nomresi),
         collected: 0,
+        deposited: 0,
         withdrawn: 0,
         count: 0,
       }
@@ -330,18 +339,21 @@ export default function KassaDesk() {
         key,
         label: methodLabel(w.odenis_usulu, w.kart_nomresi),
         collected: 0,
+        deposited: 0,
         withdrawn: 0,
         count: 0,
       }
-      cur.withdrawn += Number(w.mebleg) || 0
+      if (isMedaxil(w)) cur.deposited += Number(w.mebleg) || 0
+      else cur.withdrawn += Number(w.mebleg) || 0
       map.set(key, cur)
     }
     return [...map.values()]
       .map((r) => ({
         ...r,
         collected: round2(r.collected),
+        deposited: round2(r.deposited),
         withdrawn: round2(r.withdrawn),
-        balance: round2(r.collected - r.withdrawn),
+        balance: round2(r.collected + r.deposited - r.withdrawn),
       }))
       .sort((a, b) => b.balance - a.balance || a.label.localeCompare(b.label, 'az'))
   }, [payments, withdrawals])
@@ -358,6 +370,7 @@ export default function KassaDesk() {
         userId: uid,
         method: mKey,
         collected: 0,
+        deposited: 0,
         withdrawn: 0,
         count: 0,
       }
@@ -375,18 +388,21 @@ export default function KassaDesk() {
         userId: uid,
         method: mKey,
         collected: 0,
+        deposited: 0,
         withdrawn: 0,
         count: 0,
       }
-      cur.withdrawn += Number(w.mebleg) || 0
+      if (isMedaxil(w)) cur.deposited += Number(w.mebleg) || 0
+      else cur.withdrawn += Number(w.mebleg) || 0
       map.set(key, cur)
     }
     return [...map.values()]
       .map((r) => ({
         ...r,
         collected: round2(r.collected),
+        deposited: round2(r.deposited),
         withdrawn: round2(r.withdrawn),
-        balance: round2(r.collected - r.withdrawn),
+        balance: round2(r.collected + r.deposited - r.withdrawn),
         userLabel: userLabel(profiles, r.userId),
         methodLabel: r.method === 'nagd' ? 'Nağd' : methodLabel('kart', r.method.replace(/^kart:/, '')),
       }))
@@ -416,8 +432,13 @@ export default function KassaDesk() {
 
   const totals = useMemo(() => {
     const collected = round2(payments.reduce((s, p) => s + (Number(p.mebleg) || 0), 0))
-    const withdrawn = round2(withdrawals.reduce((s, w) => s + (Number(w.mebleg) || 0), 0))
-    return { collected, withdrawn, balance: round2(collected - withdrawn) }
+    const withdrawn = round2(
+      withdrawals.filter((w) => !isMedaxil(w)).reduce((s, w) => s + (Number(w.mebleg) || 0), 0)
+    )
+    const deposited = round2(
+      withdrawals.filter((w) => isMedaxil(w)).reduce((s, w) => s + (Number(w.mebleg) || 0), 0)
+    )
+    return { collected, deposited, withdrawn, balance: round2(collected + deposited - withdrawn) }
   }, [payments, withdrawals])
 
   function resetWithdrawForm() {
@@ -427,6 +448,7 @@ export default function KassaDesk() {
     setWdTarix(new Date().toISOString().slice(0, 10))
     setWdScope('all')
     setWdQeyd('')
+    setWdNov('cixaris')
   }
 
   function startEditWithdrawal(w) {
@@ -437,6 +459,7 @@ export default function KassaDesk() {
     setWdMebleg(w.mebleg != null ? String(w.mebleg) : '')
     setWdTarix(w.tarix || new Date().toISOString().slice(0, 10))
     setWdQeyd(w.qeyd || '')
+    setWdNov(isMedaxil(w) ? 'medaxil' : 'cixaris')
     if (w.odenis_usulu === 'nagd') setWdScope('nagd')
     else if (w.odenis_usulu === 'kart' && w.kart_nomresi) setWdScope(`kart:${w.kart_nomresi}`)
     else setWdScope('all')
@@ -452,19 +475,24 @@ export default function KassaDesk() {
       return
     }
     const mebleg = Number(wdMebleg)
+    const medaxil = wdNov === 'medaxil'
+    const novLabel = medaxil ? 'Mədaxil' : 'Çıxarış'
     if (!Number.isFinite(mebleg) || mebleg <= 0) {
-      setError('Çıxarış məbləği 0-dan böyük olmalıdır.')
+      setError(`${novLabel} məbləği 0-dan böyük olmalıdır.`)
       return
     }
 
     const editingRow = editingWdId
       ? withdrawals.find((w) => w.id === editingWdId)
       : null
+    // Redaktə olunan köhnə qeydin balansa təsirini geri qaytar
     const creditBack =
-      editingRow && editingRow.user_id === wdUserId ? Number(editingRow.mebleg) || 0 : 0
+      editingRow && editingRow.user_id === wdUserId
+        ? (isMedaxil(editingRow) ? -1 : 1) * (Number(editingRow.mebleg) || 0)
+        : 0
     const userRow = byUser.find((r) => r.userId === wdUserId)
     const available = round2((userRow?.balance || 0) + creditBack)
-    if (mebleg - available > 0.009) {
+    if (!medaxil && mebleg - available > 0.009) {
       setError(`Balans kifayət etmir (qalıq: ${formatMoney(available)}).`)
       return
     }
@@ -476,6 +504,7 @@ export default function KassaDesk() {
       qeyd: String(wdQeyd || '').trim() || null,
       odenis_usulu: null,
       kart_nomresi: null,
+      nov: medaxil ? 'medaxil' : 'cixaris',
     }
     if (wdScope === 'nagd') {
       payload.odenis_usulu = 'nagd'
@@ -495,11 +524,11 @@ export default function KassaDesk() {
           .update(payload)
           .eq('id', editingWdId)
         if (err) throw err
-        setSuccess('Çıxarış yeniləndi.')
+        setSuccess(`${novLabel} yeniləndi.`)
       } else {
         const { error: err } = await supabase.from(KASSA_CIXARISLAR_TABLE).insert(payload)
         if (err) throw err
-        setSuccess('Çıxarış qeydə alındı.')
+        setSuccess(`${novLabel} qeydə alındı.`)
       }
       resetWithdrawForm()
       await load()
@@ -512,7 +541,7 @@ export default function KassaDesk() {
 
   async function onDeleteWithdrawal(w) {
     if (!w?.id) return
-    if (!confirmDelete('Bu çıxarış silinsin?')) return
+    if (!confirmDelete(isMedaxil(w) ? 'Bu mədaxil silinsin?' : 'Bu çıxarış silinsin?')) return
     setError(null)
     setSuccess(null)
     setDeletingId(w.id)
@@ -520,7 +549,7 @@ export default function KassaDesk() {
       const { error: err } = await supabase.from(KASSA_CIXARISLAR_TABLE).delete().eq('id', w.id)
       if (err) throw err
       if (editingWdId === w.id) resetWithdrawForm()
-      setSuccess('Çıxarış silindi.')
+      setSuccess(isMedaxil(w) ? 'Mədaxil silindi.' : 'Çıxarış silindi.')
       await load()
     } catch (err) {
       setError(err.message)
@@ -587,6 +616,10 @@ export default function KassaDesk() {
               <div className="musteri-summary__value">{formatMoney(totals.collected)}</div>
             </div>
             <div className="musteri-summary__card">
+              <div className="musteri-summary__label">Mədaxil</div>
+              <div className="musteri-summary__value">{formatMoney(totals.deposited)}</div>
+            </div>
+            <div className="musteri-summary__card">
               <div className="musteri-summary__label">Çıxarılıb</div>
               <div className="musteri-summary__value">{formatMoney(totals.withdrawn)}</div>
             </div>
@@ -602,9 +635,16 @@ export default function KassaDesk() {
 
       <div className="card" style={{ marginBottom: 16 }}>
         <h2 className="card__title">
-          {editingWdId ? 'Çıxarışı redaktə et' : 'Çıxarış (yalnız admin)'}
+          {editingWdId ? 'Kassa əməliyyatını redaktə et' : 'Mədaxil / Çıxarış (yalnız admin)'}
         </h2>
         <form onSubmit={onWithdraw} className="form-row" style={{ alignItems: 'flex-end' }}>
+          <div className="form-group">
+            <label>Növ *</label>
+            <select value={wdNov} onChange={(e) => setWdNov(e.target.value)}>
+              <option value="cixaris">Çıxarış</option>
+              <option value="medaxil">Mədaxil</option>
+            </select>
+          </div>
           <div className="form-group">
             <label>İstifadəçi *</label>
             <select value={wdUserId} onChange={(e) => setWdUserId(e.target.value)} required>
@@ -637,7 +677,7 @@ export default function KassaDesk() {
             />
           </div>
           <div className="form-group">
-            <label>Hansı üsuldan</label>
+            <label>{wdNov === 'medaxil' ? 'Hansı üsula' : 'Hansı üsuldan'}</label>
             <select value={wdScope} onChange={(e) => setWdScope(e.target.value)}>
               <option value="all">Ümumi balans</option>
               <option value="nagd">Yalnız nağd</option>
@@ -653,7 +693,13 @@ export default function KassaDesk() {
             <input value={wdQeyd} onChange={(e) => setWdQeyd(e.target.value)} />
           </div>
           <button type="submit" className="btn btn--primary" disabled={saving}>
-            {saving ? 'Saxlanır…' : editingWdId ? 'Yenilə' : 'Çıxarış et'}
+            {saving
+              ? 'Saxlanır…'
+              : editingWdId
+                ? 'Yenilə'
+                : wdNov === 'medaxil'
+                  ? 'Mədaxil et'
+                  : 'Çıxarış et'}
           </button>
           {editingWdId && (
             <button
@@ -700,6 +746,7 @@ export default function KassaDesk() {
                   <th>İstifadəçi</th>
                   <th style={{ textAlign: 'right' }}>Ödəniş sayı</th>
                   <th style={{ textAlign: 'right' }}>Yığılıb</th>
+                  <th style={{ textAlign: 'right' }}>Mədaxil</th>
                   <th style={{ textAlign: 'right' }}>Çıxarılıb</th>
                   <th style={{ textAlign: 'right' }}>Qalıq</th>
                 </tr>
@@ -714,13 +761,14 @@ export default function KassaDesk() {
                     <td>{r.label}</td>
                     <td style={{ textAlign: 'right' }}>{r.count}</td>
                     <td style={{ textAlign: 'right' }}>{formatMoney(r.collected)}</td>
+                    <td style={{ textAlign: 'right' }}>{formatMoney(r.deposited)}</td>
                     <td style={{ textAlign: 'right' }}>{formatMoney(r.withdrawn)}</td>
                     <td style={{ textAlign: 'right' }}><strong>{formatMoney(r.balance)}</strong></td>
                   </tr>
                 ))}
                 {!byUser.length && (
                   <tr>
-                    <td colSpan={5} className="empty-state">
+                    <td colSpan={6} className="empty-state">
                       Məlumat yoxdur.
                     </td>
                   </tr>
@@ -736,6 +784,7 @@ export default function KassaDesk() {
                   <th>Üsul / Kart</th>
                   <th style={{ textAlign: 'right' }}>Ödəniş sayı</th>
                   <th style={{ textAlign: 'right' }}>Yığılıb</th>
+                  <th style={{ textAlign: 'right' }}>Mədaxil</th>
                   <th style={{ textAlign: 'right' }}>Çıxarılıb</th>
                   <th style={{ textAlign: 'right' }}>Qalıq</th>
                 </tr>
@@ -746,13 +795,14 @@ export default function KassaDesk() {
                     <td>{r.label}</td>
                     <td style={{ textAlign: 'right' }}>{r.count}</td>
                     <td style={{ textAlign: 'right' }}>{formatMoney(r.collected)}</td>
+                    <td style={{ textAlign: 'right' }}>{formatMoney(r.deposited)}</td>
                     <td style={{ textAlign: 'right' }}>{formatMoney(r.withdrawn)}</td>
                     <td style={{ textAlign: 'right' }}><strong>{formatMoney(r.balance)}</strong></td>
                   </tr>
                 ))}
                 {!byCard.length && (
                   <tr>
-                    <td colSpan={5} className="empty-state">
+                    <td colSpan={6} className="empty-state">
                       Məlumat yoxdur.
                     </td>
                   </tr>
@@ -769,6 +819,7 @@ export default function KassaDesk() {
                   <th>Üsul / Kart</th>
                   <th style={{ textAlign: 'right' }}>Ödəniş sayı</th>
                   <th style={{ textAlign: 'right' }}>Yığılıb</th>
+                  <th style={{ textAlign: 'right' }}>Mədaxil</th>
                   <th style={{ textAlign: 'right' }}>Çıxarılıb</th>
                   <th style={{ textAlign: 'right' }}>Qalıq</th>
                 </tr>
@@ -780,13 +831,14 @@ export default function KassaDesk() {
                     <td>{r.methodLabel}</td>
                     <td style={{ textAlign: 'right' }}>{r.count}</td>
                     <td style={{ textAlign: 'right' }}>{formatMoney(r.collected)}</td>
+                    <td style={{ textAlign: 'right' }}>{formatMoney(r.deposited)}</td>
                     <td style={{ textAlign: 'right' }}>{formatMoney(r.withdrawn)}</td>
                     <td style={{ textAlign: 'right' }}><strong>{formatMoney(r.balance)}</strong></td>
                   </tr>
                 ))}
                 {!combined.length && (
                   <tr>
-                    <td colSpan={6} className="empty-state">
+                    <td colSpan={7} className="empty-state">
                       Məlumat yoxdur.
                     </td>
                   </tr>
@@ -799,13 +851,14 @@ export default function KassaDesk() {
 
       {!loading && withdrawals.length > 0 && (
         <div className="card" style={{ marginTop: 16 }}>
-          <h2 className="card__title">Son çıxarışlar</h2>
+          <h2 className="card__title">Son mədaxil / çıxarışlar</h2>
           <div className="table-wrap">
             <table className="data-table">
               <thead>
                 <tr>
                   <th>Tarix</th>
                   <th>İstifadəçi</th>
+                  <th>Növ</th>
                   <th>Üsul</th>
                   <th style={{ textAlign: 'right' }}>Məbləğ</th>
                   <th>Qeyd</th>
@@ -824,12 +877,18 @@ export default function KassaDesk() {
                   >
                     <td>{formatDate(w.tarix)}</td>
                     <td>{userLabel(profiles, w.user_id)}</td>
+                    <td style={{ color: isMedaxil(w) ? '#1f6b3a' : 'var(--color-accent)' }}>
+                      {isMedaxil(w) ? 'Mədaxil' : 'Çıxarış'}
+                    </td>
                     <td>
                       {w.odenis_usulu
                         ? methodLabel(w.odenis_usulu, w.kart_nomresi)
                         : 'Ümumi'}
                     </td>
-                    <td style={{ textAlign: 'right' }}>{formatMoney(w.mebleg)}</td>
+                    <td style={{ textAlign: 'right' }}>
+                      {isMedaxil(w) ? '+' : '−'}
+                      {formatMoney(w.mebleg)}
+                    </td>
                     <td>{w.qeyd || '—'}</td>
                     <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
                       <button
