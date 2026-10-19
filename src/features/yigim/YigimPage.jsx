@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { supabase, fetchAllPages } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import { loadPageFilters, savePageFilters } from '../../lib/uiPrefs'
@@ -16,6 +16,7 @@ import {
   statusLabel,
 } from '../musteri-bazasi/paymentSchedule'
 import ResizableDataTable from '../musteri-bazasi/ResizableDataTable'
+import MusteriRecordModule from '../musteri-bazasi/MusteriRecordModule'
 import CollapsibleSummary from '../../components/CollapsibleSummary'
 import { applyKeyOrder } from '../musteri-bazasi/columnOrder'
 import { useColumnConfig } from './useColumnConfig'
@@ -212,6 +213,44 @@ export default function YigimPage() {
   const now = new Date()
   const savedFilters = useMemo(() => loadSavedYigimFilters(), [])
   const { access } = useAuth()
+  const navigate = useNavigate()
+  // Müştəri Bazasındakı kimi ayrıca pəncərədə açılan müştəri
+  const [openRecord, setOpenRecord] = useState(null)
+  const recordChanged = useRef(false)
+
+  async function openMusteri(musteriId) {
+    if (!musteriId) return
+    const { data, error: e } = await supabase
+      .from(MUSTERI_TABLE)
+      .select('*')
+      .eq('id', musteriId)
+      .maybeSingle()
+    if (e) {
+      setError(e.message)
+      return
+    }
+    if (data) {
+      recordChanged.current = false
+      setOpenRecord(data)
+    }
+  }
+
+  function closeRecord() {
+    setOpenRecord(null)
+    // Ödəniş edilibsə, yığım siyahısını yenilə
+    if (recordChanged.current) {
+      recordChanged.current = false
+      load()
+    }
+  }
+
+  // Adi klik pəncərə açır; Ctrl/Cmd/orta düymə ilə klik əvvəlki kimi yeni tabda açır
+  function handleMusteriLinkClick(e, musteriId) {
+    e.stopPropagation()
+    if (e.ctrlKey || e.metaKey || e.shiftKey || e.button !== 0) return
+    e.preventDefault()
+    openMusteri(musteriId)
+  }
   const { columns, loading: colsLoading, saveColumns } = useColumnConfig()
   const [localCols, setLocalCols] = useState([])
   const resizeTimer = useRef(null)
@@ -408,6 +447,7 @@ export default function YigimPage() {
           to={`/musteri-bazasi/${row.musteriId}`}
           target="_blank"
           rel="noopener noreferrer"
+          onClick={(e) => handleMusteriLinkClick(e, row.musteriId)}
         >
           {row.sira_no ?? '—'}
         </Link>
@@ -420,6 +460,7 @@ export default function YigimPage() {
           target="_blank"
           rel="noopener noreferrer"
           title={row.nomre_1 || undefined}
+          onClick={(e) => handleMusteriLinkClick(e, row.musteriId)}
         >
           {row.ad_soyad}
         </Link>
@@ -702,11 +743,36 @@ export default function YigimPage() {
             onReorderColumns={handleReorder}
             onResizeColumn={handleResize}
             onDisplayRowsChange={setViewRows}
+            onRowOpen={(row) => openMusteri(row.musteriId)}
             emptyText="Bu filtrə uyğun yığım yoxdur."
             prefsKey="yigim"
           />
         )}
       </div>
+
+      {openRecord && (
+        <div
+          className="telefon-modal-overlay musteri-record-overlay"
+          onClick={closeRecord}
+          role="presentation"
+        >
+          <div className="telefon-modal musteri-record-modal" onClick={(e) => e.stopPropagation()}>
+            <MusteriRecordModule
+              key={openRecord.id}
+              record={openRecord}
+              onClose={closeRecord}
+              onEdit={(row) => {
+                setOpenRecord(null)
+                navigate(`/musteri-bazasi/${row.id}?edit=1`)
+              }}
+              onUpdated={(updated) => {
+                recordChanged.current = true
+                setOpenRecord(updated)
+              }}
+            />
+          </div>
+        </div>
+      )}
     </>
   )
 }
