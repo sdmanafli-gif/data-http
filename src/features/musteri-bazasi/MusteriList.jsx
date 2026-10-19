@@ -59,7 +59,7 @@ export default function MusteriList() {
           `nomre_1.ilike.%${term}%`,
           `muqavile_nomresi.ilike.%${term}%`,
         ]
-        if (/^\d+$/.test(term)) {
+        if (/^\d{1,9}$/.test(term)) {
           parts.push(`sira_no.eq.${Number(term)}`)
         }
         q = q.or(parts.join(','))
