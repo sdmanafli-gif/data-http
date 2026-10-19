@@ -5,6 +5,7 @@ import { useAuth } from '../contexts/AuthContext'
 import { confirmDelete } from '../lib/confirmDelete'
 import {
   ODENISLER_TABLE,
+  ODENIS_KARTLAR_TABLE,
   KASSA_CIXARISLAR_TABLE,
   KASSA_TRACKING_FROM,
   formatMoney,
@@ -17,6 +18,171 @@ import '../styles/shared.css'
 
 function round2(n) {
   return Math.round((Number(n) || 0) * 100) / 100
+}
+
+function localYmd(d) {
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
+
+function monthRange(offset = 0) {
+  const now = new Date()
+  const first = new Date(now.getFullYear(), now.getMonth() + offset, 1)
+  const last = new Date(now.getFullYear(), now.getMonth() + offset + 1, 0)
+  return [localYmd(first), localYmd(last)]
+}
+
+/**
+ * Kartlar: seçilmiş tarix aralığında hansı karta nə qədər pul gəlib (ödənişlər cədvəlindən).
+ */
+function KartGelirleri() {
+  const [from, setFrom] = useState(() => monthRange(0)[0])
+  const [to, setTo] = useState(() => localYmd(new Date()))
+  const [payments, setPayments] = useState([])
+  const [cards, setCards] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
+
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      setLoading(true)
+      setError(null)
+      let a = from || null
+      let b = to || null
+      if (a && b && a > b) [a, b] = [b, a]
+      const [{ data: pays, error: pErr }, { data: kartlar, error: kErr }] = await Promise.all([
+        fetchAllPages(() => {
+          let q = supabase
+            .from(ODENISLER_TABLE)
+            .select('id, mebleg, kart_nomresi, tarix')
+            .eq('odenis_usulu', 'kart')
+            .order('id', { ascending: true })
+          if (a) q = q.gte('tarix', a)
+          if (b) q = q.lte('tarix', b)
+          return q
+        }),
+        supabase.from(ODENIS_KARTLAR_TABLE).select('kart_nomresi'),
+      ])
+      if (cancelled) return
+      if (pErr || kErr) {
+        setError((pErr || kErr).message)
+        setPayments([])
+      } else {
+        setPayments(pays || [])
+        setCards((kartlar || []).map((k) => String(k.kart_nomresi || '').trim()).filter(Boolean))
+      }
+      setLoading(false)
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [from, to])
+
+  const rows = useMemo(() => {
+    const map = new Map()
+    for (const c of cards) map.set(c, { kart: c, total: 0, count: 0 })
+    for (const p of payments) {
+      const kart = String(p.kart_nomresi || '').trim() || '—'
+      const cur = map.get(kart) || { kart, total: 0, count: 0 }
+      cur.total += Number(p.mebleg) || 0
+      cur.count += 1
+      map.set(kart, cur)
+    }
+    return [...map.values()]
+      .map((r) => ({ ...r, total: round2(r.total) }))
+      .sort((x, y) => y.total - x.total || x.kart.localeCompare(y.kart, 'az'))
+  }, [payments, cards])
+
+  const grand = useMemo(
+    () => ({
+      total: round2(rows.reduce((sum, r) => sum + r.total, 0)),
+      count: rows.reduce((sum, r) => sum + r.count, 0),
+    }),
+    [rows]
+  )
+
+  const presets = [
+    { label: 'Bu gün', range: () => [localYmd(new Date()), localYmd(new Date())] },
+    { label: 'Bu ay', range: () => [monthRange(0)[0], localYmd(new Date())] },
+    { label: 'Keçən ay', range: () => monthRange(-1) },
+    { label: 'Hamısı', range: () => ['', ''] },
+  ]
+
+  return (
+    <CollapsibleSummary title="Kartlar" storageKey="summary:kassa-kartlar">
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'flex-end', marginBottom: 12 }}>
+        <div className="form-group" style={{ marginBottom: 0 }}>
+          <label>Tarixdən</label>
+          <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
+        </div>
+        <div className="form-group" style={{ marginBottom: 0 }}>
+          <label>Tarixədək</label>
+          <input type="date" value={to} onChange={(e) => setTo(e.target.value)} />
+        </div>
+        {presets.map((p) => (
+          <button
+            key={p.label}
+            type="button"
+            className="btn btn--secondary"
+            onClick={() => {
+              const [a, b] = p.range()
+              setFrom(a)
+              setTo(b)
+            }}
+          >
+            {p.label}
+          </button>
+        ))}
+      </div>
+      {error ? (
+        <p style={{ color: 'var(--color-accent)' }}>{error}</p>
+      ) : loading ? (
+        <p className="empty-state">Yüklənir…</p>
+      ) : (
+        <div className="table-wrap">
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>Kart</th>
+                <th style={{ textAlign: 'right' }}>Ödəniş sayı</th>
+                <th style={{ textAlign: 'right' }}>Gələn məbləğ</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r) => (
+                <tr key={r.kart} style={r.count ? undefined : { color: 'var(--color-text-muted)' }}>
+                  <td>{r.kart}</td>
+                  <td style={{ textAlign: 'right' }}>{r.count}</td>
+                  <td style={{ textAlign: 'right' }}>
+                    {r.count ? <strong>{formatMoney(r.total)}</strong> : formatMoney(0)}
+                  </td>
+                </tr>
+              ))}
+              {!rows.length && (
+                <tr>
+                  <td colSpan={3} className="empty-state">
+                    Bu tarix aralığında kartla ödəniş yoxdur.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+            {rows.length > 0 && (
+              <tfoot>
+                <tr>
+                  <td><strong>Cəmi</strong></td>
+                  <td style={{ textAlign: 'right' }}><strong>{grand.count}</strong></td>
+                  <td style={{ textAlign: 'right' }}><strong>{formatMoney(grand.total)}</strong></td>
+                </tr>
+              </tfoot>
+            )}
+          </table>
+        </div>
+      )}
+    </CollapsibleSummary>
+  )
 }
 
 function userLabel(profiles, userId) {
@@ -431,6 +597,8 @@ export default function KassaDesk() {
           </div>
         </CollapsibleSummary>
       )}
+
+      <KartGelirleri />
 
       <div className="card" style={{ marginBottom: 16 }}>
         <h2 className="card__title">
