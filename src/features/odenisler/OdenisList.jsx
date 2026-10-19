@@ -54,7 +54,7 @@ export default function OdenisList() {
       if (tipFilter) q = q.eq('tip', tipFilter)
       if (term) {
         const asNum = Number(term)
-        if (!Number.isNaN(asNum) && /^\d+$/.test(term)) {
+        if (!Number.isNaN(asNum) && /^\d{1,9}$/.test(term)) {
           q = q.or(`ad_soyad.ilike.%${term}%,sira_no.eq.${asNum}`)
         } else {
           q = q.ilike('ad_soyad', `%${term}%`)
