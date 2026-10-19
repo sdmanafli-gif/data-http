@@ -63,6 +63,18 @@ function renderMusteriCell(row, col, raw) {
   return formatCell(raw, col)
 }
 
+// Cəmlər kartlarının sırası
+const MUSTERI_SUMMARY_CARDS = [
+  { key: 'alis_qiymeti', label: 'Alış qiyməti' },
+  { key: 'satis_qiymeti', label: 'Satış qiyməti' },
+  { key: 'verilib', label: 'Verilib' },
+  { key: 'qalan_borc', label: 'Qalan borc (cəmi)' },
+  { key: 'mehkeme_borc', label: 'Məhkəmə', toneKey: 'qalan_borc' },
+  { key: 'qalan_yigim', label: 'Qalan Yığım', toneKey: 'qalan_borc' },
+  { key: 'faiz', label: 'Faiz verilib', toneKey: 'verilib' },
+  { key: 'menfeet', label: 'Mənfəət', toneKey: 'faktiki_gelir' },
+]
+
 function sumField(rows, key) {
   return rows.reduce((acc, row) => {
     const n = Number(row[key])
@@ -165,7 +177,20 @@ export default function MusteriList() {
       satis_qiymeti: sumField(viewRows, 'satis_qiymeti'),
       verilib: sumField(viewRows, 'verilib'),
       qalan_borc: sumField(viewRows, 'qalan_borc'),
+      // Məhkəmə statusunda olan müştərilərin qalan borcu
+      mehkeme_borc: sumField(
+        viewRows.filter((r) => r.veziyyet === 'Məhkəmə'),
+        'qalan_borc'
+      ),
+      // Qalan Yığım: Məhkəmə statusunda olan müştərilər daxil edilmir
+      qalan_yigim: sumField(
+        viewRows.filter((r) => r.veziyyet !== 'Məhkəmə'),
+        'qalan_borc'
+      ),
       faiz: sumField(viewRows, 'faiz'),
+      // Mənfəət = Verilib + Faiz ödənişləri − Alış qiyməti
+      menfeet:
+        sumField(viewRows, 'verilib') + sumField(viewRows, 'faiz') - sumField(viewRows, 'alis_qiymeti'),
     }),
     [viewRows]
   )
@@ -243,6 +268,7 @@ export default function MusteriList() {
           totals={totals}
           rowCount={viewRows.length}
           storageKey="summary:musteri"
+          cards={MUSTERI_SUMMARY_CARDS}
           allowedKeys={access.allowedSummaryCards('musteri-bazasi')}
         />
       )}
