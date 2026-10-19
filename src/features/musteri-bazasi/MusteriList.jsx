@@ -163,8 +163,15 @@ export default function MusteriList() {
       alis_qiymeti: sumField(viewRows, 'alis_qiymeti'),
       satis_qiymeti: sumField(viewRows, 'satis_qiymeti'),
       verilib: sumField(viewRows, 'verilib'),
-      qalan_borc: sumField(viewRows, 'qalan_borc'),
+      // Qalan Yığım: Məhkəmə statusunda olan müştərilər daxil edilmir
+      qalan_borc: sumField(
+        viewRows.filter((r) => r.veziyyet !== 'Məhkəmə'),
+        'qalan_borc'
+      ),
       faiz: sumField(viewRows, 'faiz'),
+      // Mənfəət = Verilib + Faiz ödənişləri − Alış qiyməti
+      menfeet:
+        sumField(viewRows, 'verilib') + sumField(viewRows, 'faiz') - sumField(viewRows, 'alis_qiymeti'),
     }),
     [viewRows]
   )
@@ -242,6 +249,8 @@ export default function MusteriList() {
           totals={totals}
           rowCount={viewRows.length}
           storageKey="summary:musteri"
+          labels={{ qalan_borc: 'Qalan Yığım' }}
+          extraCards={[{ key: 'menfeet', label: 'Mənfəət', value: totals.menfeet }]}
           allowedKeys={access.allowedSummaryCards('musteri-bazasi')}
         />
       )}
