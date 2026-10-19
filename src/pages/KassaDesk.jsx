@@ -197,11 +197,11 @@ function userLabel(profiles, userId) {
 }
 
 /**
- * Admin cash desk: payments collected by staff, by card, combined; withdrawals.
+ * Admin cash desk: payments collected by staff, by card, movements list; withdrawals.
  */
 export default function KassaDesk() {
   const { isAdmin, user } = useAuth()
-  const [tab, setTab] = useState('user') // user | card | combined
+  const [tab, setTab] = useState('user') // user | card | moves
   const [moveUser, setMoveUser] = useState('all') // all | userId
   const [moveLimit, setMoveLimit] = useState(100)
   const [payments, setPayments] = useState([])
@@ -359,61 +359,6 @@ export default function KassaDesk() {
       }))
       .sort((a, b) => b.balance - a.balance || a.label.localeCompare(b.label, 'az'))
   }, [payments, withdrawals])
-
-  const combined = useMemo(() => {
-    const map = new Map()
-    for (const p of payments) {
-      if (!p.created_by) continue
-      const uid = p.created_by
-      const mKey = methodKey(p.odenis_usulu || 'nagd', p.kart_nomresi)
-      const key = `${uid}||${mKey}`
-      const cur = map.get(key) || {
-        key,
-        userId: uid,
-        method: mKey,
-        collected: 0,
-        deposited: 0,
-        withdrawn: 0,
-        count: 0,
-      }
-      cur.collected += Number(p.mebleg) || 0
-      cur.count += 1
-      map.set(key, cur)
-    }
-    for (const w of withdrawals) {
-      if (!w.odenis_usulu || !w.user_id) continue
-      const uid = w.user_id
-      const mKey = methodKey(w.odenis_usulu, w.kart_nomresi)
-      const key = `${uid}||${mKey}`
-      const cur = map.get(key) || {
-        key,
-        userId: uid,
-        method: mKey,
-        collected: 0,
-        deposited: 0,
-        withdrawn: 0,
-        count: 0,
-      }
-      if (isMedaxil(w)) cur.deposited += Number(w.mebleg) || 0
-      else cur.withdrawn += Number(w.mebleg) || 0
-      map.set(key, cur)
-    }
-    return [...map.values()]
-      .map((r) => ({
-        ...r,
-        collected: round2(r.collected),
-        deposited: round2(r.deposited),
-        withdrawn: round2(r.withdrawn),
-        balance: round2(r.collected + r.deposited - r.withdrawn),
-        userLabel: userLabel(profiles, r.userId),
-        methodLabel: r.method === 'nagd' ? 'Nağd' : methodLabel('kart', r.method.replace(/^kart:/, '')),
-      }))
-      .sort(
-        (a, b) =>
-          a.userLabel.localeCompare(b.userLabel, 'az') ||
-          a.methodLabel.localeCompare(b.methodLabel, 'az')
-      )
-  }, [payments, withdrawals, profiles])
 
   const cardOptions = useMemo(() => {
     const set = new Set()
@@ -773,7 +718,7 @@ export default function KassaDesk() {
         {[
           { id: 'user', label: 'İstifadəçiyə görə' },
           { id: 'card', label: 'Karta / nağda görə' },
-          { id: 'combined', label: 'Birlikdə' },
+          { id: 'moves', label: 'Kassa hərəkətləri' },
         ].map((t) => (
           <button
             key={t.id}
@@ -862,46 +807,7 @@ export default function KassaDesk() {
             </table>
           </div>
         ) : (
-          <div className="table-wrap">
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>İstifadəçi</th>
-                  <th>Üsul / Kart</th>
-                  <th style={{ textAlign: 'right' }}>Ödəniş sayı</th>
-                  <th style={{ textAlign: 'right' }}>Yığılıb</th>
-                  <th style={{ textAlign: 'right' }}>Mədaxil</th>
-                  <th style={{ textAlign: 'right' }}>Çıxarılıb</th>
-                  <th style={{ textAlign: 'right' }}>Qalıq</th>
-                </tr>
-              </thead>
-              <tbody>
-                {combined.map((r) => (
-                  <tr key={r.key}>
-                    <td>{r.userLabel}</td>
-                    <td>{r.methodLabel}</td>
-                    <td style={{ textAlign: 'right' }}>{r.count}</td>
-                    <td style={{ textAlign: 'right' }}>{formatMoney(r.collected)}</td>
-                    <td style={{ textAlign: 'right' }}>{formatMoney(r.deposited)}</td>
-                    <td style={{ textAlign: 'right' }}>{formatMoney(r.withdrawn)}</td>
-                    <td style={{ textAlign: 'right' }}><strong>{formatMoney(r.balance)}</strong></td>
-                  </tr>
-                ))}
-                {!combined.length && (
-                  <tr>
-                    <td colSpan={7} className="empty-state">
-                      Məlumat yoxdur.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
-
-      {!loading && (
-        <div className="card" style={{ marginTop: 16 }}>
+          <>
           <div
             style={{
               display: 'flex',
@@ -912,7 +818,7 @@ export default function KassaDesk() {
               marginBottom: 12,
             }}
           >
-            <h2 className="card__title" style={{ margin: 0 }}>Kassa hərəkətləri</h2>
+            <h3 className="card__title" style={{ margin: 0 }}>Kassa hərəkətləri</h3>
             <div className="form-group" style={{ marginBottom: 0, minWidth: 220 }}>
               <label>İstifadəçi</label>
               <select
@@ -994,8 +900,9 @@ export default function KassaDesk() {
               </button>
             </div>
           )}
-        </div>
-      )}
+          </>
+        )}
+      </div>
 
       {!loading && withdrawals.length > 0 && (
         <div className="card" style={{ marginTop: 16 }}>
