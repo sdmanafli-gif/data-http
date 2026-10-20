@@ -121,15 +121,25 @@ function formatKontaktCell(value, col) {
   )
 }
 
-const EDIT_FIELDS = [
-  { key: 'ad_soyad', label: 'Ad Soyad' },
-  { key: 'nomre_1', label: 'Nömrə 1' },
-  { key: 'nomre_2', label: 'Nömrə 2' },
-  { key: 'nomre_3', label: 'Nömrə 3' },
-  { key: 'nomre_4', label: 'Nömrə 4' },
-  { key: 'nomre_5', label: 'Nömrə 5' },
+// Kartda "Əlaqə" bölməsi. sexsi_nomre_1/2 və zamin_nomre bazada yeni sütunlardır —
+// sütun hələ yoxdursa sahə bağlı görünür və yadda saxlananda göndərilmir.
+const CONTACT_FIELDS = [
+  { key: 'sexsi_nomre_1', label: 'Şəxsi Nöm 1' },
+  { key: 'sexsi_nomre_2', label: 'Şəxsi Nöm 2' },
+  { key: 'nomre_1', label: 'Nöm 1' },
+  { key: 'nomre_2', label: 'Nöm 2' },
+  { key: 'nomre_3', label: 'Nöm 3' },
+  { key: 'nomre_4', label: 'Nöm 4' },
+  { key: 'nomre_5', label: 'Nöm 5' },
   { key: 'zamin', label: 'Zamin' },
+  { key: 'zamin_nomre', label: 'Zamin Nöm' },
 ]
+
+const EDIT_FIELDS = [{ key: 'ad_soyad', label: 'Ad Soyad Ata adı' }, ...CONTACT_FIELDS]
+
+function hasCol(row, key) {
+  return Boolean(row) && Object.prototype.hasOwnProperty.call(row, key)
+}
 
 function Modal({ title, subtitle, onClose, children, actions = null }) {
   return (
@@ -207,7 +217,7 @@ export default function KontaktlarPage() {
           fetchAllPages(() =>
             supabase
               .from('musteri_bazasi')
-              .select('id, musteri_id, sira_no, ad_soyad, model, satis_qiymeti, verilib, qalan_borc, veziyyet, verilme_tarixi, senedler')
+              .select('id, musteri_id, sira_no, ad_soyad, model, alis_qiymeti, satis_qiymeti, verilib, faiz, qalan_borc, veziyyet, verilme_tarixi, senedler')
               .order('sira_no', { ascending: true })
           ),
           fetchAllPages(() =>
@@ -283,9 +293,14 @@ export default function KontaktlarPage() {
         borcNisye: led ? round2(led.qaliq_borc + led.qaliq_nisye) : null,
         sales,
         saleCount: sales.length,
+        alis: round2(sales.reduce((a, s) => a + num(s.alis_qiymeti), 0)),
         satis: round2(sales.reduce((a, s) => a + num(s.satis_qiymeti), 0)),
         verilib: round2(sales.reduce((a, s) => a + num(s.verilib), 0)),
         qalan: round2(sales.reduce((a, s) => a + num(s.qalan_borc), 0)),
+        // Müştəri Bazasındakı kimi: Mənfəət = Verilib + Faiz − Alış qiyməti
+        menfeet: round2(
+          sales.reduce((a, s) => a + num(s.verilib) + num(s.faiz) - num(s.alis_qiymeti), 0)
+        ),
         lastPay: lastPay.get(m.id) || null,
         ledger: led || null,
       }
@@ -377,7 +392,10 @@ export default function KontaktlarPage() {
       return
     }
     const patch = Object.fromEntries(
-      EDIT_FIELDS.map((f) => [f.key, String(editForm[f.key] || '').trim() || null])
+      EDIT_FIELDS.filter((f) => hasCol(openCustomer, f.key)).map((f) => [
+        f.key,
+        String(editForm[f.key] || '').trim() || null,
+      ])
     )
     patch.ad_soyad = ad
     setSaving(true)
@@ -546,32 +564,54 @@ export default function KontaktlarPage() {
         >
           {modalError && <p style={{ color: 'var(--color-accent)' }}>{modalError}</p>}
 
-          <CollapsibleSummary title="Əsas məlumat" storageKey="kontakt-card:info" defaultOpen>
+          <CollapsibleSummary title="Əsas Məlumatlar" storageKey="kontakt-card:info" defaultOpen>
+            {editing && (
+              <div className="form-group" style={{ maxWidth: 420 }}>
+                <label>Ad Soyad Ata adı</label>
+                <input
+                  value={editForm.ad_soyad ?? ''}
+                  onChange={(e) => setEditForm((prev) => ({ ...prev, ad_soyad: e.target.value }))}
+                />
+              </div>
+            )}
+            <SummaryRow
+              items={[
+                ...(editing ? [] : [{ label: 'Ad Soyad Ata adı', value: openCustomer.ad_soyad, meta: true }]),
+                { label: 'Alış Sayı', value: openCustomer.saleCount, meta: true },
+                { label: 'Alış Qiyməti', value: formatMoney(openCustomer.alis) },
+                { label: 'Satış Qiyməti', value: formatMoney(openCustomer.satis) },
+                { label: 'Verilib', value: formatMoney(openCustomer.verilib) },
+                { label: 'Qalan Borc', value: formatMoney(openCustomer.qalan) },
+                { label: 'Mənfəət', value: formatMoney(openCustomer.menfeet) },
+              ]}
+            />
+          </CollapsibleSummary>
+
+          <CollapsibleSummary title="Əlaqə" storageKey="kontakt-card:contact" defaultOpen>
             {editing ? (
               <div className="form-row">
-                {EDIT_FIELDS.map((f) => (
-                  <div key={f.key} className="form-group">
-                    <label>{f.label}</label>
-                    <input
-                      value={editForm[f.key] ?? ''}
-                      onChange={(e) => setEditForm((prev) => ({ ...prev, [f.key]: e.target.value }))}
-                    />
-                  </div>
-                ))}
+                {CONTACT_FIELDS.map((f) => {
+                  const exists = hasCol(openCustomer, f.key)
+                  return (
+                    <div key={f.key} className="form-group">
+                      <label>{f.label}</label>
+                      <input
+                        value={editForm[f.key] ?? ''}
+                        disabled={!exists}
+                        placeholder={exists ? '' : 'Bazada sütun hələ yoxdur'}
+                        onChange={(e) => setEditForm((prev) => ({ ...prev, [f.key]: e.target.value }))}
+                      />
+                    </div>
+                  )
+                })}
               </div>
             ) : (
               <SummaryRow
-                items={[
-                  ...EDIT_FIELDS.filter((f) => openCustomer[f.key]).map((f) => ({
-                    label: f.label,
-                    value: openCustomer[f.key],
-                    meta: true,
-                  })),
-                  { label: 'Alış sayı', value: openCustomer.saleCount, meta: true },
-                  { label: 'Satış cəmi', value: formatMoney(openCustomer.satis) },
-                  { label: 'Verilib', value: formatMoney(openCustomer.verilib) },
-                  { label: 'Qalan borc', value: formatMoney(openCustomer.qalan) },
-                ]}
+                items={CONTACT_FIELDS.map((f) => ({
+                  label: f.label,
+                  value: openCustomer[f.key] || '—',
+                  meta: true,
+                }))}
               />
             )}
           </CollapsibleSummary>
