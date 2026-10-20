@@ -8,6 +8,8 @@ import SummaryCards from './SummaryCards'
 import MusteriRecordModule from './MusteriRecordModule'
 import { applyKeyOrder } from './columnOrder'
 import { MUSTERI_TABLE, formatCell } from './constants'
+import CollapsibleSummary from '../../components/CollapsibleSummary'
+import { formatDate } from '../../lib/formatDate'
 import '../../styles/shared.css'
 import './musteri-schedule.css'
 
@@ -75,6 +77,67 @@ const MUSTERI_SUMMARY_CARDS = [
   { key: 'menfeet', label: 'Mənfəət', toneKey: 'faktiki_gelir' },
 ]
 
+// Axtarış / Filtr: dövr (verilmə tarixinə görə) və vəziyyət
+const MONTHS = [
+  'Yanvar', 'Fevral', 'Mart', 'Aprel', 'May', 'İyun',
+  'İyul', 'Avqust', 'Sentyabr', 'Oktyabr', 'Noyabr', 'Dekabr',
+]
+
+const PERIODS = [
+  { value: 'month', label: 'Ay' },
+  { value: 'week', label: 'Həftə' },
+  { value: 'year', label: 'İl' },
+  { value: 'custom', label: 'Özəl aralıq' },
+  { value: 'all', label: 'Hamısı' },
+]
+
+const VEZIYYET_FILTERS = [
+  { value: '', label: 'Hamısı' },
+  { value: 'Qalıb', label: 'Qalıb' },
+  { value: 'Bitib', label: 'Bitib' },
+  { value: 'Məhkəmə', label: 'Məhkəmə' },
+]
+
+function toYmd(d) {
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
+
+function addDays(date, n) {
+  const d = new Date(date.getFullYear(), date.getMonth(), date.getDate())
+  d.setDate(d.getDate() + n)
+  return d
+}
+
+function startOfWeek(date) {
+  const d = new Date(date.getFullYear(), date.getMonth(), date.getDate())
+  return addDays(d, -((d.getDay() + 6) % 7))
+}
+
+function periodRange(period, { year, month, weekStart, customFrom, customTo }) {
+  if (period === 'all') return { from: null, to: null }
+  if (period === 'week') return { from: toYmd(weekStart), to: toYmd(addDays(weekStart, 6)) }
+  if (period === 'month') {
+    return { from: toYmd(new Date(year, month, 1)), to: toYmd(new Date(year, month + 1, 0)) }
+  }
+  if (period === 'year') return { from: `${year}-01-01`, to: `${year}-12-31` }
+  let from = customFrom || null
+  let to = customTo || null
+  if (from && to && from > to) [from, to] = [to, from]
+  return { from, to }
+}
+
+function periodTitle(period, ctx) {
+  if (period === 'week') {
+    return `${formatDate(toYmd(ctx.weekStart))} – ${formatDate(toYmd(addDays(ctx.weekStart, 6)))}`
+  }
+  if (period === 'month') return `${MONTHS[ctx.month]} ${ctx.year}`
+  if (period === 'year') return String(ctx.year)
+  return ''
+}
+
 function sumField(rows, key) {
   return rows.reduce((acc, row) => {
     const n = Number(row[key])
@@ -95,6 +158,17 @@ export default function MusteriList() {
   const [searchId, setSearchId] = useState('')
   const [searchName, setSearchName] = useState('')
   const [searchOther, setSearchOther] = useState('')
+  const [period, setPeriod] = useState('all')
+  const [year, setYear] = useState(() => new Date().getFullYear())
+  const [month, setMonth] = useState(() => new Date().getMonth())
+  const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date()))
+  const [customFrom, setCustomFrom] = useState('')
+  const [customTo, setCustomTo] = useState('')
+  const [veziyyetFilter, setVeziyyetFilter] = useState('')
+  const range = useMemo(
+    () => periodRange(period, { year, month, weekStart, customFrom, customTo }),
+    [period, year, month, weekStart, customFrom, customTo]
+  )
   const [localCols, setLocalCols] = useState([])
   const [openRow, setOpenRow] = useState(null)
   const resizeTimer = useRef(null)
@@ -129,6 +203,9 @@ export default function MusteriList() {
       if (otherTerm) {
         q = q.or(OTHER_SEARCH_COLUMNS.map((c) => `${c}.ilike.%${otherTerm}%`).join(','))
       }
+      if (veziyyetFilter) q = q.eq('veziyyet', veziyyetFilter)
+      if (range.from) q = q.gte('verilme_tarixi', range.from)
+      if (range.to) q = q.lte('verilme_tarixi', range.to)
       return q
     })
     if (e) {
@@ -143,7 +220,7 @@ export default function MusteriList() {
   useEffect(() => {
     const t = setTimeout(load, 250)
     return () => clearTimeout(t)
-  }, [searchId, searchName, searchOther])
+  }, [searchId, searchName, searchOther, veziyyetFilter, range.from, range.to])
 
   useEffect(() => {
     if (!openId || loading) return
@@ -222,46 +299,136 @@ export default function MusteriList() {
     [saveColumns]
   )
 
+  function shiftPeriod(dir) {
+    if (period === 'week') {
+      setWeekStart((w) => addDays(w, dir * 7))
+      return
+    }
+    if (period === 'month') {
+      const d = new Date(year, month + dir, 1)
+      setYear(d.getFullYear())
+      setMonth(d.getMonth())
+      return
+    }
+    if (period === 'year') setYear((y) => y + dir)
+  }
+
   if (error) {
     return <p className="empty-state" style={{ color: 'var(--color-accent)' }}>{error}</p>
   }
 
   return (
     <>
-      <div
-        style={{
-          display: 'flex',
-          flexWrap: 'wrap',
-          gap: 'var(--space-md)',
-          alignItems: 'flex-end',
-          marginBottom: 'var(--space-md)',
-        }}
-      >
-        <div className="form-group" style={{ marginBottom: 0, flex: '0 1 140px' }}>
-          <label>Müştəri №</label>
-          <input
-            value={searchId}
-            onChange={(e) => setSearchId(e.target.value.replace(/\D/g, '').slice(0, 9))}
-            inputMode="numeric"
-            placeholder="məs. 123"
-          />
+      <CollapsibleSummary title="Axtarış / Filtr" storageKey="summary:musteri-filter" defaultOpen>
+        <div
+          style={{
+            display: 'flex',
+            flexWrap: 'wrap',
+            gap: 'var(--space-md)',
+            alignItems: 'flex-end',
+            marginBottom: 'var(--space-md)',
+          }}
+        >
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label>Dövr (verilmə tarixi)</label>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+              {PERIODS.map((p) => (
+                <button
+                  key={p.value}
+                  type="button"
+                  className={`btn ${period === p.value ? 'btn--primary' : 'btn--secondary'}`}
+                  onClick={() => setPeriod(p.value)}
+                >
+                  {p.label}
+                </button>
+              ))}
+            </div>
+          </div>
+          {(period === 'month' || period === 'week' || period === 'year') && (
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label>Naviqasiya</label>
+              <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                <button type="button" className="btn btn--secondary" onClick={() => shiftPeriod(-1)}>
+                  ‹
+                </button>
+                <span style={{ minWidth: 140, textAlign: 'center', fontWeight: 600 }}>
+                  {periodTitle(period, { year, month, weekStart })}
+                </span>
+                <button type="button" className="btn btn--secondary" onClick={() => shiftPeriod(1)}>
+                  ›
+                </button>
+                <button
+                  type="button"
+                  className="btn btn--secondary"
+                  onClick={() => {
+                    const n = new Date()
+                    setYear(n.getFullYear())
+                    setMonth(n.getMonth())
+                    setWeekStart(startOfWeek(n))
+                  }}
+                >
+                  Bu gün
+                </button>
+              </div>
+            </div>
+          )}
+          {period === 'custom' && (
+            <>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label>Başlanğıc</label>
+                <input type="date" value={customFrom} onChange={(e) => setCustomFrom(e.target.value)} />
+              </div>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label>Son</label>
+                <input type="date" value={customTo} onChange={(e) => setCustomTo(e.target.value)} />
+              </div>
+            </>
+          )}
+          <div className="form-group" style={{ marginBottom: 0, minWidth: 160 }}>
+            <label>Vəziyyət</label>
+            <select value={veziyyetFilter} onChange={(e) => setVeziyyetFilter(e.target.value)}>
+              {VEZIYYET_FILTERS.map((v) => (
+                <option key={v.value || 'all'} value={v.value}>
+                  {v.label}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
-        <div className="form-group" style={{ marginBottom: 0, flex: '1 1 200px', maxWidth: 280 }}>
-          <label>Ad Soyad</label>
-          <input value={searchName} onChange={(e) => setSearchName(e.target.value)} placeholder="Ad və ya soyad…" />
+        <div
+          style={{
+            display: 'flex',
+            flexWrap: 'wrap',
+            gap: 'var(--space-md)',
+            alignItems: 'flex-end',
+          }}
+        >
+          <div className="form-group" style={{ marginBottom: 0, flex: '0 1 140px' }}>
+            <label>Müştəri №</label>
+            <input
+              value={searchId}
+              onChange={(e) => setSearchId(e.target.value.replace(/\D/g, '').slice(0, 9))}
+              inputMode="numeric"
+              placeholder="məs. 123"
+            />
+          </div>
+          <div className="form-group" style={{ marginBottom: 0, flex: '1 1 200px', maxWidth: 280 }}>
+            <label>Ad Soyad</label>
+            <input value={searchName} onChange={(e) => setSearchName(e.target.value)} placeholder="Ad və ya soyad…" />
+          </div>
+          <div className="form-group" style={{ marginBottom: 0, flex: '1 1 240px', maxWidth: 360 }}>
+            <label>IMEI, iCloud, nömrə və s.</label>
+            <input
+              value={searchOther}
+              onChange={(e) => setSearchOther(e.target.value)}
+              placeholder="IMEI, iCloud, telefon, model…"
+            />
+          </div>
+          <Link to="/musteri-bazasi/sutunlar" className="btn btn--secondary">
+            Sütunları idarə et
+          </Link>
         </div>
-        <div className="form-group" style={{ marginBottom: 0, flex: '1 1 240px', maxWidth: 360 }}>
-          <label>IMEI, iCloud, nömrə və s.</label>
-          <input
-            value={searchOther}
-            onChange={(e) => setSearchOther(e.target.value)}
-            placeholder="IMEI, iCloud, telefon, model…"
-          />
-        </div>
-        <Link to="/musteri-bazasi/sutunlar" className="btn btn--secondary">
-          Sütunları idarə et
-        </Link>
-      </div>
+      </CollapsibleSummary>
 
       {!loading && !colsLoading && (
         <SummaryCards
