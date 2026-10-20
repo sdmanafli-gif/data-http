@@ -15,6 +15,7 @@ import {
 import ResizableDataTable from '../musteri-bazasi/ResizableDataTable'
 import CollapsibleSummary from '../../components/CollapsibleSummary'
 import { usePeriodFilter, PeriodFilterControls } from '../../components/PeriodFilter'
+import { loadPageFilters, savePageFilters } from '../../lib/uiPrefs'
 import '../musteri-bazasi/musteri-table.css'
 import '../../styles/shared.css'
 
@@ -33,11 +34,17 @@ export default function OdenisList() {
   const [items, setItems] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
-  const [search, setSearch] = useState('')
-  const [tipFilter, setTipFilter] = useState('')
+  // Filtrlər yadda qalır: səhifə dəyişəndə itmir
+  const [savedFilters] = useState(() => loadPageFilters('odenisler', {}) || {})
+  const [search, setSearch] = useState(savedFilters.search || '')
+  const [tipFilter, setTipFilter] = useState(savedFilters.tipFilter || '')
   const [viewRows, setViewRows] = useState([])
-  const periodFilter = usePeriodFilter('all')
+  const periodFilter = usePeriodFilter('all', 'odenisler:period')
   const { range } = periodFilter
+
+  useEffect(() => {
+    savePageFilters('odenisler', { search, tipFilter })
+  }, [search, tipFilter])
 
   const visibleCols = useMemo(
     () => access.filterColumns('odenisler', ODENIS_TABLE_COLUMNS).filter((c) => c.visible !== false),
