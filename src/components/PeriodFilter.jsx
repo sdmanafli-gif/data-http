@@ -1,9 +1,11 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { formatDate } from '../lib/formatDate'
+import { loadPageFilters, savePageFilters } from '../lib/uiPrefs'
 
 /**
  * Yığım-dakı kimi dövr filtri: Ay / Həftə / İl / Özəl aralıq / Hamısı.
  * usePeriodFilter() vəziyyəti saxlayır, <PeriodFilterControls /> düymələri göstərir.
+ * storageKey verilsə, seçim (özəl tarix aralığı da) brauzerdə yadda qalır.
  */
 
 const MONTHS = [
@@ -69,13 +71,41 @@ export function inPeriod(value, range) {
   return true
 }
 
-export function usePeriodFilter(initialPeriod = 'all') {
-  const [period, setPeriod] = useState(initialPeriod)
-  const [year, setYear] = useState(() => new Date().getFullYear())
-  const [month, setMonth] = useState(() => new Date().getMonth())
-  const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date()))
-  const [customFrom, setCustomFrom] = useState('')
-  const [customTo, setCustomTo] = useState('')
+function parseYmd(value) {
+  const m = String(value || '').match(/^(\d{4})-(\d{2})-(\d{2})$/)
+  return m ? new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])) : null
+}
+
+export function usePeriodFilter(initialPeriod = 'all', storageKey = null) {
+  const [saved] = useState(() => (storageKey ? loadPageFilters(storageKey, null) : null) || {})
+  const [period, setPeriod] = useState(() =>
+    PERIODS.some((p) => p.value === saved.period) ? saved.period : initialPeriod
+  )
+  const [year, setYear] = useState(() =>
+    Number.isInteger(saved.year) ? saved.year : new Date().getFullYear()
+  )
+  const [month, setMonth] = useState(() =>
+    Number.isInteger(saved.month) && saved.month >= 0 && saved.month <= 11
+      ? saved.month
+      : new Date().getMonth()
+  )
+  const [weekStart, setWeekStart] = useState(
+    () => parseYmd(saved.weekStart) || startOfWeek(new Date())
+  )
+  const [customFrom, setCustomFrom] = useState(() => saved.customFrom || '')
+  const [customTo, setCustomTo] = useState(() => saved.customTo || '')
+
+  useEffect(() => {
+    if (!storageKey) return
+    savePageFilters(storageKey, {
+      period,
+      year,
+      month,
+      weekStart: toYmd(weekStart),
+      customFrom,
+      customTo,
+    })
+  }, [storageKey, period, year, month, weekStart, customFrom, customTo])
 
   const range = useMemo(
     () => periodRange(period, { year, month, weekStart, customFrom, customTo }),
