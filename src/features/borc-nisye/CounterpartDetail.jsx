@@ -15,6 +15,8 @@ import {
   counterpartPath,
 } from './constants'
 import CollapsibleSummary from '../../components/CollapsibleSummary'
+import { usePeriodFilter, PeriodFilterControls, inPeriod } from '../../components/PeriodFilter'
+import { loadPageFilters, savePageFilters } from '../../lib/uiPrefs'
 import '../musteri-bazasi/musteri-table.css'
 import '../../styles/shared.css'
 
@@ -36,6 +38,16 @@ export default function CounterpartDetail() {
   const [showForm, setShowForm] = useState(false)
   const [form, setForm] = useState(() => ({ ...emptyLedgerForm(), kime }))
   const [saving, setSaving] = useState(false)
+  // Axtarış / Filtr: dövr və əməliyyat növü yadda qalır
+  const [savedFilters] = useState(() => loadPageFilters('borc-detail', {}) || {})
+  const [tipFilter, setTipFilter] = useState(savedFilters.tipFilter || '')
+  const [search, setSearch] = useState('')
+  const periodFilter = usePeriodFilter('all', 'borc-detail:period')
+  const { range } = periodFilter
+
+  useEffect(() => {
+    savePageFilters('borc-detail', { tipFilter })
+  }, [tipFilter])
 
   async function load() {
     setLoading(true)
@@ -72,8 +84,20 @@ export default function CounterpartDetail() {
     setForm((f) => ({ ...emptyLedgerForm(), ...f, kime }))
   }, [kime])
 
+  const filteredEntries = useMemo(() => {
+    const q = search.trim().toLowerCase()
+    return entries.filter((row) => {
+      if (!inPeriod(row.tarix, range)) return false
+      if (tipFilter && row.tip !== tipFilter) return false
+      if (!q) return true
+      return [row.mehsul, row.imei_1, row.imei_2, row.qeyd, row.mebleg]
+        .filter((v) => v != null)
+        .some((v) => String(v).toLowerCase().includes(q))
+    })
+  }, [entries, range, tipFilter, search])
+
   const balance = useMemo(() => {
-    const list = computeBalances(entries)
+    const list = computeBalances(filteredEntries)
     return list[0] || {
       borc_verdim: 0,
       borc_aldim: 0,
@@ -82,7 +106,7 @@ export default function CounterpartDetail() {
       nisye_odenis: 0,
       qaliq_nisye: 0,
     }
-  }, [entries])
+  }, [filteredEntries])
 
   async function onSubmit(e) {
     e.preventDefault()
@@ -166,6 +190,33 @@ export default function CounterpartDetail() {
         </div>
       </div>
 
+      <CollapsibleSummary title="Axtarış / Filtr" storageKey="summary:borc-detail-filter" defaultOpen>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16, alignItems: 'flex-end', marginBottom: 16 }}>
+          <PeriodFilterControls filter={periodFilter} label="Dövr (əməliyyat tarixi)" />
+        </div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16, alignItems: 'flex-end' }}>
+          <div className="form-group" style={{ marginBottom: 0, minWidth: 180 }}>
+            <label>Əməliyyat növü</label>
+            <select value={tipFilter} onChange={(e) => setTipFilter(e.target.value)}>
+              <option value="">Hamısı</option>
+              {ENTRY_TYPES.map((t) => (
+                <option key={t.value} value={t.value}>
+                  {t.label}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="form-group" style={{ marginBottom: 0, flex: '1 1 220px', maxWidth: 360 }}>
+            <label>Axtarış</label>
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Məhsul, IMEI, qeyd, məbləğ…"
+            />
+          </div>
+        </div>
+      </CollapsibleSummary>
+
       <CollapsibleSummary title="Cəmlər" storageKey="summary:borc-detail">
         <div className="musteri-summary">
           <div className="musteri-summary__card">
@@ -178,7 +229,7 @@ export default function CounterpartDetail() {
           </div>
           <div className="musteri-summary__card musteri-summary__card--meta">
             <div className="musteri-summary__label">Əməliyyat sayı</div>
-            <div className="musteri-summary__value">{entries.length}</div>
+            <div className="musteri-summary__value">{filteredEntries.length}</div>
           </div>
         </div>
       </CollapsibleSummary>
@@ -279,6 +330,8 @@ export default function CounterpartDetail() {
           <p className="empty-state">Yüklənir…</p>
         ) : entries.length === 0 ? (
           <p className="empty-state">Bu kontragent üçün hələ qeyd yoxdur.</p>
+        ) : filteredEntries.length === 0 ? (
+          <p className="empty-state">Bu filtrə uyğun əməliyyat yoxdur.</p>
         ) : (
           <div className="table-wrap">
             <table className="data-table">
@@ -295,7 +348,7 @@ export default function CounterpartDetail() {
                 </tr>
               </thead>
               <tbody>
-                {entries.map((row) => (
+                {filteredEntries.map((row) => (
                   <tr key={row.id}>
                     <td>{formatDate(row.tarix)}</td>
                     <td>{formatDate(row.qaytarma_tarixi)}</td>
