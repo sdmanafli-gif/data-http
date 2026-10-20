@@ -22,6 +22,19 @@
   padding: 0;
 }
 
+/* Bütün sətirlər qədər uzanır; cəmlər sətri sonuncu sətrin altında qalır */
+.musteri-table-shell--auto {
+  max-height: none;
+  min-height: 0;
+  overflow-y: visible;
+  overflow-x: auto;
+}
+
+.musteri-table-shell--auto .data-table .yigim-table-totals td {
+  position: static;
+  box-shadow: none;
+}
+
 .musteri-table-shell .data-table {
   width: max-content;
   min-width: 100%;
