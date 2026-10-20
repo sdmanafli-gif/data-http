@@ -6,6 +6,7 @@ import SignUp from './pages/SignUp'
 import InviteUser from './pages/InviteUser'
 import UserList from './pages/UserList'
 import KassaDesk from './pages/KassaDesk'
+import KontaktlarPage from './pages/KontaktlarPage'
 import AccountGone from './pages/AccountGone'
 import MfaChallenge from './pages/MfaChallenge'
 import MfaEnroll from './pages/MfaEnroll'
@@ -68,6 +69,7 @@ function AppRoutes() {
         <Route path="/admin/invite" element={<InviteUser />} />
         <Route path="/admin/users" element={<UserList />} />
         <Route path="/admin/kassa" element={<KassaDesk />} />
+        <Route path="/admin/kontaktlar" element={<KontaktlarPage />} />
         <Route path="/hesab/tehlukesizlik" element={<MfaEnroll forced={false} />} />
         <Route
           path="/musteri-bazasi/*"
