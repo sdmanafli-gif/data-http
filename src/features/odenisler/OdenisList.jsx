@@ -14,6 +14,7 @@ import {
 } from './constants'
 import ResizableDataTable from '../musteri-bazasi/ResizableDataTable'
 import CollapsibleSummary from '../../components/CollapsibleSummary'
+import { usePeriodFilter, PeriodFilterControls } from '../../components/PeriodFilter'
 import '../musteri-bazasi/musteri-table.css'
 import '../../styles/shared.css'
 
@@ -35,6 +36,8 @@ export default function OdenisList() {
   const [search, setSearch] = useState('')
   const [tipFilter, setTipFilter] = useState('')
   const [viewRows, setViewRows] = useState([])
+  const periodFilter = usePeriodFilter('all')
+  const { range } = periodFilter
 
   const visibleCols = useMemo(
     () => access.filterColumns('odenisler', ODENIS_TABLE_COLUMNS).filter((c) => c.visible !== false),
@@ -52,6 +55,8 @@ export default function OdenisList() {
         .order('created_at', { ascending: false })
         .order('id', { ascending: false })
       if (tipFilter) q = q.eq('tip', tipFilter)
+      if (range.from) q = q.gte('tarix', range.from)
+      if (range.to) q = q.lte('tarix', range.to)
       if (term) {
         const asNum = Number(term)
         if (!Number.isNaN(asNum) && /^\d{1,9}$/.test(term)) {
@@ -83,7 +88,7 @@ export default function OdenisList() {
   useEffect(() => {
     const t = setTimeout(load, 250)
     return () => clearTimeout(t)
-  }, [search, tipFilter])
+  }, [search, tipFilter, range.from, range.to])
 
   const totals = useMemo(() => sumPaymentsByType(viewRows.length ? viewRows : items), [viewRows, items])
 
@@ -97,27 +102,32 @@ export default function OdenisList() {
 
   return (
     <>
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16, alignItems: 'flex-end', marginBottom: 16 }}>
-        <div className="form-group" style={{ marginBottom: 0, flex: '1 1 220px', maxWidth: 320 }}>
-          <label>Axtarış</label>
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="№ və ya Ad Soyad…"
-          />
+      <CollapsibleSummary title="Axtarış / Filtr" storageKey="summary:odenisler-filter" defaultOpen>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16, alignItems: 'flex-end', marginBottom: 16 }}>
+          <PeriodFilterControls filter={periodFilter} label="Dövr (ödəniş tarixi)" />
         </div>
-        <div className="form-group" style={{ marginBottom: 0, minWidth: 180 }}>
-          <label>Tip</label>
-          <select value={tipFilter} onChange={(e) => setTipFilter(e.target.value)}>
-            <option value="">Hamısı</option>
-            {PAYMENT_TYPES.map((t) => (
-              <option key={t.value} value={t.value}>
-                {t.label}
-              </option>
-            ))}
-          </select>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16, alignItems: 'flex-end' }}>
+          <div className="form-group" style={{ marginBottom: 0, flex: '1 1 220px', maxWidth: 320 }}>
+            <label>Axtarış</label>
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="№ və ya Ad Soyad…"
+            />
+          </div>
+          <div className="form-group" style={{ marginBottom: 0, minWidth: 180 }}>
+            <label>Tip</label>
+            <select value={tipFilter} onChange={(e) => setTipFilter(e.target.value)}>
+              <option value="">Hamısı</option>
+              {PAYMENT_TYPES.map((t) => (
+                <option key={t.value} value={t.value}>
+                  {t.label}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
-      </div>
+      </CollapsibleSummary>
 
       {!loading && access.canSeeSummary('odenisler') && (() => {
         const keys = access.allowedSummaryCards('odenisler')
