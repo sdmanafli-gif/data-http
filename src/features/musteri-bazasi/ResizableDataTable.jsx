@@ -38,8 +38,8 @@ export default function ResizableDataTable({
   /** Controlled filters (optional). When set with onFiltersChange, parent owns filter state. */
   filters: filtersProp,
   onFiltersChange,
-  /** true: cədvəl bütün sətirlər qədər uzanır (daxili scroll yoxdur), cəmlər sonuncu sətrin altında olur */
-  autoHeight = false,
+  /** true (standart): cədvəl bütün sətirlər qədər uzanır (daxili scroll yoxdur), cəmlər sonuncu sətrin altında olur. false: sabit hündürlüklü qutu */
+  autoHeight = true,
 }) {
   const controlled = typeof onFiltersChange === 'function'
   const [zoom, setZoom] = useState(() => loadTableZoom(prefsKey))
