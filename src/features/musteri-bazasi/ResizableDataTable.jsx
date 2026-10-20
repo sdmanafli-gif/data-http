@@ -38,6 +38,8 @@ export default function ResizableDataTable({
   /** Controlled filters (optional). When set with onFiltersChange, parent owns filter state. */
   filters: filtersProp,
   onFiltersChange,
+  /** true (standart): cədvəl bütün sətirlər qədər uzanır (daxili scroll yoxdur), cəmlər sonuncu sətrin altında olur. false: sabit hündürlüklü qutu */
+  autoHeight = true,
 }) {
   const controlled = typeof onFiltersChange === 'function'
   const [zoom, setZoom] = useState(() => loadTableZoom(prefsKey))
@@ -285,7 +287,7 @@ export default function ResizableDataTable({
         </span>
       </div>
 
-      <div className="musteri-table-shell">
+      <div className={`musteri-table-shell${autoHeight ? ' musteri-table-shell--auto' : ''}`}>
         <div style={{ zoom, transformOrigin: 'top left' }}>
           <table className="data-table data-table--friendly data-table--band">
             <thead>

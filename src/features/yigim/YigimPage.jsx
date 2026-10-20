@@ -746,6 +746,7 @@ export default function YigimPage() {
             onRowOpen={(row) => openMusteri(row.musteriId)}
             emptyText="Bu filtrə uyğun yığım yoxdur."
             prefsKey="yigim"
+            autoHeight
           />
         )}
       </div>
