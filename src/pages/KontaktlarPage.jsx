@@ -103,7 +103,22 @@ function formatKontaktCell(value, col) {
   if (value === null || value === undefined || value === '') return '—'
   if (col.type === 'money') return formatMoney(value)
   if (col.type === 'date') return formatDate(value)
-  return String(value)
+  const text = String(value)
+  // Uzun mətn sütunu genişlətməsin: sütun eninə sığışdır, tam mətn üstünə gələndə görünsün
+  return (
+    <span
+      title={text}
+      style={{
+        display: 'block',
+        maxWidth: Math.max(40, (col.width || 160) - 24),
+        overflow: 'hidden',
+        textOverflow: 'ellipsis',
+        whiteSpace: 'nowrap',
+      }}
+    >
+      {text}
+    </span>
+  )
 }
 
 const EDIT_FIELDS = [
