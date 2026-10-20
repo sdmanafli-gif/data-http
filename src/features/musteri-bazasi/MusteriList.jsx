@@ -8,6 +8,9 @@ import SummaryCards from './SummaryCards'
 import MusteriRecordModule from './MusteriRecordModule'
 import { applyKeyOrder } from './columnOrder'
 import { MUSTERI_TABLE, formatCell } from './constants'
+import CollapsibleSummary from '../../components/CollapsibleSummary'
+import { usePeriodFilter, PeriodFilterControls } from '../../components/PeriodFilter'
+import { loadPageFilters, savePageFilters } from '../../lib/uiPrefs'
 import '../../styles/shared.css'
 import './musteri-schedule.css'
 
@@ -75,6 +78,16 @@ const MUSTERI_SUMMARY_CARDS = [
   { key: 'menfeet', label: 'Mənfəət', toneKey: 'faktiki_gelir' },
 ]
 
+// Axtarış / Filtr: vəziyyət seçimi (dövr filtri ortaq PeriodFilter-dədir)
+const MUSTERI_FILTERS_KEY = 'musteri-bazasi'
+
+const VEZIYYET_FILTERS = [
+  { value: '', label: 'Hamısı' },
+  { value: 'Qalıb', label: 'Qalıb' },
+  { value: 'Bitib', label: 'Bitib' },
+  { value: 'Məhkəmə', label: 'Məhkəmə' },
+]
+
 function sumField(rows, key) {
   return rows.reduce((acc, row) => {
     const n = Number(row[key])
@@ -92,9 +105,18 @@ export default function MusteriList() {
   const [viewRows, setViewRows] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
-  const [searchId, setSearchId] = useState('')
-  const [searchName, setSearchName] = useState('')
-  const [searchOther, setSearchOther] = useState('')
+  // Filtrlər yadda qalır: səhifə dəyişəndə itmir
+  const [savedFilters] = useState(() => loadPageFilters(MUSTERI_FILTERS_KEY, {}) || {})
+  const [searchId, setSearchId] = useState(savedFilters.searchId || '')
+  const [searchName, setSearchName] = useState(savedFilters.searchName || '')
+  const [searchOther, setSearchOther] = useState(savedFilters.searchOther || '')
+  const [veziyyetFilter, setVeziyyetFilter] = useState(savedFilters.veziyyetFilter || '')
+  const periodFilter = usePeriodFilter('all', 'musteri-bazasi:period')
+  const { range } = periodFilter
+
+  useEffect(() => {
+    savePageFilters(MUSTERI_FILTERS_KEY, { searchId, searchName, searchOther, veziyyetFilter })
+  }, [searchId, searchName, searchOther, veziyyetFilter])
   const [localCols, setLocalCols] = useState([])
   const [openRow, setOpenRow] = useState(null)
   const resizeTimer = useRef(null)
@@ -129,6 +151,9 @@ export default function MusteriList() {
       if (otherTerm) {
         q = q.or(OTHER_SEARCH_COLUMNS.map((c) => `${c}.ilike.%${otherTerm}%`).join(','))
       }
+      if (veziyyetFilter) q = q.eq('veziyyet', veziyyetFilter)
+      if (range.from) q = q.gte('verilme_tarixi', range.from)
+      if (range.to) q = q.lte('verilme_tarixi', range.to)
       return q
     })
     if (e) {
@@ -143,7 +168,7 @@ export default function MusteriList() {
   useEffect(() => {
     const t = setTimeout(load, 250)
     return () => clearTimeout(t)
-  }, [searchId, searchName, searchOther])
+  }, [searchId, searchName, searchOther, veziyyetFilter, range.from, range.to])
 
   useEffect(() => {
     if (!openId || loading) return
@@ -228,40 +253,62 @@ export default function MusteriList() {
 
   return (
     <>
-      <div
-        style={{
-          display: 'flex',
-          flexWrap: 'wrap',
-          gap: 'var(--space-md)',
-          alignItems: 'flex-end',
-          marginBottom: 'var(--space-md)',
-        }}
-      >
-        <div className="form-group" style={{ marginBottom: 0, flex: '0 1 140px' }}>
-          <label>Müştəri №</label>
-          <input
-            value={searchId}
-            onChange={(e) => setSearchId(e.target.value.replace(/\D/g, '').slice(0, 9))}
-            inputMode="numeric"
-            placeholder="məs. 123"
-          />
+      <CollapsibleSummary title="Axtarış / Filtr" storageKey="summary:musteri-filter" defaultOpen>
+        <div
+          style={{
+            display: 'flex',
+            flexWrap: 'wrap',
+            gap: 'var(--space-md)',
+            alignItems: 'flex-end',
+            marginBottom: 'var(--space-md)',
+          }}
+        >
+          <PeriodFilterControls filter={periodFilter} label="Dövr (verilmə tarixi)" />
+          <div className="form-group" style={{ marginBottom: 0, minWidth: 160 }}>
+            <label>Vəziyyət</label>
+            <select value={veziyyetFilter} onChange={(e) => setVeziyyetFilter(e.target.value)}>
+              {VEZIYYET_FILTERS.map((v) => (
+                <option key={v.value || 'all'} value={v.value}>
+                  {v.label}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
-        <div className="form-group" style={{ marginBottom: 0, flex: '1 1 200px', maxWidth: 280 }}>
-          <label>Ad Soyad</label>
-          <input value={searchName} onChange={(e) => setSearchName(e.target.value)} placeholder="Ad və ya soyad…" />
+        <div
+          style={{
+            display: 'flex',
+            flexWrap: 'wrap',
+            gap: 'var(--space-md)',
+            alignItems: 'flex-end',
+          }}
+        >
+          <div className="form-group" style={{ marginBottom: 0, flex: '0 1 140px' }}>
+            <label>Müştəri №</label>
+            <input
+              value={searchId}
+              onChange={(e) => setSearchId(e.target.value.replace(/\D/g, '').slice(0, 9))}
+              inputMode="numeric"
+              placeholder="məs. 123"
+            />
+          </div>
+          <div className="form-group" style={{ marginBottom: 0, flex: '1 1 200px', maxWidth: 280 }}>
+            <label>Ad Soyad</label>
+            <input value={searchName} onChange={(e) => setSearchName(e.target.value)} placeholder="Ad və ya soyad…" />
+          </div>
+          <div className="form-group" style={{ marginBottom: 0, flex: '1 1 240px', maxWidth: 360 }}>
+            <label>IMEI, iCloud, nömrə və s.</label>
+            <input
+              value={searchOther}
+              onChange={(e) => setSearchOther(e.target.value)}
+              placeholder="IMEI, iCloud, telefon, model…"
+            />
+          </div>
+          <Link to="/musteri-bazasi/sutunlar" className="btn btn--secondary">
+            Sütunları idarə et
+          </Link>
         </div>
-        <div className="form-group" style={{ marginBottom: 0, flex: '1 1 240px', maxWidth: 360 }}>
-          <label>IMEI, iCloud, nömrə və s.</label>
-          <input
-            value={searchOther}
-            onChange={(e) => setSearchOther(e.target.value)}
-            placeholder="IMEI, iCloud, telefon, model…"
-          />
-        </div>
-        <Link to="/musteri-bazasi/sutunlar" className="btn btn--secondary">
-          Sütunları idarə et
-        </Link>
-      </div>
+      </CollapsibleSummary>
 
       {!loading && !colsLoading && (
         <SummaryCards
