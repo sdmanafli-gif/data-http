@@ -4,6 +4,7 @@ import { supabase, fetchAllPages } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import ResizableDataTable from '../musteri-bazasi/ResizableDataTable'
 import CollapsibleSummary from '../../components/CollapsibleSummary'
+import { usePeriodFilter, PeriodFilterControls, inPeriod } from '../../components/PeriodFilter'
 import { loadUiFlag, saveUiFlag } from '../../lib/uiPrefs'
 import {
   LEDGER_TABLE,
@@ -38,6 +39,8 @@ export default function OverviewPage() {
   const [error, setError] = useState(null)
   const [search, setSearch] = useState('')
   const [onlyOpen, setOnlyOpen] = useState(true)
+  const periodFilter = usePeriodFilter('all')
+  const { range } = periodFilter
   const [borcView, setBorcView] = useState([])
   const [nisyeView, setNisyeView] = useState([])
   const [borcOpen, setBorcOpen] = useState(() => loadUiFlag('borc-nisye:borc-open', true))
@@ -65,7 +68,7 @@ export default function OverviewPage() {
     ;(async () => {
       setLoading(true)
       const { data, error: e } = await fetchAllPages(() =>
-        supabase.from(LEDGER_TABLE).select('kime, tip, mebleg')
+        supabase.from(LEDGER_TABLE).select('kime, tip, mebleg, tarix')
       )
       if (cancelled) return
       if (e) {
@@ -79,7 +82,11 @@ export default function OverviewPage() {
     }
   }, [])
 
-  const balances = useMemo(() => computeBalances(rows), [rows])
+  // Dövr seçiləndə yalnız həmin tarix aralığındakı qeydlər hesablanır
+  const balances = useMemo(
+    () => computeBalances(rows.filter((r) => inPeriod(r.tarix, range))),
+    [rows, range]
+  )
 
   const matched = useMemo(() => {
     const q = search.trim().toLowerCase()
@@ -159,16 +166,21 @@ export default function OverviewPage() {
 
   return (
     <>
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16, alignItems: 'flex-end', marginBottom: 16 }}>
-        <div className="form-group" style={{ marginBottom: 0, flex: '1 1 220px', maxWidth: 360 }}>
-          <label>Axtarış</label>
-          <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Kontragent…" />
+      <CollapsibleSummary title="Axtarış / Filtr" storageKey="summary:borc-nisye-filter" defaultOpen>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16, alignItems: 'flex-end', marginBottom: 16 }}>
+          <PeriodFilterControls filter={periodFilter} label="Dövr (qeyd tarixi)" />
         </div>
-        <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14, marginBottom: 4 }}>
-          <input type="checkbox" checked={onlyOpen} onChange={(e) => setOnlyOpen(e.target.checked)} />
-          Yalnız açıq qalıqlar
-        </label>
-      </div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16, alignItems: 'flex-end' }}>
+          <div className="form-group" style={{ marginBottom: 0, flex: '1 1 220px', maxWidth: 360 }}>
+            <label>Axtarış</label>
+            <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Kontragent…" />
+          </div>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14, marginBottom: 4 }}>
+            <input type="checkbox" checked={onlyOpen} onChange={(e) => setOnlyOpen(e.target.checked)} />
+            Yalnız açıq qalıqlar
+          </label>
+        </div>
+      </CollapsibleSummary>
 
       <div className="borc-nisye-split">
         <section className={`borc-nisye-panel${borcOpen ? '' : ' borc-nisye-panel--collapsed'}`}>
