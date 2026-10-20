@@ -5,7 +5,7 @@ import { useAuth } from '../../contexts/AuthContext'
 import ResizableDataTable from '../musteri-bazasi/ResizableDataTable'
 import CollapsibleSummary from '../../components/CollapsibleSummary'
 import { usePeriodFilter, PeriodFilterControls, inPeriod } from '../../components/PeriodFilter'
-import { loadUiFlag, saveUiFlag } from '../../lib/uiPrefs'
+import { loadUiFlag, saveUiFlag, loadPageFilters, savePageFilters } from '../../lib/uiPrefs'
 import {
   LEDGER_TABLE,
   computeBalances,
@@ -37,10 +37,16 @@ export default function OverviewPage() {
   const [rows, setRows] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
-  const [search, setSearch] = useState('')
-  const [onlyOpen, setOnlyOpen] = useState(true)
-  const periodFilter = usePeriodFilter('all')
+  // Filtrlər yadda qalır: səhifə dəyişəndə itmir
+  const [savedFilters] = useState(() => loadPageFilters('borc-nisye', {}) || {})
+  const [search, setSearch] = useState(savedFilters.search || '')
+  const [onlyOpen, setOnlyOpen] = useState(savedFilters.onlyOpen !== false)
+  const periodFilter = usePeriodFilter('all', 'borc-nisye:period')
   const { range } = periodFilter
+
+  useEffect(() => {
+    savePageFilters('borc-nisye', { search, onlyOpen })
+  }, [search, onlyOpen])
   const [borcView, setBorcView] = useState([])
   const [nisyeView, setNisyeView] = useState([])
   const [borcOpen, setBorcOpen] = useState(() => loadUiFlag('borc-nisye:borc-open', true))
