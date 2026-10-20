@@ -6,7 +6,17 @@ import { formatDate } from '../lib/formatDate'
 import { formatMoney } from '../features/odenisler/constants'
 import { computeBalances, counterpartPath, LEDGER_TABLE } from '../features/borc-nisye/constants'
 import CollapsibleSummary from '../components/CollapsibleSummary'
-import { loadPageFilters, savePageFilters } from '../lib/uiPrefs'
+import {
+  loadPageFilters,
+  savePageFilters,
+  loadLocalColumnSettings,
+  saveLocalColumnSettings,
+} from '../lib/uiPrefs'
+import ResizableDataTable from '../features/musteri-bazasi/ResizableDataTable'
+import { applyKeyOrder } from '../features/musteri-bazasi/columnOrder'
+import SenedlerField from '../components/SenedlerField'
+import { parseSenedler, senedlerPublicUrl } from '../lib/senedler'
+import '../features/musteri-bazasi/musteri-table.css'
 import '../styles/shared.css'
 
 /**
@@ -42,7 +52,71 @@ function phonesOf(m) {
     .filter(Boolean)
 }
 
-function Modal({ title, subtitle, onClose, children }) {
+// Cədvəl sütunları — sürükləyib yerini dəyişmək və enini dəyişmək olur (brauzerdə yadda qalır)
+const CUSTOMER_COLUMNS = [
+  { key: 'ad_soyad', label: 'Ad Soyad', type: 'text', width: 220 },
+  { key: 'telefon', label: 'Telefon', type: 'text', width: 200 },
+  { key: 'zamin', label: 'Zamin', type: 'text', width: 160 },
+  { key: 'saleCount', label: 'Alış sayı', type: 'number', width: 100 },
+  { key: 'satis', label: 'Satış cəmi', type: 'money', width: 130 },
+  { key: 'verilib', label: 'Verilib', type: 'money', width: 130 },
+  { key: 'qalan', label: 'Qalan borc', type: 'money', width: 130 },
+  { key: 'lastPay', label: 'Son ödəniş', type: 'date', width: 120 },
+  { key: 'muqavileCount', label: 'Müqavilə', type: 'number', width: 100 },
+  { key: 'senedCount', label: 'Şəxsiyyət', type: 'number', width: 100 },
+  { key: 'borcNisye', label: 'Borc / Nisyə', type: 'money', width: 130 },
+]
+
+const SUPPLIER_COLUMNS = [
+  { key: 'name', label: 'Təchizatçı', type: 'text', width: 220 },
+  { key: 'phone', label: 'Telefon (Depodan)', type: 'text', width: 170 },
+  { key: 'count', label: 'Məhsul sayı', type: 'number', width: 110 },
+  { key: 'total', label: 'Alış cəmi', type: 'money', width: 140 },
+  { key: 'lastDate', label: 'Son alış', type: 'date', width: 120 },
+  { key: 'qaliqBorc', label: 'Qalıq borc', type: 'money', width: 130 },
+  { key: 'qaliqNisye', label: 'Qalıq nisyə', type: 'money', width: 130 },
+]
+
+function useStoredColumns(tableKey, defaults) {
+  const [cols, setCols] = useState(() => {
+    const saved = loadLocalColumnSettings(tableKey)?.columns
+    if (!Array.isArray(saved)) return defaults
+    const byKey = new Map(defaults.map((c) => [c.key, c]))
+    const ordered = saved
+      .filter((c) => byKey.has(c.key))
+      .map((c) => ({ ...byKey.get(c.key), width: typeof c.width === 'number' ? c.width : byKey.get(c.key).width }))
+    const missing = defaults.filter((c) => !saved.some((x) => x.key === c.key))
+    return [...ordered, ...missing]
+  })
+  function update(next) {
+    setCols(next)
+    saveLocalColumnSettings(tableKey, next.map(({ key, width }) => ({ key, width })))
+  }
+  return [
+    cols,
+    (orderedVisible) => update(applyKeyOrder(cols, orderedVisible.map((c) => c.key))),
+    (key, width) => update(cols.map((c) => (c.key === key ? { ...c, width } : c))),
+  ]
+}
+
+function formatKontaktCell(value, col) {
+  if (value === null || value === undefined || value === '') return '—'
+  if (col.type === 'money') return formatMoney(value)
+  if (col.type === 'date') return formatDate(value)
+  return String(value)
+}
+
+const EDIT_FIELDS = [
+  { key: 'ad_soyad', label: 'Ad Soyad' },
+  { key: 'nomre_1', label: 'Nömrə 1' },
+  { key: 'nomre_2', label: 'Nömrə 2' },
+  { key: 'nomre_3', label: 'Nömrə 3' },
+  { key: 'nomre_4', label: 'Nömrə 4' },
+  { key: 'nomre_5', label: 'Nömrə 5' },
+  { key: 'zamin', label: 'Zamin' },
+]
+
+function Modal({ title, subtitle, onClose, children, actions = null }) {
   return (
     <div className="telefon-modal-overlay musteri-record-overlay" onClick={onClose} role="presentation">
       <div className="telefon-modal musteri-record-modal" onClick={(e) => e.stopPropagation()}>
@@ -53,9 +127,12 @@ function Modal({ title, subtitle, onClose, children }) {
               <p style={{ margin: '4px 0 0', fontSize: 13, color: 'var(--color-text-muted)' }}>{subtitle}</p>
             ) : null}
           </div>
-          <button type="button" className="btn btn--secondary" onClick={onClose}>
-            Bağla
-          </button>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            {actions}
+            <button type="button" className="btn btn--secondary" onClick={onClose}>
+              Bağla
+            </button>
+          </div>
         </div>
         {children}
       </div>
@@ -85,8 +162,14 @@ export default function KontaktlarPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [data, setData] = useState({ musteriler: [], satislar: [], odenisler: [], ledger: [], depo: [] })
-  const [openCustomer, setOpenCustomer] = useState(null)
+  const [openCustomerId, setOpenCustomerId] = useState(null)
   const [openSupplier, setOpenSupplier] = useState(null)
+  const [editing, setEditing] = useState(false)
+  const [editForm, setEditForm] = useState({})
+  const [saving, setSaving] = useState(false)
+  const [modalError, setModalError] = useState(null)
+  const [custCols, reorderCustCols, resizeCustCols] = useStoredColumns('kontaktlar_musteri', CUSTOMER_COLUMNS)
+  const [supCols, reorderSupCols, resizeSupCols] = useStoredColumns('kontaktlar_techizatci', SUPPLIER_COLUMNS)
 
   useEffect(() => {
     savePageFilters('kontaktlar', { tab, search, onlyDebt })
@@ -103,13 +186,13 @@ export default function KontaktlarPage() {
           fetchAllPages(() =>
             supabase
               .from('musteriler')
-              .select('id, ad_soyad, nomre_1, nomre_2, nomre_3, nomre_4, nomre_5, zamin')
+              .select('*')
               .order('ad_soyad', { ascending: true })
           ),
           fetchAllPages(() =>
             supabase
               .from('musteri_bazasi')
-              .select('id, musteri_id, sira_no, ad_soyad, model, satis_qiymeti, verilib, qalan_borc, veziyyet, verilme_tarixi')
+              .select('id, musteri_id, sira_no, ad_soyad, model, satis_qiymeti, verilib, qalan_borc, veziyyet, verilme_tarixi, senedler')
               .order('sira_no', { ascending: true })
           ),
           fetchAllPages(() =>
@@ -169,9 +252,20 @@ export default function KontaktlarPage() {
     return data.musteriler.map((m) => {
       const sales = salesByCustomer.get(m.id) || []
       const led = ledgerByName.get(norm(m.ad_soyad))
+      // Müqavilələr: hər satışa (Müştəri Bazasında) əlavə olunan sənədlər avtomatik bura düşür
+      const contracts = sales
+        .map((s) => ({ sale: s, files: parseSenedler(s.senedler) }))
+        .filter((c) => c.files.length > 0)
+      const phones = phonesOf(m)
       return {
         ...m,
-        phones: phonesOf(m),
+        phones,
+        telefon: phones.join(', '),
+        contracts,
+        muqavileCount: contracts.length,
+        hasSenedColumn: Object.prototype.hasOwnProperty.call(m, 'senedler'),
+        senedCount: parseSenedler(m.senedler).length,
+        borcNisye: led ? round2(led.qaliq_borc + led.qaliq_nisye) : null,
         sales,
         saleCount: sales.length,
         satis: round2(sales.reduce((a, s) => a + num(s.satis_qiymeti), 0)),
@@ -201,7 +295,18 @@ export default function KontaktlarPage() {
       if (!g.phone && String(d.nomre || '').trim()) g.phone = String(d.nomre).trim()
     }
     return [...map.values()]
-      .map((g) => ({ ...g, total: round2(g.total), count: g.items.length, ledger: ledgerByName.get(g.key) || null }))
+      .map((g) => {
+        const ledger = ledgerByName.get(g.key) || null
+        return {
+          ...g,
+          id: g.key,
+          total: round2(g.total),
+          count: g.items.length,
+          ledger,
+          qaliqBorc: ledger ? ledger.qaliq_borc : null,
+          qaliqNisye: ledger ? ledger.qaliq_nisye : null,
+        }
+      })
       .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name, 'az'))
   }, [data.depo, ledgerByName])
 
@@ -226,6 +331,67 @@ export default function KontaktlarPage() {
       }),
     [suppliers, q, onlyDebt]
   )
+
+  const openCustomer = openCustomerId ? customers.find((c) => c.id === openCustomerId) || null : null
+
+  function openCustomerCard(c) {
+    setOpenCustomerId(c.id)
+    setEditing(false)
+    setModalError(null)
+  }
+
+  function startEdit() {
+    if (!openCustomer) return
+    setEditForm(Object.fromEntries(EDIT_FIELDS.map((f) => [f.key, openCustomer[f.key] || ''])))
+    setModalError(null)
+    setEditing(true)
+  }
+
+  function patchCustomer(id, patch) {
+    setData((d) => ({
+      ...d,
+      musteriler: d.musteriler.map((m) => (m.id === id ? { ...m, ...patch } : m)),
+    }))
+  }
+
+  async function saveEdit() {
+    if (!openCustomer) return
+    const ad = String(editForm.ad_soyad || '').trim()
+    if (!ad) {
+      setModalError('Ad Soyad boş ola bilməz.')
+      return
+    }
+    const patch = Object.fromEntries(
+      EDIT_FIELDS.map((f) => [f.key, String(editForm[f.key] || '').trim() || null])
+    )
+    patch.ad_soyad = ad
+    setSaving(true)
+    setModalError(null)
+    const { error: e } = await supabase
+      .from('musteriler')
+      .update({ ...patch, updated_at: new Date().toISOString() })
+      .eq('id', openCustomer.id)
+    setSaving(false)
+    if (e) {
+      setModalError(e.message)
+      return
+    }
+    patchCustomer(openCustomer.id, patch)
+    setEditing(false)
+  }
+
+  async function saveIdFiles(next) {
+    if (!openCustomer) return
+    const { error: e } = await supabase
+      .from('musteriler')
+      .update({ senedler: next, updated_at: new Date().toISOString() })
+      .eq('id', openCustomer.id)
+    if (e) {
+      setModalError(e.message)
+      return
+    }
+    patchCustomer(openCustomer.id, { senedler: next })
+  }
 
   if (!isAdmin) return <Navigate to="/" replace />
 
@@ -315,143 +481,178 @@ export default function KontaktlarPage() {
         {loading ? (
           <p className="empty-state">Yüklənir…</p>
         ) : tab === 'musteri' ? (
-          <div className="table-wrap">
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>Ad Soyad</th>
-                  <th>Telefon</th>
-                  <th>Zamin</th>
-                  <th style={{ textAlign: 'right' }}>Alış sayı</th>
-                  <th style={{ textAlign: 'right' }}>Satış cəmi</th>
-                  <th style={{ textAlign: 'right' }}>Verilib</th>
-                  <th style={{ textAlign: 'right' }}>Qalan borc</th>
-                  <th>Son ödəniş</th>
-                  <th style={{ textAlign: 'right' }}>Borc / Nisyə</th>
-                </tr>
-              </thead>
-              <tbody>
-                {shownCustomers.map((c) => (
-                  <tr key={c.id} className="data-table__row--clickable" onClick={() => setOpenCustomer(c)}>
-                    <td><strong>{c.ad_soyad}</strong></td>
-                    <td>{c.phones.join(', ') || '—'}</td>
-                    <td>{c.zamin || '—'}</td>
-                    <td style={{ textAlign: 'right' }}>{c.saleCount}</td>
-                    <td style={{ textAlign: 'right' }}>{formatMoney(c.satis)}</td>
-                    <td style={{ textAlign: 'right' }}>{formatMoney(c.verilib)}</td>
-                    <td style={{ textAlign: 'right', color: c.qalan > 0 ? 'var(--color-accent)' : undefined }}>
-                      {formatMoney(c.qalan)}
-                    </td>
-                    <td>{formatDate(c.lastPay)}</td>
-                    <td style={{ textAlign: 'right' }}>
-                      {c.ledger ? formatMoney(c.ledger.qaliq_borc + c.ledger.qaliq_nisye) : '—'}
-                    </td>
-                  </tr>
-                ))}
-                {!shownCustomers.length && (
-                  <tr>
-                    <td colSpan={9} className="empty-state">Müştəri tapılmadı.</td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
+          <ResizableDataTable
+            columns={custCols}
+            rows={shownCustomers}
+            formatCell={formatKontaktCell}
+            onReorderColumns={reorderCustCols}
+            onResizeColumn={resizeCustCols}
+            onRowOpen={openCustomerCard}
+            emptyText="Müştəri tapılmadı."
+            prefsKey="kontaktlar_musteri"
+          />
         ) : (
-          <div className="table-wrap">
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>Təchizatçı</th>
-                  <th>Telefon (Depodan)</th>
-                  <th style={{ textAlign: 'right' }}>Məhsul sayı</th>
-                  <th style={{ textAlign: 'right' }}>Alış cəmi</th>
-                  <th>Son alış</th>
-                  <th style={{ textAlign: 'right' }}>Qalıq borc</th>
-                  <th style={{ textAlign: 'right' }}>Qalıq nisyə</th>
-                </tr>
-              </thead>
-              <tbody>
-                {shownSuppliers.map((s) => (
-                  <tr key={s.key} className="data-table__row--clickable" onClick={() => setOpenSupplier(s)}>
-                    <td><strong>{s.name}</strong></td>
-                    <td>{s.phone || '—'}</td>
-                    <td style={{ textAlign: 'right' }}>{s.count}</td>
-                    <td style={{ textAlign: 'right' }}>{formatMoney(s.total)}</td>
-                    <td>{formatDate(s.lastDate)}</td>
-                    <td style={{ textAlign: 'right' }}>{s.ledger ? formatMoney(s.ledger.qaliq_borc) : '—'}</td>
-                    <td style={{ textAlign: 'right' }}>{s.ledger ? formatMoney(s.ledger.qaliq_nisye) : '—'}</td>
-                  </tr>
-                ))}
-                {!shownSuppliers.length && (
-                  <tr>
-                    <td colSpan={7} className="empty-state">Təchizatçı tapılmadı.</td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
+          <ResizableDataTable
+            columns={supCols}
+            rows={shownSuppliers}
+            formatCell={formatKontaktCell}
+            onReorderColumns={reorderSupCols}
+            onResizeColumn={resizeSupCols}
+            onRowOpen={(row) => setOpenSupplier(row)}
+            emptyText="Təchizatçı tapılmadı."
+            prefsKey="kontaktlar_techizatci"
+          />
         )}
       </div>
 
       {openCustomer && (
         <Modal
           title={openCustomer.ad_soyad}
-          subtitle={[openCustomer.phones.join(', '), openCustomer.zamin ? `Zamin: ${openCustomer.zamin}` : '']
+          subtitle={[openCustomer.telefon, openCustomer.zamin ? `Zamin: ${openCustomer.zamin}` : '']
             .filter(Boolean)
             .join(' · ')}
-          onClose={() => setOpenCustomer(null)}
+          onClose={() => setOpenCustomerId(null)}
+          actions={
+            editing ? (
+              <>
+                <button type="button" className="btn btn--primary" disabled={saving} onClick={saveEdit}>
+                  {saving ? 'Saxlanılır…' : 'Yadda saxla'}
+                </button>
+                <button type="button" className="btn btn--secondary" disabled={saving} onClick={() => setEditing(false)}>
+                  Ləğv et
+                </button>
+              </>
+            ) : (
+              <button type="button" className="btn btn--primary" onClick={startEdit}>
+                Redaktə
+              </button>
+            )
+          }
         >
-          <SummaryRow
-            items={[
-              { label: 'Alış sayı', value: openCustomer.saleCount, meta: true },
-              { label: 'Satış cəmi', value: formatMoney(openCustomer.satis) },
-              { label: 'Verilib', value: formatMoney(openCustomer.verilib) },
-              { label: 'Qalan borc', value: formatMoney(openCustomer.qalan) },
-            ]}
-          />
-          <h3 className="card__title">Alışları (Müştəri Bazası)</h3>
-          <div className="table-wrap">
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>№</th>
-                  <th>Model</th>
-                  <th>Verilmə tarixi</th>
-                  <th style={{ textAlign: 'right' }}>Satış</th>
-                  <th style={{ textAlign: 'right' }}>Verilib</th>
-                  <th style={{ textAlign: 'right' }}>Qalan</th>
-                  <th>Vəziyyət</th>
-                </tr>
-              </thead>
-              <tbody>
-                {openCustomer.sales.map((s) => (
-                  <tr key={s.id}>
-                    <td>
-                      <Link to={`/musteri-bazasi?open=${s.id}`}>{s.sira_no ?? '—'}</Link>
-                    </td>
-                    <td>{s.model || '—'}</td>
-                    <td>{formatDate(s.verilme_tarixi)}</td>
-                    <td style={{ textAlign: 'right' }}>{formatMoney(s.satis_qiymeti)}</td>
-                    <td style={{ textAlign: 'right' }}>{formatMoney(s.verilib)}</td>
-                    <td style={{ textAlign: 'right' }}>{formatMoney(s.qalan_borc)}</td>
-                    <td>{s.veziyyet || '—'}</td>
-                  </tr>
+          {modalError && <p style={{ color: 'var(--color-accent)' }}>{modalError}</p>}
+
+          <CollapsibleSummary title="Əsas məlumat" storageKey="kontakt-card:info" defaultOpen>
+            {editing ? (
+              <div className="form-row">
+                {EDIT_FIELDS.map((f) => (
+                  <div key={f.key} className="form-group">
+                    <label>{f.label}</label>
+                    <input
+                      value={editForm[f.key] ?? ''}
+                      onChange={(e) => setEditForm((prev) => ({ ...prev, [f.key]: e.target.value }))}
+                    />
+                  </div>
                 ))}
-                {!openCustomer.sales.length && (
+              </div>
+            ) : (
+              <SummaryRow
+                items={[
+                  ...EDIT_FIELDS.filter((f) => openCustomer[f.key]).map((f) => ({
+                    label: f.label,
+                    value: openCustomer[f.key],
+                    meta: true,
+                  })),
+                  { label: 'Alış sayı', value: openCustomer.saleCount, meta: true },
+                  { label: 'Satış cəmi', value: formatMoney(openCustomer.satis) },
+                  { label: 'Verilib', value: formatMoney(openCustomer.verilib) },
+                  { label: 'Qalan borc', value: formatMoney(openCustomer.qalan) },
+                ]}
+              />
+            )}
+          </CollapsibleSummary>
+
+          <CollapsibleSummary title="Şəxsiyyət vəsiqəsi" storageKey="kontakt-card:id" defaultOpen>
+            {openCustomer.hasSenedColumn ? (
+              <SenedlerField
+                folder="musteriler"
+                recordId={openCustomer.id}
+                value={openCustomer.senedler}
+                onChange={saveIdFiles}
+                label="Şəxsiyyət vəsiqəsi / sənədlər"
+              />
+            ) : (
+              <p className="empty-state" style={{ margin: 0 }}>
+                Şəxsiyyət vəsiqəsi yükləmək üçün bazada müştərilər cədvəlinə sənəd sütunu əlavə olunmalıdır.
+              </p>
+            )}
+          </CollapsibleSummary>
+
+          <CollapsibleSummary
+            title={`Müqavilələr (${openCustomer.contracts.length})`}
+            storageKey="kontakt-card:contracts"
+            defaultOpen
+          >
+            {openCustomer.contracts.length === 0 ? (
+              <p className="empty-state" style={{ margin: 0 }}>
+                Hələ müqavilə yoxdur. Müştəri Bazasında bu müştərinin satışına sənəd əlavə edəndə burada avtomatik görünəcək.
+              </p>
+            ) : (
+              <div style={{ display: 'grid', gap: 10 }}>
+                {openCustomer.contracts.map((c, idx) => (
+                  <div key={c.sale.id} className="musteri-summary__card" style={{ minWidth: 0 }}>
+                    <div className="musteri-summary__label">
+                      Müqavilə {idx + 1} · Satış №{' '}
+                      <Link to={`/musteri-bazasi?open=${c.sale.id}`}>{c.sale.sira_no ?? '—'}</Link>
+                      {c.sale.model ? ` · ${c.sale.model}` : ''}
+                      {c.sale.verilme_tarixi ? ` · ${formatDate(c.sale.verilme_tarixi)}` : ''}
+                    </div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 6 }}>
+                      {c.files.map((f) => (
+                        <a key={f.path} href={senedlerPublicUrl(f.path)} target="_blank" rel="noopener noreferrer">
+                          {f.name || 'fayl'}
+                        </a>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CollapsibleSummary>
+
+          <CollapsibleSummary title="Alışları (Müştəri Bazası)" storageKey="kontakt-card:sales" defaultOpen>
+            <div className="table-wrap">
+              <table className="data-table">
+                <thead>
                   <tr>
-                    <td colSpan={7} className="empty-state">Bu müştəriyə bağlı satış yoxdur.</td>
+                    <th>№</th>
+                    <th>Model</th>
+                    <th>Verilmə tarixi</th>
+                    <th style={{ textAlign: 'right' }}>Satış</th>
+                    <th style={{ textAlign: 'right' }}>Verilib</th>
+                    <th style={{ textAlign: 'right' }}>Qalan</th>
+                    <th>Vəziyyət</th>
                   </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-          {openCustomer.ledger && (
-            <p style={{ marginTop: 12 }}>
-              Borc / Nisyə: qalıq borc <strong>{formatMoney(openCustomer.ledger.qaliq_borc)}</strong>, qalıq nisyə{' '}
-              <strong>{formatMoney(openCustomer.ledger.qaliq_nisye)}</strong> ·{' '}
-              <Link to={counterpartPath(openCustomer.ad_soyad)}>Borc / Nisyə səhifəsini aç</Link>
-            </p>
-          )}
+                </thead>
+                <tbody>
+                  {openCustomer.sales.map((s) => (
+                    <tr key={s.id}>
+                      <td>
+                        <Link to={`/musteri-bazasi?open=${s.id}`}>{s.sira_no ?? '—'}</Link>
+                      </td>
+                      <td>{s.model || '—'}</td>
+                      <td>{formatDate(s.verilme_tarixi)}</td>
+                      <td style={{ textAlign: 'right' }}>{formatMoney(s.satis_qiymeti)}</td>
+                      <td style={{ textAlign: 'right' }}>{formatMoney(s.verilib)}</td>
+                      <td style={{ textAlign: 'right' }}>{formatMoney(s.qalan_borc)}</td>
+                      <td>{s.veziyyet || '—'}</td>
+                    </tr>
+                  ))}
+                  {!openCustomer.sales.length && (
+                    <tr>
+                      <td colSpan={7} className="empty-state">Bu müştəriyə bağlı satış yoxdur.</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+            {openCustomer.ledger && (
+              <p style={{ marginTop: 12 }}>
+                Borc / Nisyə: qalıq borc <strong>{formatMoney(openCustomer.ledger.qaliq_borc)}</strong>, qalıq nisyə{' '}
+                <strong>{formatMoney(openCustomer.ledger.qaliq_nisye)}</strong> ·{' '}
+                <Link to={counterpartPath(openCustomer.ad_soyad)}>Borc / Nisyə səhifəsini aç</Link>
+              </p>
+            )}
+          </CollapsibleSummary>
         </Modal>
       )}
 
