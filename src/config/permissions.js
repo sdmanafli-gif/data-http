@@ -245,6 +245,16 @@ export const APP_MODULES = [
     filterFields: filterFieldsFromColumns(MUSTERI_COLUMNS),
     summaryCards: SUMMARY_CARDS_BY_MODULE.mehkeme,
   },
+  {
+    // Şəxsi məlumatlar (FİN, vəsiqə faylları) — admin açıq icazə verməyənə qədər bağlıdır
+    id: 'kontaktlar',
+    path: '/kontaktlar',
+    label: 'Kontaktlar',
+    columns: [],
+    filterFields: [],
+    summaryCards: [],
+    defaultHidden: true,
+  },
 ]
 
 const MODULE_BY_ID = Object.fromEntries(APP_MODULES.map((m) => [m.id, m]))
@@ -259,6 +269,10 @@ export function defaultTabPerm() {
   }
 }
 
+function hiddenTabPerm() {
+  return { visible: false, canView: false, canCreate: false, canEdit: false, canDelete: false }
+}
+
 /** Full access — used for admins and new unrestricted invites. */
 export function fullPermissions() {
   const tabs = {}
@@ -266,7 +280,8 @@ export function fullPermissions() {
   const summaryCards = {}
   const valueFilters = {}
   for (const mod of APP_MODULES) {
-    tabs[mod.id] = defaultTabPerm()
+    // defaultHidden (Kontaktlar): admin icazə verməyənə qədər bağlı
+    tabs[mod.id] = mod.defaultHidden ? hiddenTabPerm() : defaultTabPerm()
     columns[mod.id] = null
     summaryCards[mod.id] = null
     valueFilters[mod.id] = {}
