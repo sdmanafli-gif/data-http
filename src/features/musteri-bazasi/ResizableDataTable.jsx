@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { moveItem, TABLE_ZOOM_MAX, TABLE_ZOOM_MIN, TABLE_ZOOM_STEP } from './columnOrder'
 import {
@@ -13,6 +13,9 @@ import { formatCell as defaultFormatCell, getRowValue as defaultGetRowValue, mon
 import { rowPassesFilters, sortRows, HeaderColumnFilter } from './ColumnFilter'
 import { confirmDelete } from '../../lib/confirmDelete'
 import './musteri-table.css'
+
+/** autoHeight cədvəllərdə çərçivədə eyni anda görünən maksimum sətir sayı */
+const MAX_VISIBLE_ROWS = 50
 
 /**
  * Shared data table — single compact header with in-header filters (funnel).
@@ -48,6 +51,9 @@ export default function ResizableDataTable({
   const [internalFilters, setInternalFilters] = useState(() => loadTableFilters(prefsKey))
   const [sort, setSort] = useState(() => loadTableSort(prefsKey))
   const resizing = useRef(null)
+  // autoHeight: çərçivə ən çox MAX_VISIBLE_ROWS sətir qədər uzanır, qalanı içində sürüşür
+  const shellRef = useRef(null)
+  const [capHeight, setCapHeight] = useState(null)
   const showActions = typeof renderActions === 'function'
   const filters = controlled ? filtersProp || {} : internalFilters
 
@@ -96,6 +102,26 @@ export default function ResizableDataTable({
     )
     return sortRows(filtered, sort, columns, getRowValue)
   }, [rows, filters, sort, columns, getRowValue])
+
+  useLayoutEffect(() => {
+    if (!autoHeight) {
+      setCapHeight(null)
+      return
+    }
+    const shell = shellRef.current
+    if (!shell) return
+    const bodyRows = shell.querySelectorAll(':scope tbody > tr')
+    if (bodyRows.length <= MAX_VISIBLE_ROWS) {
+      setCapHeight(null)
+      return
+    }
+    const shellTop = shell.getBoundingClientRect().top
+    const lastVisible = bodyRows[MAX_VISIBLE_ROWS - 1].getBoundingClientRect().bottom
+    const foot = shell.querySelector('tfoot')
+    const footH = foot ? foot.getBoundingClientRect().height : 0
+    const next = Math.ceil(lastVisible - shellTop + shell.scrollTop + footH + 2)
+    setCapHeight((prev) => (prev && Math.abs(prev - next) < 2 ? prev : next))
+  }, [autoHeight, displayRows.length, zoom, columns])
 
   const onDisplayRowsChangeRef = useRef(onDisplayRowsChange)
   onDisplayRowsChangeRef.current = onDisplayRowsChange
@@ -287,7 +313,11 @@ export default function ResizableDataTable({
         </span>
       </div>
 
-      <div className={`musteri-table-shell${autoHeight ? ' musteri-table-shell--auto' : ''}`}>
+      <div
+        ref={shellRef}
+        className={`musteri-table-shell${autoHeight && !capHeight ? ' musteri-table-shell--auto' : ''}`}
+        style={capHeight ? { maxHeight: capHeight } : undefined}
+      >
         <div style={{ zoom, transformOrigin: 'top left' }}>
           <table className="data-table data-table--friendly data-table--band">
             <thead>

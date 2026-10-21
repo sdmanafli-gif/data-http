@@ -10,6 +10,7 @@ export const navSections = [
       { path: '/depo', label: 'Depo' },
       { path: '/musteri-bazasi', label: 'Müştəri Bazası' },
       { path: '/nagd-satish', label: 'Nağd satış' },
+      { path: '/kontaktlar', label: 'Kontaktlar' },
     ],
   },
   {
