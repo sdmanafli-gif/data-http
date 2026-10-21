@@ -16,8 +16,13 @@ export const MEHKEME_NATIVE_KEYS = [
   'rusum_odenilib',
   'mehkeme_status',
   'huquqa_verilme_tarixi',
+  'mehkemeye_verilme_tarixi',
+  'iddia_temin_tarixi',
   'mehkeme_qeyd',
 ]
+
+/** Avtomatik yazılan Məhkəmə tarixləri — əl ilə yalnız admin dəyişə bilər */
+export const MEHKEME_DATE_KEYS = ['huquqa_verilme_tarixi', 'mehkemeye_verilme_tarixi', 'iddia_temin_tarixi']
 
 /** Fields with select-or-type suggestions from existing DB values */
 export const SUGGEST_FIELDS = new Set(['model', 'reng', 'yaddas', 'satici'])
@@ -100,6 +105,9 @@ export const DEFAULT_COLUMNS = [
   { key: 'mehkeme_status', label: 'Məhkəmə statusu', type: 'select', visible: false, formVisible: false, readonly: false, system: true, group: 'mehkeme', options: MEHKEME_STATUS_OPTIONS },
   // Müştəri Məhkəmə vəziyyətinə düşəndə bazada avtomatik yazılır (trigger); Məhkəmə cədvəlində əl ilə də dəyişmək olur
   { key: 'huquqa_verilme_tarixi', label: 'Hüquqa Verildi', type: 'date', visible: false, formVisible: false, readonly: false, system: true, group: 'mehkeme' },
+  // Status "Məhkəmə Verildi" / "İddia Təmin edildi" seçiləndə bazada avtomatik yazılır
+  { key: 'mehkemeye_verilme_tarixi', label: 'Məhkəməyə Verildi', type: 'date', visible: false, formVisible: false, readonly: false, system: true, group: 'mehkeme' },
+  { key: 'iddia_temin_tarixi', label: 'İddia Təmin edildi', type: 'date', visible: false, formVisible: false, readonly: false, system: true, group: 'mehkeme' },
   { key: 'mehkeme_qeyd', label: 'Məhkəmə komment', type: 'text', visible: false, formVisible: false, readonly: false, system: true, group: 'mehkeme' },
 ]
 
@@ -166,7 +174,15 @@ export const MUSTERI_VIEW_SECTIONS = [
     id: 'mehkeme',
     title: 'Məhkəmə',
     defaultOpen: false,
-    keys: ['mehkeme_isare', 'rusum_odenilib', 'mehkeme_status', 'huquqa_verilme_tarixi', 'mehkeme_qeyd'],
+    keys: [
+      'mehkeme_isare',
+      'rusum_odenilib',
+      'mehkeme_status',
+      'huquqa_verilme_tarixi',
+      'mehkemeye_verilme_tarixi',
+      'iddia_temin_tarixi',
+      'mehkeme_qeyd',
+    ],
   },
 ]
 
@@ -310,7 +326,7 @@ export function buildMehkemeDefaultColumns(musteriColumns = DEFAULT_COLUMNS) {
                 ? 130
                 : c.key === 'mehkeme_status'
                   ? 160
-                  : c.key === 'huquqa_verilme_tarixi'
+                  : MEHKEME_DATE_KEYS.includes(c.key)
                     ? 140
                   : c.key === 'mehkeme_qeyd'
                     ? 200
@@ -424,6 +440,19 @@ export function mergeMehkemeColumnConfig(saved, musteriColumns = DEFAULT_COLUMNS
         })
       }
     })
+  }
+
+  // Saxlanmış düzülüşdə olmayan yeni Məhkəmə sütunlarını əvvəlki Məhkəmə sütununun yanına qoy
+  if (Array.isArray(saved)) {
+    const savedKeys = new Set(saved.map((c) => c?.key))
+    for (let k = 1; k < MEHKEME_NATIVE_KEYS.length; k++) {
+      const key = MEHKEME_NATIVE_KEYS[k]
+      if (savedKeys.has(key) || !byKey.has(key)) continue
+      const prev = byKey.get(MEHKEME_NATIVE_KEYS[k - 1])
+      if (prev && typeof prev.order === 'number') {
+        byKey.set(key, { ...byKey.get(key), order: prev.order + 0.001 })
+      }
+    }
   }
 
   return Array.from(byKey.values()).sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
