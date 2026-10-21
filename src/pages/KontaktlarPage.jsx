@@ -14,12 +14,7 @@ import {
 } from '../lib/uiPrefs'
 import ResizableDataTable from '../features/musteri-bazasi/ResizableDataTable'
 import { applyKeyOrder } from '../features/musteri-bazasi/columnOrder'
-import {
-  parseSenedler,
-  senedlerPublicUrl,
-  uploadSenedlerFiles,
-  removeSenedlerFile,
-} from '../lib/senedler'
+import { parseSenedler, senedlerPublicUrl, SENEDLER_BUCKET } from '../lib/senedler'
 import { confirmDelete } from '../lib/confirmDelete'
 import '../features/musteri-bazasi/musteri-table.css'
 import '../styles/shared.css'
@@ -154,6 +149,46 @@ const ID_FIELDS = [
 
 const ID_FILE_SLOTS = [1, 2, 3]
 
+// Vəsiqə faylları ayrıca MƏXFİ yaddaşda saxlanılır (açıq link yoxdur).
+// Faylı yalnız sayta daxil olmuş və Kontaktlar icazəsi olan istifadəçi aça bilər —
+// açanda 60 saniyəlik müvəqqəti link yaradılır.
+const ID_BUCKET = 'mobideal-sexsi'
+
+function safeName(name) {
+  return String(name || 'file').replace(/[^a-zA-Z0-9._-]/g, '_')
+}
+
+async function uploadIdFile(customerId, file) {
+  const path = `musteriler/${customerId}/${Date.now()}_${safeName(file.name)}`
+  const { error } = await supabase.storage.from(ID_BUCKET).upload(path, file, {
+    upsert: false,
+    contentType: file.type || undefined,
+  })
+  if (error) return { file: null, error: `Fayl yüklənmədi: ${error.message}` }
+  return { file: { name: file.name, path, size: file.size || null, bucket: ID_BUCKET }, error: null }
+}
+
+async function removeIdFile(f) {
+  if (!f?.path) return null
+  const bucket = f.bucket || SENEDLER_BUCKET
+  const { error } = await supabase.storage.from(bucket).remove([f.path])
+  return error?.message || null
+}
+
+async function openIdFile(f) {
+  // pəncərəni dərhal aç (brauzer bloklamasın), linki sonra ver
+  const win = window.open('', '_blank')
+  const bucket = f.bucket || SENEDLER_BUCKET
+  const { data, error } = await supabase.storage.from(bucket).createSignedUrl(f.path, 60)
+  if (error || !data?.signedUrl) {
+    win?.close()
+    return error?.message || 'Fayl açılmadı'
+  }
+  if (win) win.location.href = data.signedUrl
+  else window.location.href = data.signedUrl
+  return null
+}
+
 const EDIT_FIELDS = [{ key: 'ad_soyad', label: 'Ad Soyad Ata adı' }, ...CONTACT_FIELDS, ...ID_FIELDS]
 
 /** Faylları 1–3 yerə paylayır (yeri olmayan köhnə faylları ilk boş yerə qoyur) */
@@ -183,14 +218,14 @@ function IdFileSlot({ slot, files, customerId, enabled, onChange }) {
     if (!picked.length) return
     setBusy(true)
     setErr(null)
-    const { files: up, error } = await uploadSenedlerFiles('musteriler', customerId, picked)
+    const { file: up, error } = await uploadIdFile(customerId, picked[0])
     setBusy(false)
     if (error) setErr(error)
-    if (up.length) {
+    if (up) {
       const rest = files.filter((f) => Number(f.slot) !== slot)
-      const ok = await onChange([...rest, { ...up[0], slot }])
+      const ok = await onChange([...rest, { ...up, slot }])
       // köhnə fayl əvəzlənibsə, yaddaşdan da sil
-      if (ok && file) await removeSenedlerFile(file.path)
+      if (ok && file) await removeIdFile(file)
     }
   }
 
@@ -200,7 +235,7 @@ function IdFileSlot({ slot, files, customerId, enabled, onChange }) {
     setErr(null)
     const ok = await onChange(files.filter((f) => f !== file))
     if (ok) {
-      const e2 = await removeSenedlerFile(file.path)
+      const e2 = await removeIdFile(file)
       if (e2) setErr(e2)
     }
     setBusy(false)
@@ -212,14 +247,22 @@ function IdFileSlot({ slot, files, customerId, enabled, onChange }) {
       <dd>
         {file ? (
           <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-            <a href={senedlerPublicUrl(file.path)} target="_blank" rel="noopener noreferrer" style={{ wordBreak: 'break-all' }}>
+            <a
+              href="#"
+              style={{ wordBreak: 'break-all' }}
+              onClick={async (e) => {
+                e.preventDefault()
+                const e3 = await openIdFile(file)
+                if (e3) setErr(e3)
+              }}
+            >
               {file.name || 'fayl'}
             </a>
             <button
               type="button"
               className="btn btn--secondary"
               style={{ padding: '2px 8px', fontSize: 12 }}
-              disabled={busy}
+              disabled={busy || !enabled}
               onClick={onRemove}
             >
               Sil
@@ -344,7 +387,9 @@ function SummaryRow({ items }) {
 }
 
 export default function KontaktlarPage() {
-  const { isAdmin } = useAuth()
+  const { access } = useAuth()
+  const canView = access.canAccessModule('kontaktlar')
+  const canEditCard = canView && access.canEdit('kontaktlar')
   const [saved] = useState(() => loadPageFilters('kontaktlar', {}) || {})
   const [tab, setTab] = useState(saved.tab === 'techizatci' ? 'techizatci' : 'musteri')
   const [search, setSearch] = useState(saved.search || '')
@@ -366,7 +411,7 @@ export default function KontaktlarPage() {
   }, [tab, search, onlyDebt])
 
   useEffect(() => {
-    if (!isAdmin) return
+    if (!canView) return
     let cancelled = false
     ;(async () => {
       setLoading(true)
@@ -415,7 +460,7 @@ export default function KontaktlarPage() {
     return () => {
       cancelled = true
     }
-  }, [isAdmin])
+  }, [canView])
 
   // Borc / Nisyə qalıqları ada görə
   const ledgerByName = useMemo(() => {
@@ -592,7 +637,7 @@ export default function KontaktlarPage() {
     return true
   }
 
-  if (!isAdmin) return <Navigate to="/" replace />
+  if (!canView) return <Navigate to="/" replace />
 
   const custTotals = {
     count: shownCustomers.length,
@@ -725,11 +770,11 @@ export default function KontaktlarPage() {
                   Ləğv et
                 </button>
               </>
-            ) : (
+            ) : canEditCard ? (
               <button type="button" className="btn btn--primary" onClick={startEdit}>
                 Redaktə
               </button>
-            )
+            ) : null
           }
         >
           {modalError && <p style={{ color: 'var(--color-accent)' }}>{modalError}</p>}
@@ -819,7 +864,7 @@ export default function KontaktlarPage() {
                     slot={slot}
                     files={idFilesWithSlots(openCustomer.senedler)}
                     customerId={openCustomer.id}
-                    enabled={openCustomer.hasSenedColumn}
+                    enabled={openCustomer.hasSenedColumn && canEditCard}
                     onChange={saveIdFiles}
                   />
                 ))}
