@@ -69,7 +69,15 @@ function AppRoutes() {
         <Route path="/admin/invite" element={<InviteUser />} />
         <Route path="/admin/users" element={<UserList />} />
         <Route path="/admin/kassa" element={<KassaDesk />} />
-        <Route path="/admin/kontaktlar" element={<KontaktlarPage />} />
+        <Route path="/admin/kontaktlar" element={<Navigate to="/kontaktlar" replace />} />
+        <Route
+          path="/kontaktlar"
+          element={
+            <RequireAccess>
+              <KontaktlarPage />
+            </RequireAccess>
+          }
+        />
         <Route path="/hesab/tehlukesizlik" element={<MfaEnroll forced={false} />} />
         <Route
           path="/musteri-bazasi/*"
