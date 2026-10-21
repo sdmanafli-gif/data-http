@@ -38,6 +38,7 @@ export const FIELD_LABELS = {
   mehkeme_isare: 'Məhkəmə işarə',
   rusum_odenilib: 'Rüsüm ödənilib',
   mehkeme_status: 'Məhkəmə statusu',
+  huquqa_verilme_tarixi: 'Hüquqa Verildi',
   mehkeme_qeyd: 'Məhkəmə komment',
   status: 'Status',
   nov: 'Növ',
