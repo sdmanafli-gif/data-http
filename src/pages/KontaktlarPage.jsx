@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useId, useMemo, useState } from 'react'
 import { Link, Navigate } from 'react-router-dom'
 import { supabase, fetchAllPages } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
@@ -14,8 +14,13 @@ import {
 } from '../lib/uiPrefs'
 import ResizableDataTable from '../features/musteri-bazasi/ResizableDataTable'
 import { applyKeyOrder } from '../features/musteri-bazasi/columnOrder'
-import SenedlerField from '../components/SenedlerField'
-import { parseSenedler, senedlerPublicUrl } from '../lib/senedler'
+import {
+  parseSenedler,
+  senedlerPublicUrl,
+  uploadSenedlerFiles,
+  removeSenedlerFile,
+} from '../lib/senedler'
+import { confirmDelete } from '../lib/confirmDelete'
 import '../features/musteri-bazasi/musteri-table.css'
 import '../styles/shared.css'
 import '../components/record-module.css'
@@ -136,7 +141,121 @@ const CONTACT_FIELDS = [
   { key: 'zamin_nomre', label: 'Zamin Nöm' },
 ]
 
-const EDIT_FIELDS = [{ key: 'ad_soyad', label: 'Ad Soyad Ata adı' }, ...CONTACT_FIELDS]
+// Şəxsiyyət vəsiqəsi məlumatları (bazada yeni sütunlar; yoxdursa sahə bağlı qalır)
+const ID_FIELDS = [
+  { key: 'sv_seriya', label: 'Seriya Nömrəsi' },
+  { key: 'fin_kod', label: 'FİN kodu' },
+  { key: 'dogum_tarixi', label: 'Doğum Tarixi', type: 'date' },
+  { key: 'qeydiyyat_unvani', label: 'Qeydiyyat Ünvanı' },
+  { key: 'yasayis_unvani', label: 'Yaşayış Ünvanı' },
+  { key: 'sv_verilme_tarixi', label: 'Ş/V Verilmə Tarixi', type: 'date' },
+  { key: 'sv_bitme_tarixi', label: 'Ş/V Bitmə Tarixi', type: 'date' },
+]
+
+const ID_FILE_SLOTS = [1, 2, 3]
+
+const EDIT_FIELDS = [{ key: 'ad_soyad', label: 'Ad Soyad Ata adı' }, ...CONTACT_FIELDS, ...ID_FIELDS]
+
+/** Faylları 1–3 yerə paylayır (yeri olmayan köhnə faylları ilk boş yerə qoyur) */
+function idFilesWithSlots(value) {
+  const list = parseSenedler(value).map((f) => ({ ...f }))
+  const used = new Set(list.map((f) => Number(f.slot)).filter((n) => ID_FILE_SLOTS.includes(n)))
+  for (const f of list) {
+    if (ID_FILE_SLOTS.includes(Number(f.slot))) continue
+    const free = ID_FILE_SLOTS.find((n) => !used.has(n))
+    if (free === undefined) break
+    f.slot = free
+    used.add(free)
+  }
+  return list
+}
+
+/** Bir fayl yeri: boşdursa "Fayl əlavə et" (kompüterdən seç), doludursa fayl linki + Sil */
+function IdFileSlot({ slot, files, customerId, enabled, onChange }) {
+  const inputId = useId()
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState(null)
+  const file = files.find((f) => Number(f.slot) === slot) || null
+
+  async function onPick(e) {
+    const picked = Array.from(e.target.files || []).slice(0, 1)
+    e.target.value = ''
+    if (!picked.length) return
+    setBusy(true)
+    setErr(null)
+    const { files: up, error } = await uploadSenedlerFiles('musteriler', customerId, picked)
+    setBusy(false)
+    if (error) setErr(error)
+    if (up.length) {
+      const rest = files.filter((f) => Number(f.slot) !== slot)
+      const ok = await onChange([...rest, { ...up[0], slot }])
+      // köhnə fayl əvəzlənibsə, yaddaşdan da sil
+      if (ok && file) await removeSenedlerFile(file.path)
+    }
+  }
+
+  async function onRemove() {
+    if (!file || !confirmDelete(`«${file.name}» silinsin?`)) return
+    setBusy(true)
+    setErr(null)
+    const ok = await onChange(files.filter((f) => f !== file))
+    if (ok) {
+      const e2 = await removeSenedlerFile(file.path)
+      if (e2) setErr(e2)
+    }
+    setBusy(false)
+  }
+
+  return (
+    <div className="record-module__field">
+      <dt>Fayl {slot}</dt>
+      <dd>
+        {file ? (
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+            <a href={senedlerPublicUrl(file.path)} target="_blank" rel="noopener noreferrer" style={{ wordBreak: 'break-all' }}>
+              {file.name || 'fayl'}
+            </a>
+            <button
+              type="button"
+              className="btn btn--secondary"
+              style={{ padding: '2px 8px', fontSize: 12 }}
+              disabled={busy}
+              onClick={onRemove}
+            >
+              Sil
+            </button>
+          </div>
+        ) : (
+          <span style={{ color: 'var(--color-text-muted)' }}>Fayl yoxdur</span>
+        )}
+        <div style={{ marginTop: 8 }}>
+          <input
+            id={inputId}
+            type="file"
+            accept="image/*,application/pdf"
+            style={{ display: 'none' }}
+            disabled={!enabled || busy}
+            onChange={onPick}
+          />
+          <label
+            htmlFor={inputId}
+            className="btn btn--secondary"
+            style={{
+              padding: '4px 10px',
+              fontSize: 13,
+              opacity: enabled && !busy ? 1 : 0.5,
+              cursor: enabled && !busy ? 'pointer' : 'not-allowed',
+            }}
+            title={enabled ? 'Kompüterdən fayl seç' : 'Bazada sənəd sütunu hələ yoxdur'}
+          >
+            {busy ? 'Yüklənir…' : file ? 'Dəyiş' : 'Fayl əlavə et'}
+          </label>
+        </div>
+        {err && <div style={{ color: 'var(--color-accent)', fontSize: 12, marginTop: 4 }}>{err}</div>}
+      </dd>
+    </div>
+  )
+}
 
 function hasCol(row, key) {
   return Boolean(row) && Object.prototype.hasOwnProperty.call(row, key)
@@ -467,9 +586,10 @@ export default function KontaktlarPage() {
       .eq('id', openCustomer.id)
     if (e) {
       setModalError(e.message)
-      return
+      return false
     }
     patchCustomer(openCustomer.id, { senedler: next })
+    return true
   }
 
   if (!isAdmin) return <Navigate to="/" replace />
@@ -665,17 +785,48 @@ export default function KontaktlarPage() {
 
           <div className="record-module__sections">
             <CardDetails title="Şəxsiyyət vəsiqəsi" defaultOpen>
-              {openCustomer.hasSenedColumn ? (
-                <SenedlerField
-                  folder="musteriler"
-                  recordId={openCustomer.id}
-                  value={openCustomer.senedler}
-                  onChange={saveIdFiles}
-                  label="Şəxsiyyət vəsiqəsi / sənədlər"
-                />
-              ) : (
-                <p className="empty-state" style={{ margin: 0 }}>
-                  Şəxsiyyət vəsiqəsi yükləmək üçün bazada müştərilər cədvəlinə sənəd sütunu əlavə olunmalıdır.
+              <FieldGrid
+                items={ID_FIELDS.map((f) => {
+                  const exists = hasCol(openCustomer, f.key)
+                  const raw = openCustomer[f.key]
+                  return {
+                    key: f.key,
+                    label: f.label,
+                    value: editing ? (
+                      <input
+                        type={f.type === 'date' ? 'date' : 'text'}
+                        style={fieldInputStyle}
+                        value={editForm[f.key] ?? ''}
+                        disabled={!exists}
+                        placeholder={exists ? '' : 'Bazada sütun hələ yoxdur'}
+                        onChange={(e) => setEditForm((prev) => ({ ...prev, [f.key]: e.target.value }))}
+                      />
+                    ) : f.type === 'date' && raw ? (
+                      formatDate(raw)
+                    ) : (
+                      raw
+                    ),
+                  }
+                })}
+              />
+              <h3 className="record-module__section-title" style={{ marginTop: 16 }}>
+                Şəxsiyyət vəsiqəsi faylları
+              </h3>
+              <dl className="record-module__grid">
+                {ID_FILE_SLOTS.map((slot) => (
+                  <IdFileSlot
+                    key={slot}
+                    slot={slot}
+                    files={idFilesWithSlots(openCustomer.senedler)}
+                    customerId={openCustomer.id}
+                    enabled={openCustomer.hasSenedColumn}
+                    onChange={saveIdFiles}
+                  />
+                ))}
+              </dl>
+              {!openCustomer.hasSenedColumn && (
+                <p className="empty-state" style={{ margin: '8px 0 0' }}>
+                  Fayl yükləmək üçün bazada müştərilər cədvəlinə sənəd sütunu əlavə olunmalıdır.
                 </p>
               )}
             </CardDetails>
