@@ -10,6 +10,7 @@ import { applyKeyOrder } from './columnOrder'
 import {
   MUSTERI_TABLE,
   MEHKEME_STATUS_OPTIONS,
+  MEHKEME_DATE_KEYS,
   MEHKEME_COLUMN_SETTINGS_KEY,
   formatCell,
   getRowValue,
@@ -36,7 +37,7 @@ function parseAmount(raw) {
  */
 export default function MehkemeList() {
   const navigate = useNavigate()
-  const { access } = useAuth()
+  const { access, isAdmin } = useAuth()
   const { columns, loading: colsLoading, saveColumns } = useColumnConfig({
     tableKey: MEHKEME_COLUMN_SETTINGS_KEY,
   })
@@ -146,13 +147,17 @@ export default function MehkemeList() {
     setSavingId(id)
     setError(null)
     try {
-      const { error: err } = await supabase
+      const { data: saved, error: err } = await supabase
         .from(MUSTERI_TABLE)
         .update({ ...patch, updated_at: new Date().toISOString() })
         .eq('id', id)
+        .select('*')
+        .maybeSingle()
       if (err) throw err
-      setItems((prev) => prev.map((r) => (r.id === id ? { ...r, ...patch } : r)))
-      if (openRow?.id === id) setOpenRow((r) => (r ? { ...r, ...patch } : r))
+      // Baza statusa görə tarixləri özü yazır — qaytarılan sətri götür
+      const merged = saved ? { ...patch, ...saved } : patch
+      setItems((prev) => prev.map((r) => (r.id === id ? { ...r, ...merged } : r)))
+      if (openRow?.id === id) setOpenRow((r) => (r ? { ...r, ...merged } : r))
     } catch (err) {
       setError(err.message)
     } finally {
@@ -214,19 +219,21 @@ export default function MehkemeList() {
           </select>
         )
       }
-      if (col.key === 'huquqa_verilme_tarixi') {
+      if (MEHKEME_DATE_KEYS.includes(col.key)) {
+        // Tarixlər status dəyişəndə avtomatik yazılır; əl ilə yalnız admin dəyişə bilər
+        if (!isAdmin) return formatCell(value, col)
         return (
           <input
             type="date"
             disabled={busy}
-            defaultValue={row.huquqa_verilme_tarixi || ''}
-            key={`huquq-${row.id}-${row.huquqa_verilme_tarixi || ''}`}
+            defaultValue={row[col.key] || ''}
+            key={`${col.key}-${row.id}-${row[col.key] || ''}`}
             onClick={(e) => e.stopPropagation()}
             onBlur={(e) => {
               const next = e.target.value || null
-              const prev = row.huquqa_verilme_tarixi || null
+              const prev = row[col.key] || null
               if (next === prev) return
-              patchRow(row.id, { huquqa_verilme_tarixi: next })
+              patchRow(row.id, { [col.key]: next })
             }}
             style={{ width: '100%', minWidth: 120 }}
           />
@@ -253,7 +260,7 @@ export default function MehkemeList() {
       }
       return formatCell(value, col)
     },
-    [savingId]
+    [savingId, isAdmin]
   )
 
   if (error && !items.length && !loading) {
