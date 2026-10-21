@@ -184,10 +184,12 @@ function FieldGrid({ items }) {
 }
 
 function CardSection({ title, children }) {
+  // Əsas Məlumatlar / Əlaqə: açılıb-bağlanan, default açıq
   return (
-    <div className="record-module__always">
-      <h3 className="record-module__section-title">{title}</h3>
-      {children}
+    <div className="record-module__sections">
+      <CardDetails title={title} defaultOpen>
+        {children}
+      </CardDetails>
     </div>
   )
 }
