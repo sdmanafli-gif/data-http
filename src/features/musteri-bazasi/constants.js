@@ -18,6 +18,7 @@ export const MEHKEME_NATIVE_KEYS = [
   'huquqa_verilme_tarixi',
   'mehkemeye_verilme_tarixi',
   'iddia_temin_tarixi',
+  'huquqdan_sonra_odenis',
   'mehkeme_qeyd',
 ]
 
@@ -108,6 +109,8 @@ export const DEFAULT_COLUMNS = [
   // Status "Məhkəmə Verildi" / "İddia Təmin edildi" seçiləndə bazada avtomatik yazılır
   { key: 'mehkemeye_verilme_tarixi', label: 'Məhkəməyə Verildi', type: 'date', visible: false, formVisible: false, readonly: false, system: true, group: 'mehkeme' },
   { key: 'iddia_temin_tarixi', label: 'İddia Təmin edildi', type: 'date', visible: false, formVisible: false, readonly: false, system: true, group: 'mehkeme' },
+  // Hesablanır (bazada saxlanmır): Hüquqa Verildi tarixindən sonra edilən ödənişlərin cəmi
+  { key: 'huquqdan_sonra_odenis', label: 'Hüquqdan S. Ödəniş', type: 'money', visible: false, formVisible: false, readonly: true, system: true, group: 'mehkeme' },
   { key: 'mehkeme_qeyd', label: 'Məhkəmə komment', type: 'text', visible: false, formVisible: false, readonly: false, system: true, group: 'mehkeme' },
 ]
 
@@ -326,7 +329,7 @@ export function buildMehkemeDefaultColumns(musteriColumns = DEFAULT_COLUMNS) {
                 ? 130
                 : c.key === 'mehkeme_status'
                   ? 160
-                  : MEHKEME_DATE_KEYS.includes(c.key)
+                  : MEHKEME_DATE_KEYS.includes(c.key) || c.key === 'huquqdan_sonra_odenis'
                     ? 140
                   : c.key === 'mehkeme_qeyd'
                     ? 200
