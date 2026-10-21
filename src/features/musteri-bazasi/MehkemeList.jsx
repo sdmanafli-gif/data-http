@@ -214,6 +214,24 @@ export default function MehkemeList() {
           </select>
         )
       }
+      if (col.key === 'huquqa_verilme_tarixi') {
+        return (
+          <input
+            type="date"
+            disabled={busy}
+            defaultValue={row.huquqa_verilme_tarixi || ''}
+            key={`huquq-${row.id}-${row.huquqa_verilme_tarixi || ''}`}
+            onClick={(e) => e.stopPropagation()}
+            onBlur={(e) => {
+              const next = e.target.value || null
+              const prev = row.huquqa_verilme_tarixi || null
+              if (next === prev) return
+              patchRow(row.id, { huquqa_verilme_tarixi: next })
+            }}
+            style={{ width: '100%', minWidth: 120 }}
+          />
+        )
+      }
       if (col.key === 'mehkeme_qeyd') {
         return (
           <input
