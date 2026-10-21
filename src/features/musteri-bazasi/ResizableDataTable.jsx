@@ -359,6 +359,9 @@ export default function ResizableDataTable({
                       onKeyDown={
                         onRowOpen
                           ? (e) => {
+                              // Yalnız sətrin özü seçiləndə aç; xanadakı yazı yerində (komment və s.)
+                              // boşluq / Enter yazını pozmasın, kartı açmasın
+                              if (e.target !== e.currentTarget) return
                               if (e.key === 'Enter' || e.key === ' ') {
                                 e.preventDefault()
                                 onRowOpen(row)
