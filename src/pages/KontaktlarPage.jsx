@@ -18,6 +18,7 @@ import SenedlerField from '../components/SenedlerField'
 import { parseSenedler, senedlerPublicUrl } from '../lib/senedler'
 import '../features/musteri-bazasi/musteri-table.css'
 import '../styles/shared.css'
+import '../components/record-module.css'
 
 /**
  * Kontaktlar (test): müştərilər və təchizatçılar bir yerdə.
@@ -142,27 +143,70 @@ function hasCol(row, key) {
 }
 
 function Modal({ title, subtitle, onClose, children, actions = null }) {
+  // Müştəri Bazasındakı kart görünüşü: ağ kart, başlıq + düymələr, içində bölmələr
   return (
     <div className="telefon-modal-overlay musteri-record-overlay" onClick={onClose} role="presentation">
       <div className="telefon-modal musteri-record-modal" onClick={(e) => e.stopPropagation()}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start', marginBottom: 12 }}>
-          <div>
-            <h2 className="card__title" style={{ margin: 0 }}>{title}</h2>
-            {subtitle ? (
-              <p style={{ margin: '4px 0 0', fontSize: 13, color: 'var(--color-text-muted)' }}>{subtitle}</p>
-            ) : null}
+        <div className="card record-module">
+          <div className="record-module__header">
+            <div>
+              <h2 className="card__title" style={{ margin: 0 }}>{title}</h2>
+              {subtitle ? <p className="record-module__subtitle">{subtitle}</p> : null}
+            </div>
+            <div className="record-module__actions">
+              {actions}
+              <button type="button" className="btn btn--secondary" onClick={onClose}>
+                Bağla
+              </button>
+            </div>
           </div>
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            {actions}
-            <button type="button" className="btn btn--secondary" onClick={onClose}>
-              Bağla
-            </button>
-          </div>
+          {children}
         </div>
-        {children}
       </div>
     </div>
   )
+}
+
+/** Kart xanaları: kiçik başlıq + dəyər (redaktədə dəyərin yerində input) */
+function FieldGrid({ items }) {
+  return (
+    <dl className="record-module__grid">
+      {items.map((it) => (
+        <div key={it.key || it.label} className="record-module__field">
+          <dt>{it.label}</dt>
+          <dd style={it.color ? { color: it.color } : undefined}>
+            {it.value === null || it.value === undefined || it.value === '' ? '—' : it.value}
+          </dd>
+        </div>
+      ))}
+    </dl>
+  )
+}
+
+function CardSection({ title, children }) {
+  return (
+    <div className="record-module__always">
+      <h3 className="record-module__section-title">{title}</h3>
+      {children}
+    </div>
+  )
+}
+
+function CardDetails({ title, defaultOpen = false, children }) {
+  return (
+    <details className="collapse-section" open={defaultOpen}>
+      <summary className="collapse-section__title">{title}</summary>
+      <div className="collapse-section__body">{children}</div>
+    </details>
+  )
+}
+
+const fieldInputStyle = { width: '100%', boxSizing: 'border-box' }
+
+function moneyColor(n) {
+  if (n > 0) return '#2e7d32'
+  if (n < 0) return '#c62828'
+  return undefined
 }
 
 function SummaryRow({ items }) {
@@ -541,7 +585,11 @@ export default function KontaktlarPage() {
       {openCustomer && (
         <Modal
           title={openCustomer.ad_soyad}
-          subtitle={[openCustomer.telefon, openCustomer.zamin ? `Zamin: ${openCustomer.zamin}` : '']
+          subtitle={[
+            openCustomer.phones[0] || '',
+            `Alış sayı: ${openCustomer.saleCount}`,
+            openCustomer.zamin ? `Zamin: ${openCustomer.zamin}` : '',
+          ]
             .filter(Boolean)
             .join(' · ')}
           onClose={() => setOpenCustomerId(null)}
@@ -564,150 +612,150 @@ export default function KontaktlarPage() {
         >
           {modalError && <p style={{ color: 'var(--color-accent)' }}>{modalError}</p>}
 
-          <CollapsibleSummary title="Əsas Məlumatlar" storageKey="kontakt-card:info" defaultOpen>
-            {editing && (
-              <div className="form-group" style={{ maxWidth: 420 }}>
-                <label>Ad Soyad Ata adı</label>
-                <input
-                  value={editForm.ad_soyad ?? ''}
-                  onChange={(e) => setEditForm((prev) => ({ ...prev, ad_soyad: e.target.value }))}
-                />
-              </div>
-            )}
-            <SummaryRow
+          <CardSection title="Əsas Məlumatlar">
+            <FieldGrid
               items={[
-                ...(editing ? [] : [{ label: 'Ad Soyad Ata adı', value: openCustomer.ad_soyad, meta: true }]),
-                { label: 'Alış Sayı', value: openCustomer.saleCount, meta: true },
+                {
+                  key: 'ad_soyad',
+                  label: 'Ad Soyad Ata adı',
+                  value: editing ? (
+                    <input
+                      style={fieldInputStyle}
+                      value={editForm.ad_soyad ?? ''}
+                      onChange={(e) => setEditForm((prev) => ({ ...prev, ad_soyad: e.target.value }))}
+                    />
+                  ) : (
+                    openCustomer.ad_soyad
+                  ),
+                },
+                { label: 'Alış Sayı', value: openCustomer.saleCount },
                 { label: 'Alış Qiyməti', value: formatMoney(openCustomer.alis) },
                 { label: 'Satış Qiyməti', value: formatMoney(openCustomer.satis) },
-                { label: 'Verilib', value: formatMoney(openCustomer.verilib) },
-                { label: 'Qalan Borc', value: formatMoney(openCustomer.qalan) },
-                { label: 'Mənfəət', value: formatMoney(openCustomer.menfeet) },
+                { label: 'Verilib', value: formatMoney(openCustomer.verilib), color: moneyColor(openCustomer.verilib) },
+                { label: 'Qalan Borc', value: formatMoney(openCustomer.qalan), color: openCustomer.qalan > 0 ? moneyColor(-1) : undefined },
+                { label: 'Mənfəət', value: formatMoney(openCustomer.menfeet), color: moneyColor(openCustomer.menfeet) },
               ]}
             />
-          </CollapsibleSummary>
+          </CardSection>
 
-          <CollapsibleSummary title="Əlaqə" storageKey="kontakt-card:contact" defaultOpen>
-            {editing ? (
-              <div className="form-row">
-                {CONTACT_FIELDS.map((f) => {
-                  const exists = hasCol(openCustomer, f.key)
-                  return (
-                    <div key={f.key} className="form-group">
-                      <label>{f.label}</label>
-                      <input
-                        value={editForm[f.key] ?? ''}
-                        disabled={!exists}
-                        placeholder={exists ? '' : 'Bazada sütun hələ yoxdur'}
-                        onChange={(e) => setEditForm((prev) => ({ ...prev, [f.key]: e.target.value }))}
-                      />
-                    </div>
-                  )
-                })}
-              </div>
-            ) : (
-              <SummaryRow
-                items={CONTACT_FIELDS.map((f) => ({
+          <CardSection title="Əlaqə">
+            <FieldGrid
+              items={CONTACT_FIELDS.map((f) => {
+                const exists = hasCol(openCustomer, f.key)
+                return {
+                  key: f.key,
                   label: f.label,
-                  value: openCustomer[f.key] || '—',
-                  meta: true,
-                }))}
-              />
-            )}
-          </CollapsibleSummary>
+                  value: editing ? (
+                    <input
+                      style={fieldInputStyle}
+                      value={editForm[f.key] ?? ''}
+                      disabled={!exists}
+                      placeholder={exists ? '' : 'Bazada sütun hələ yoxdur'}
+                      onChange={(e) => setEditForm((prev) => ({ ...prev, [f.key]: e.target.value }))}
+                    />
+                  ) : (
+                    openCustomer[f.key]
+                  ),
+                }
+              })}
+            />
+          </CardSection>
 
-          <CollapsibleSummary title="Şəxsiyyət vəsiqəsi" storageKey="kontakt-card:id" defaultOpen>
-            {openCustomer.hasSenedColumn ? (
-              <SenedlerField
-                folder="musteriler"
-                recordId={openCustomer.id}
-                value={openCustomer.senedler}
-                onChange={saveIdFiles}
-                label="Şəxsiyyət vəsiqəsi / sənədlər"
-              />
-            ) : (
-              <p className="empty-state" style={{ margin: 0 }}>
-                Şəxsiyyət vəsiqəsi yükləmək üçün bazada müştərilər cədvəlinə sənəd sütunu əlavə olunmalıdır.
-              </p>
-            )}
-          </CollapsibleSummary>
+          <div className="record-module__sections">
+            <CardDetails title="Şəxsiyyət vəsiqəsi" defaultOpen>
+              {openCustomer.hasSenedColumn ? (
+                <SenedlerField
+                  folder="musteriler"
+                  recordId={openCustomer.id}
+                  value={openCustomer.senedler}
+                  onChange={saveIdFiles}
+                  label="Şəxsiyyət vəsiqəsi / sənədlər"
+                />
+              ) : (
+                <p className="empty-state" style={{ margin: 0 }}>
+                  Şəxsiyyət vəsiqəsi yükləmək üçün bazada müştərilər cədvəlinə sənəd sütunu əlavə olunmalıdır.
+                </p>
+              )}
+            </CardDetails>
 
-          <CollapsibleSummary
-            title={`Müqavilələr (${openCustomer.contracts.length})`}
-            storageKey="kontakt-card:contracts"
-            defaultOpen
-          >
-            {openCustomer.contracts.length === 0 ? (
-              <p className="empty-state" style={{ margin: 0 }}>
-                Hələ müqavilə yoxdur. Müştəri Bazasında bu müştərinin satışına sənəd əlavə edəndə burada avtomatik görünəcək.
-              </p>
-            ) : (
-              <div style={{ display: 'grid', gap: 10 }}>
-                {openCustomer.contracts.map((c, idx) => (
-                  <div key={c.sale.id} className="musteri-summary__card" style={{ minWidth: 0 }}>
-                    <div className="musteri-summary__label">
-                      Müqavilə {idx + 1} · Satış №{' '}
-                      <Link to={`/musteri-bazasi?open=${c.sale.id}`}>{c.sale.sira_no ?? '—'}</Link>
-                      {c.sale.model ? ` · ${c.sale.model}` : ''}
-                      {c.sale.verilme_tarixi ? ` · ${formatDate(c.sale.verilme_tarixi)}` : ''}
+            <CardDetails title={`Müqavilələr (${openCustomer.contracts.length})`} defaultOpen>
+              {openCustomer.contracts.length === 0 ? (
+                <p className="empty-state" style={{ margin: 0 }}>
+                  Hələ müqavilə yoxdur. Müştəri Bazasında bu müştərinin satışına sənəd əlavə edəndə burada avtomatik görünəcək.
+                </p>
+              ) : (
+                <dl className="record-module__grid">
+                  {openCustomer.contracts.map((c, idx) => (
+                    <div key={c.sale.id} className="record-module__field">
+                      <dt>
+                        Müqavilə {idx + 1} · Satış №{' '}
+                        <Link to={`/musteri-bazasi?open=${c.sale.id}`}>{c.sale.sira_no ?? '—'}</Link>
+                      </dt>
+                      <dd>
+                        <div style={{ fontSize: 12, color: 'var(--color-text-muted)', marginBottom: 4 }}>
+                          {[c.sale.model, c.sale.verilme_tarixi ? formatDate(c.sale.verilme_tarixi) : '']
+                            .filter(Boolean)
+                            .join(' · ')}
+                        </div>
+                        {c.files.map((f) => (
+                          <div key={f.path}>
+                            <a href={senedlerPublicUrl(f.path)} target="_blank" rel="noopener noreferrer">
+                              {f.name || 'fayl'}
+                            </a>
+                          </div>
+                        ))}
+                      </dd>
                     </div>
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 6 }}>
-                      {c.files.map((f) => (
-                        <a key={f.path} href={senedlerPublicUrl(f.path)} target="_blank" rel="noopener noreferrer">
-                          {f.name || 'fayl'}
-                        </a>
-                      ))}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </CollapsibleSummary>
-
-          <CollapsibleSummary title="Alışları (Müştəri Bazası)" storageKey="kontakt-card:sales" defaultOpen>
-            <div className="table-wrap">
-              <table className="data-table">
-                <thead>
-                  <tr>
-                    <th>№</th>
-                    <th>Model</th>
-                    <th>Verilmə tarixi</th>
-                    <th style={{ textAlign: 'right' }}>Satış</th>
-                    <th style={{ textAlign: 'right' }}>Verilib</th>
-                    <th style={{ textAlign: 'right' }}>Qalan</th>
-                    <th>Vəziyyət</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {openCustomer.sales.map((s) => (
-                    <tr key={s.id}>
-                      <td>
-                        <Link to={`/musteri-bazasi?open=${s.id}`}>{s.sira_no ?? '—'}</Link>
-                      </td>
-                      <td>{s.model || '—'}</td>
-                      <td>{formatDate(s.verilme_tarixi)}</td>
-                      <td style={{ textAlign: 'right' }}>{formatMoney(s.satis_qiymeti)}</td>
-                      <td style={{ textAlign: 'right' }}>{formatMoney(s.verilib)}</td>
-                      <td style={{ textAlign: 'right' }}>{formatMoney(s.qalan_borc)}</td>
-                      <td>{s.veziyyet || '—'}</td>
-                    </tr>
                   ))}
-                  {!openCustomer.sales.length && (
+                </dl>
+              )}
+            </CardDetails>
+
+            <CardDetails title={`Alışları (${openCustomer.sales.length})`} defaultOpen>
+              <div className="table-wrap">
+                <table className="data-table">
+                  <thead>
                     <tr>
-                      <td colSpan={7} className="empty-state">Bu müştəriyə bağlı satış yoxdur.</td>
+                      <th>№</th>
+                      <th>Model</th>
+                      <th>Verilmə tarixi</th>
+                      <th style={{ textAlign: 'right' }}>Satış</th>
+                      <th style={{ textAlign: 'right' }}>Verilib</th>
+                      <th style={{ textAlign: 'right' }}>Qalan</th>
+                      <th>Vəziyyət</th>
                     </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-            {openCustomer.ledger && (
-              <p style={{ marginTop: 12 }}>
-                Borc / Nisyə: qalıq borc <strong>{formatMoney(openCustomer.ledger.qaliq_borc)}</strong>, qalıq nisyə{' '}
-                <strong>{formatMoney(openCustomer.ledger.qaliq_nisye)}</strong> ·{' '}
-                <Link to={counterpartPath(openCustomer.ad_soyad)}>Borc / Nisyə səhifəsini aç</Link>
-              </p>
-            )}
-          </CollapsibleSummary>
+                  </thead>
+                  <tbody>
+                    {openCustomer.sales.map((s) => (
+                      <tr key={s.id}>
+                        <td>
+                          <Link to={`/musteri-bazasi?open=${s.id}`}>{s.sira_no ?? '—'}</Link>
+                        </td>
+                        <td>{s.model || '—'}</td>
+                        <td>{formatDate(s.verilme_tarixi)}</td>
+                        <td style={{ textAlign: 'right' }}>{formatMoney(s.satis_qiymeti)}</td>
+                        <td style={{ textAlign: 'right' }}>{formatMoney(s.verilib)}</td>
+                        <td style={{ textAlign: 'right' }}>{formatMoney(s.qalan_borc)}</td>
+                        <td>{s.veziyyet || '—'}</td>
+                      </tr>
+                    ))}
+                    {!openCustomer.sales.length && (
+                      <tr>
+                        <td colSpan={7} className="empty-state">Bu müştəriyə bağlı satış yoxdur.</td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+              {openCustomer.ledger && (
+                <p style={{ marginTop: 12, marginBottom: 0 }}>
+                  Borc / Nisyə: qalıq borc <strong>{formatMoney(openCustomer.ledger.qaliq_borc)}</strong>, qalıq nisyə{' '}
+                  <strong>{formatMoney(openCustomer.ledger.qaliq_nisye)}</strong> ·{' '}
+                  <Link to={counterpartPath(openCustomer.ad_soyad)}>Borc / Nisyə səhifəsini aç</Link>
+                </p>
+              )}
+            </CardDetails>
+          </div>
         </Modal>
       )}
 
@@ -717,51 +765,63 @@ export default function KontaktlarPage() {
           subtitle={openSupplier.phone ? `Telefon: ${openSupplier.phone}` : 'Telefon qeyd olunmayıb'}
           onClose={() => setOpenSupplier(null)}
         >
-          <SummaryRow
-            items={[
-              { label: 'Məhsul sayı', value: openSupplier.count, meta: true },
-              { label: 'Alış cəmi', value: formatMoney(openSupplier.total) },
-              { label: 'Son alış', value: formatDate(openSupplier.lastDate), meta: true },
-            ]}
-          />
-          <h3 className="card__title">Ondan alınan məhsullar (Depo)</h3>
-          <div className="table-wrap">
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>Tarix</th>
-                  <th>Model</th>
-                  <th>Rəng</th>
-                  <th>Yaddaş</th>
-                  <th>IMEI</th>
-                  <th style={{ textAlign: 'right' }}>Qiymət</th>
-                  <th>Vəziyyət</th>
-                </tr>
-              </thead>
-              <tbody>
-                {[...openSupplier.items]
-                  .sort((a, b) => String(b.alis_tarixi || '').localeCompare(String(a.alis_tarixi || '')))
-                  .map((d) => (
-                    <tr key={d.id}>
-                      <td>{formatDate(d.alis_tarixi)}</td>
-                      <td>{d.model || '—'}</td>
-                      <td>{d.reng || '—'}</td>
-                      <td>{d.yaddas || '—'}</td>
-                      <td>{d.imei_1 || '—'}</td>
-                      <td style={{ textAlign: 'right' }}>{formatMoney(d.alis_qiymeti)}</td>
-                      <td>{STATUS_LABELS[d.status] || d.status || '—'}</td>
+          <CardSection title="Əsas Məlumatlar">
+            <FieldGrid
+              items={[
+                { label: 'Təchizatçı', value: openSupplier.name },
+                { label: 'Telefon (Depodan)', value: openSupplier.phone },
+                { label: 'Məhsul sayı', value: openSupplier.count },
+                { label: 'Alış cəmi', value: formatMoney(openSupplier.total) },
+                { label: 'Son alış', value: formatDate(openSupplier.lastDate) },
+                ...(openSupplier.ledger
+                  ? [
+                      { label: 'Qalıq borc', value: formatMoney(openSupplier.ledger.qaliq_borc) },
+                      { label: 'Qalıq nisyə', value: formatMoney(openSupplier.ledger.qaliq_nisye) },
+                    ]
+                  : []),
+              ]}
+            />
+            {openSupplier.ledger && (
+              <p style={{ marginTop: 12, marginBottom: 0 }}>
+                <Link to={counterpartPath(openSupplier.name)}>Borc / Nisyə səhifəsini aç</Link>
+              </p>
+            )}
+          </CardSection>
+
+          <div className="record-module__sections">
+            <CardDetails title={`Ondan alınan məhsullar (${openSupplier.count})`} defaultOpen>
+              <div className="table-wrap">
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th>Tarix</th>
+                      <th>Model</th>
+                      <th>Rəng</th>
+                      <th>Yaddaş</th>
+                      <th>IMEI</th>
+                      <th style={{ textAlign: 'right' }}>Qiymət</th>
+                      <th>Vəziyyət</th>
                     </tr>
-                  ))}
-              </tbody>
-            </table>
+                  </thead>
+                  <tbody>
+                    {[...openSupplier.items]
+                      .sort((a, b) => String(b.alis_tarixi || '').localeCompare(String(a.alis_tarixi || '')))
+                      .map((d) => (
+                        <tr key={d.id}>
+                          <td>{formatDate(d.alis_tarixi)}</td>
+                          <td>{d.model || '—'}</td>
+                          <td>{d.reng || '—'}</td>
+                          <td>{d.yaddas || '—'}</td>
+                          <td>{d.imei_1 || '—'}</td>
+                          <td style={{ textAlign: 'right' }}>{formatMoney(d.alis_qiymeti)}</td>
+                          <td>{STATUS_LABELS[d.status] || d.status || '—'}</td>
+                        </tr>
+                      ))}
+                  </tbody>
+                </table>
+              </div>
+            </CardDetails>
           </div>
-          {openSupplier.ledger && (
-            <p style={{ marginTop: 12 }}>
-              Borc / Nisyə: qalıq borc <strong>{formatMoney(openSupplier.ledger.qaliq_borc)}</strong>, qalıq nisyə{' '}
-              <strong>{formatMoney(openSupplier.ledger.qaliq_nisye)}</strong> ·{' '}
-              <Link to={counterpartPath(openSupplier.name)}>Borc / Nisyə səhifəsini aç</Link>
-            </p>
-          )}
         </Modal>
       )}
     </div>
