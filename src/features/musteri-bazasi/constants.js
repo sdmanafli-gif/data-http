@@ -15,6 +15,7 @@ export const MEHKEME_NATIVE_KEYS = [
   'mehkeme_isare',
   'rusum_odenilib',
   'mehkeme_status',
+  'huquqa_verilme_tarixi',
   'mehkeme_qeyd',
 ]
 
@@ -28,7 +29,7 @@ export const SUGGEST_FIELDS = new Set(['model', 'reng', 'yaddas', 'satici'])
  */
 
 export const VEZIYYET_OPTIONS = ['Qalıb', 'Bitib', 'Məhkəmə']
-export const MEHKEME_STATUS_OPTIONS = ['Məhkəmə gedir', 'İcradadır', 'Tamamlanıb']
+export const MEHKEME_STATUS_OPTIONS = ['Hüquqa Verildi', 'Yığım', 'Məhkəmə Verildi', 'İddia Təmin edildi']
 export const NEW_MUSTERI_VALUE = '__new__'
 
 export const FIELD_TYPES = [
@@ -97,6 +98,8 @@ export const DEFAULT_COLUMNS = [
   { key: 'mehkeme_isare', label: 'İşarə', type: 'checkbox', visible: false, formVisible: false, readonly: false, system: true, group: 'mehkeme' },
   { key: 'rusum_odenilib', label: 'Rüsüm ödənilib', type: 'money', visible: false, formVisible: false, readonly: false, system: true, group: 'mehkeme' },
   { key: 'mehkeme_status', label: 'Məhkəmə statusu', type: 'select', visible: false, formVisible: false, readonly: false, system: true, group: 'mehkeme', options: MEHKEME_STATUS_OPTIONS },
+  // Müştəri Məhkəmə vəziyyətinə düşəndə bazada avtomatik yazılır (trigger); Məhkəmə cədvəlində əl ilə də dəyişmək olur
+  { key: 'huquqa_verilme_tarixi', label: 'Hüquqa Verildi', type: 'date', visible: false, formVisible: false, readonly: false, system: true, group: 'mehkeme' },
   { key: 'mehkeme_qeyd', label: 'Məhkəmə komment', type: 'text', visible: false, formVisible: false, readonly: false, system: true, group: 'mehkeme' },
 ]
 
@@ -163,7 +166,7 @@ export const MUSTERI_VIEW_SECTIONS = [
     id: 'mehkeme',
     title: 'Məhkəmə',
     defaultOpen: false,
-    keys: ['mehkeme_isare', 'rusum_odenilib', 'mehkeme_status', 'mehkeme_qeyd'],
+    keys: ['mehkeme_isare', 'rusum_odenilib', 'mehkeme_status', 'huquqa_verilme_tarixi', 'mehkeme_qeyd'],
   },
 ]
 
@@ -307,6 +310,8 @@ export function buildMehkemeDefaultColumns(musteriColumns = DEFAULT_COLUMNS) {
                 ? 130
                 : c.key === 'mehkeme_status'
                   ? 160
+                  : c.key === 'huquqa_verilme_tarixi'
+                    ? 140
                   : c.key === 'mehkeme_qeyd'
                     ? 200
                     : undefined,
