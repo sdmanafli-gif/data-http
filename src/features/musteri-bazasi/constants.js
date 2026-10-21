@@ -15,8 +15,15 @@ export const MEHKEME_NATIVE_KEYS = [
   'mehkeme_isare',
   'rusum_odenilib',
   'mehkeme_status',
+  'huquqa_verilme_tarixi',
+  'mehkemeye_verilme_tarixi',
+  'iddia_temin_tarixi',
+  'huquqdan_sonra_odenis',
   'mehkeme_qeyd',
 ]
+
+/** Avtomatik yazılan Məhkəmə tarixləri — əl ilə yalnız admin dəyişə bilər */
+export const MEHKEME_DATE_KEYS = ['huquqa_verilme_tarixi', 'mehkemeye_verilme_tarixi', 'iddia_temin_tarixi']
 
 /** Fields with select-or-type suggestions from existing DB values */
 export const SUGGEST_FIELDS = new Set(['model', 'reng', 'yaddas', 'satici'])
@@ -28,7 +35,7 @@ export const SUGGEST_FIELDS = new Set(['model', 'reng', 'yaddas', 'satici'])
  */
 
 export const VEZIYYET_OPTIONS = ['Qalıb', 'Bitib', 'Məhkəmə']
-export const MEHKEME_STATUS_OPTIONS = ['Məhkəmə gedir', 'İcradadır', 'Tamamlanıb']
+export const MEHKEME_STATUS_OPTIONS = ['Hüquqa Verildi', 'Yığım', 'Məhkəmə Verildi', 'İddia Təmin edildi']
 export const NEW_MUSTERI_VALUE = '__new__'
 
 export const FIELD_TYPES = [
@@ -97,6 +104,13 @@ export const DEFAULT_COLUMNS = [
   { key: 'mehkeme_isare', label: 'İşarə', type: 'checkbox', visible: false, formVisible: false, readonly: false, system: true, group: 'mehkeme' },
   { key: 'rusum_odenilib', label: 'Rüsüm ödənilib', type: 'money', visible: false, formVisible: false, readonly: false, system: true, group: 'mehkeme' },
   { key: 'mehkeme_status', label: 'Məhkəmə statusu', type: 'select', visible: false, formVisible: false, readonly: false, system: true, group: 'mehkeme', options: MEHKEME_STATUS_OPTIONS },
+  // Müştəri Məhkəmə vəziyyətinə düşəndə bazada avtomatik yazılır (trigger); Məhkəmə cədvəlində əl ilə də dəyişmək olur
+  { key: 'huquqa_verilme_tarixi', label: 'Hüquqa Verildi', type: 'date', visible: false, formVisible: false, readonly: false, system: true, group: 'mehkeme' },
+  // Status "Məhkəmə Verildi" / "İddia Təmin edildi" seçiləndə bazada avtomatik yazılır
+  { key: 'mehkemeye_verilme_tarixi', label: 'Məhkəməyə Verildi', type: 'date', visible: false, formVisible: false, readonly: false, system: true, group: 'mehkeme' },
+  { key: 'iddia_temin_tarixi', label: 'İddia Təmin edildi', type: 'date', visible: false, formVisible: false, readonly: false, system: true, group: 'mehkeme' },
+  // Hesablanır (bazada saxlanmır): Hüquqa Verildi tarixindən sonra edilən ödənişlərin cəmi
+  { key: 'huquqdan_sonra_odenis', label: 'Hüquqdan S. Ödəniş', type: 'money', visible: false, formVisible: false, readonly: true, system: true, group: 'mehkeme' },
   { key: 'mehkeme_qeyd', label: 'Məhkəmə komment', type: 'text', visible: false, formVisible: false, readonly: false, system: true, group: 'mehkeme' },
 ]
 
@@ -163,7 +177,15 @@ export const MUSTERI_VIEW_SECTIONS = [
     id: 'mehkeme',
     title: 'Məhkəmə',
     defaultOpen: false,
-    keys: ['mehkeme_isare', 'rusum_odenilib', 'mehkeme_status', 'mehkeme_qeyd'],
+    keys: [
+      'mehkeme_isare',
+      'rusum_odenilib',
+      'mehkeme_status',
+      'huquqa_verilme_tarixi',
+      'mehkemeye_verilme_tarixi',
+      'iddia_temin_tarixi',
+      'mehkeme_qeyd',
+    ],
   },
 ]
 
@@ -307,6 +329,8 @@ export function buildMehkemeDefaultColumns(musteriColumns = DEFAULT_COLUMNS) {
                 ? 130
                 : c.key === 'mehkeme_status'
                   ? 160
+                  : MEHKEME_DATE_KEYS.includes(c.key) || c.key === 'huquqdan_sonra_odenis'
+                    ? 140
                   : c.key === 'mehkeme_qeyd'
                     ? 200
                     : undefined,
@@ -419,6 +443,19 @@ export function mergeMehkemeColumnConfig(saved, musteriColumns = DEFAULT_COLUMNS
         })
       }
     })
+  }
+
+  // Saxlanmış düzülüşdə olmayan yeni Məhkəmə sütunlarını əvvəlki Məhkəmə sütununun yanına qoy
+  if (Array.isArray(saved)) {
+    const savedKeys = new Set(saved.map((c) => c?.key))
+    for (let k = 1; k < MEHKEME_NATIVE_KEYS.length; k++) {
+      const key = MEHKEME_NATIVE_KEYS[k]
+      if (savedKeys.has(key) || !byKey.has(key)) continue
+      const prev = byKey.get(MEHKEME_NATIVE_KEYS[k - 1])
+      if (prev && typeof prev.order === 'number') {
+        byKey.set(key, { ...byKey.get(key), order: prev.order + 0.001 })
+      }
+    }
   }
 
   return Array.from(byKey.values()).sort((a, b) => (a.order ?? 0) - (b.order ?? 0))

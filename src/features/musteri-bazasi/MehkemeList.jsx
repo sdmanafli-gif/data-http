@@ -10,6 +10,7 @@ import { applyKeyOrder } from './columnOrder'
 import {
   MUSTERI_TABLE,
   MEHKEME_STATUS_OPTIONS,
+  MEHKEME_DATE_KEYS,
   MEHKEME_COLUMN_SETTINGS_KEY,
   formatCell,
   getRowValue,
@@ -36,7 +37,7 @@ function parseAmount(raw) {
  */
 export default function MehkemeList() {
   const navigate = useNavigate()
-  const { access } = useAuth()
+  const { access, isAdmin } = useAuth()
   const { columns, loading: colsLoading, saveColumns } = useColumnConfig({
     tableKey: MEHKEME_COLUMN_SETTINGS_KEY,
   })
@@ -49,6 +50,8 @@ export default function MehkemeList() {
   const [localCols, setLocalCols] = useState([])
   const [openRow, setOpenRow] = useState(null)
   const [savingId, setSavingId] = useState(null)
+  // Məhkəmədəki satışların ödənişləri: { [musteri_bazasi_id]: [{ tarix, mebleg }] }
+  const [paymentsBySale, setPaymentsBySale] = useState({})
   const resizeTimer = useRef(null)
 
   useEffect(() => {
@@ -91,9 +94,51 @@ export default function MehkemeList() {
       setItems([])
     } else {
       setItems(data || [])
+      await loadPayments((data || []).map((r) => r.id))
     }
     setLoading(false)
   }
+
+  async function loadPayments(ids) {
+    if (!ids.length) {
+      setPaymentsBySale({})
+      return
+    }
+    const map = {}
+    // URL çox uzun olmasın deyə hissə-hissə
+    for (let i = 0; i < ids.length; i += 100) {
+      const chunk = ids.slice(i, i + 100)
+      const { data, error: pe } = await fetchAllPages(() =>
+        supabase
+          .from('odenisler')
+          .select('id, musteri_bazasi_id, tarix, mebleg')
+          .in('musteri_bazasi_id', chunk)
+          .order('id', { ascending: true })
+      )
+      if (pe) {
+        setError(pe.message)
+        return
+      }
+      for (const p of data || []) {
+        if (!map[p.musteri_bazasi_id]) map[p.musteri_bazasi_id] = []
+        map[p.musteri_bazasi_id].push(p)
+      }
+    }
+    setPaymentsBySale(map)
+  }
+
+  // Hüquqdan S. Ödəniş: Hüquqa Verildi tarixindən (həmin gün daxil) sonrakı ödənişlərin cəmi
+  const rowsWithHuquq = useMemo(
+    () =>
+      items.map((r) => {
+        if (!r.huquqa_verilme_tarixi) return { ...r, huquqdan_sonra_odenis: null }
+        const from = String(r.huquqa_verilme_tarixi).slice(0, 10)
+        const list = (paymentsBySale[r.id] || []).filter((p) => String(p.tarix || '').slice(0, 10) >= from)
+        const sum = list.reduce((a, p) => a + (Number(p.mebleg) || 0), 0)
+        return { ...r, huquqdan_sonra_odenis: Math.round(sum * 100) / 100, huquqdan_sonra_say: list.length }
+      }),
+    [items, paymentsBySale]
+  )
 
   useEffect(() => {
     const t = setTimeout(load, 250)
@@ -108,6 +153,7 @@ export default function MehkemeList() {
       qalan_borc: sumField(viewRows, 'qalan_borc'),
       faiz: sumField(viewRows, 'faiz'),
       rusum_odenilib: sumField(viewRows, 'rusum_odenilib'),
+      huquqdan_sonra_odenis: sumField(viewRows, 'huquqdan_sonra_odenis'),
     }),
     [viewRows]
   )
@@ -146,13 +192,17 @@ export default function MehkemeList() {
     setSavingId(id)
     setError(null)
     try {
-      const { error: err } = await supabase
+      const { data: saved, error: err } = await supabase
         .from(MUSTERI_TABLE)
         .update({ ...patch, updated_at: new Date().toISOString() })
         .eq('id', id)
+        .select('*')
+        .maybeSingle()
       if (err) throw err
-      setItems((prev) => prev.map((r) => (r.id === id ? { ...r, ...patch } : r)))
-      if (openRow?.id === id) setOpenRow((r) => (r ? { ...r, ...patch } : r))
+      // Baza statusa görə tarixləri özü yazır — qaytarılan sətri götür
+      const merged = saved ? { ...patch, ...saved } : patch
+      setItems((prev) => prev.map((r) => (r.id === id ? { ...r, ...merged } : r)))
+      if (openRow?.id === id) setOpenRow((r) => (r ? { ...r, ...merged } : r))
     } catch (err) {
       setError(err.message)
     } finally {
@@ -214,6 +264,35 @@ export default function MehkemeList() {
           </select>
         )
       }
+      if (col.key === 'huquqdan_sonra_odenis') {
+        if (value == null) return '—'
+        return (
+          <span title={`${row.huquqdan_sonra_say || 0} ödəniş`}>
+            {formatCell(value, col)}
+            {row.huquqdan_sonra_say ? ` (${row.huquqdan_sonra_say})` : ''}
+          </span>
+        )
+      }
+      if (MEHKEME_DATE_KEYS.includes(col.key)) {
+        // Tarixlər status dəyişəndə avtomatik yazılır; əl ilə yalnız admin dəyişə bilər
+        if (!isAdmin) return formatCell(value, col)
+        return (
+          <input
+            type="date"
+            disabled={busy}
+            defaultValue={row[col.key] || ''}
+            key={`${col.key}-${row.id}-${row[col.key] || ''}`}
+            onClick={(e) => e.stopPropagation()}
+            onBlur={(e) => {
+              const next = e.target.value || null
+              const prev = row[col.key] || null
+              if (next === prev) return
+              patchRow(row.id, { [col.key]: next })
+            }}
+            style={{ width: '100%', minWidth: 120 }}
+          />
+        )
+      }
       if (col.key === 'mehkeme_qeyd') {
         return (
           <input
@@ -235,7 +314,7 @@ export default function MehkemeList() {
       }
       return formatCell(value, col)
     },
-    [savingId]
+    [savingId, isAdmin]
   )
 
   if (error && !items.length && !loading) {
@@ -292,6 +371,11 @@ export default function MehkemeList() {
               label: 'Rüsüm cəmi',
               value: totals.rusum_odenilib,
             },
+            {
+              key: 'huquqdan_sonra_odenis',
+              label: 'Hüquqdan S. Ödəniş',
+              value: totals.huquqdan_sonra_odenis,
+            },
           ]}
         />
       )}
@@ -302,7 +386,7 @@ export default function MehkemeList() {
         ) : (
           <ResizableDataTable
             columns={visibleCols}
-            rows={items}
+            rows={rowsWithHuquq}
             onReorderColumns={handleReorder}
             onResizeColumn={handleResize}
             formatCell={formatCell}
