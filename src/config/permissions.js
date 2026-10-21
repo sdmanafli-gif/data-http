@@ -112,6 +112,7 @@ export const SUMMARY_CARDS_BY_MODULE = {
     { key: 'qalan_borc', label: 'Qalan borc' },
     { key: 'faiz', label: 'Faiz (cərimə)' },
     { key: 'rusum_odenilib', label: 'Rüsüm cəmi' },
+    { key: 'huquqdan_sonra_odenis', label: 'Hüquqdan S. Ödəniş' },
     { key: 'row_count', label: 'Sətir sayı' },
   ],
 }
