@@ -2,11 +2,10 @@ import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams, Link } from 'react-router-dom'
 import { supabase, fetchAllPages } from '../../lib/supabase'
 import { confirmDelete } from '../../lib/confirmDelete'
-import { uploadSenedlerFiles } from '../../lib/senedler'
 import { useColumnConfig } from './useColumnConfig'
 import SuggestInput from '../musteri-bazasi/SuggestInput'
 import RecordModule from '../../components/RecordModule'
-import SenedlerField from '../../components/SenedlerField'
+import DepoFileSlots, { uploadPendingSlots } from './DepoFileSlots'
 import {
   DEPO_TABLE,
   SUGGEST_FIELDS,
@@ -38,6 +37,7 @@ import {
   systemAmount,
   systemPayload,
   validateSourceAndSystem,
+  customerExtraFields,
   HaradanBlock,
   SistemBlock,
 } from './DepoSourceFields'
@@ -181,7 +181,7 @@ export default function DepoForm() {
   const [saving, setSaving] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [error, setError] = useState(null)
-  const [pendingFiles, setPendingFiles] = useState([])
+  const [pendingFiles, setPendingFiles] = useState({}) // { 1: File, 2: File, 3: File } — yeni qeyd üçün
   const [invalidKeys, setInvalidKeys] = useState(() => new Set())
   // Haradan (Təchizatçı / Müştəri) və Sistem
   const [src, setSrc] = useState(() => emptySource())
@@ -220,6 +220,21 @@ export default function DepoForm() {
     setForm(formFromRow(row, columns))
     setSrc(sourceFromRow(row))
     setSys(systemFromRow(row))
+  }
+
+  /** Fayl siyahısını bazaya yazır (mövcud qeyd üçün) */
+  async function saveSenedler(recordId, next) {
+    const { error: e } = await supabase
+      .from(DEPO_TABLE)
+      .update({ senedler: next, updated_at: new Date().toISOString() })
+      .eq('id', recordId)
+    if (e) {
+      setError(e.message)
+      return false
+    }
+    setRecord((r) => (r ? { ...r, senedler: next } : r))
+    setForm((f) => ({ ...f, senedler: next }))
+    return true
   }
 
   function setKimden(name) {
@@ -357,12 +372,22 @@ export default function DepoForm() {
             nomre_2: src.yeni.nomre_2.trim() || null,
             updated_at: new Date().toISOString(),
           })
-          if (src.yeni.komment.trim()) {
-            await supabase
+          // Vəsiqə məlumatları, ünvan, komment — yalnız müştəridə boş olan sahələr doldurulur
+          const extra = customerExtraFields(src.yeni)
+          if (Object.keys(extra).length) {
+            const { data: cur } = await supabase
               .from('musteriler')
-              .update({ komment: src.yeni.komment.trim() })
+              .select('*')
               .eq('id', payload.musteri_id)
-              .is('komment', null)
+              .single()
+            const patch = {}
+            for (const [k, v] of Object.entries(extra)) {
+              if (cur && !String(cur[k] ?? '').trim()) patch[k] = v
+            }
+            if (Object.keys(patch).length) {
+              const { error: mErr } = await supabase.from('musteriler').update(patch).eq('id', payload.musteri_id)
+              if (mErr) throw mErr
+            }
           }
           payload.kimden_alinib = ad
         } else if (src.pick.startsWith('m:')) {
@@ -401,29 +426,22 @@ export default function DepoForm() {
       }
       if (err) throw err
 
-      if (!isEdit && newId && pendingFiles.length > 0) {
-        const { files: uploaded, error: upErr } = await uploadSenedlerFiles(
-          'depo',
+      if (!isEdit && newId && Object.keys(pendingFiles).length > 0) {
+        const { files: nextSenedler, error: upErr } = await uploadPendingSlots(
           newId,
+          savedRow?.senedler,
           pendingFiles
         )
-        if (uploaded.length) {
-          const nextSenedler = [...(savedRow?.senedler || []), ...uploaded]
-          const { data: withFiles, error: senedErr } = await supabase
-            .from(DEPO_TABLE)
-            .update({ senedler: nextSenedler, updated_at: new Date().toISOString() })
-            .eq('id', newId)
-            .select('*')
-            .single()
-          if (senedErr) throw senedErr
-          savedRow = withFiles
-          setPendingFiles([])
-        }
-        if (upErr && (!uploaded || uploaded.length === 0)) throw new Error(upErr)
-        if (upErr) {
-          // Partial upload — still navigate but keep message
-          setError(upErr)
-        }
+        const { data: withFiles, error: senedErr } = await supabase
+          .from(DEPO_TABLE)
+          .update({ senedler: nextSenedler, updated_at: new Date().toISOString() })
+          .eq('id', newId)
+          .select('*')
+          .single()
+        if (senedErr) throw senedErr
+        savedRow = withFiles
+        setPendingFiles({})
+        if (upErr) setError(upErr)
       }
 
       if (savedRow) {
@@ -515,22 +533,11 @@ export default function DepoForm() {
             <p style={{ margin: 0, whiteSpace: 'pre-wrap' }}>{record.kommentler}</p>
           </div>
         ) : null}
-        <div style={{ marginTop: 20 }}>
-          <SenedlerField
-            folder="depo"
-            recordId={record.id}
+        <div style={{ marginTop: 16, maxWidth: 760 }}>
+          <DepoFileSlots
             value={record.senedler}
-            onChange={async (next) => {
-              const { error: e } = await supabase
-                .from(DEPO_TABLE)
-                .update({ senedler: next, updated_at: new Date().toISOString() })
-                .eq('id', record.id)
-              if (e) setError(e.message)
-              else {
-                setRecord((r) => (r ? { ...r, senedler: next } : r))
-                setForm((f) => ({ ...f, senedler: next }))
-              }
-            }}
+            recordId={record.id}
+            onChange={(next) => saveSenedler(record.id, next)}
           />
         </div>
       </RecordModule>
@@ -623,7 +630,15 @@ export default function DepoForm() {
                     suppliers={supplierOptions}
                     customers={customerOptions}
                     onPickName={setKimden}
-                  />
+                  >
+                    <DepoFileSlots
+                      value={form.senedler}
+                      recordId={id || null}
+                      pending={pendingFiles}
+                      onPendingChange={setPendingFiles}
+                      onChange={(next) => saveSenedler(id, next)}
+                    />
+                  </HaradanBlock>
                   {field}
                 </div>
               )
@@ -643,6 +658,18 @@ export default function DepoForm() {
             return field
           })}
         </div>
+        {/* "Kimdən" sütunu gizlədilibsə Haradan qutusu görünmür — fayllar yenə də itməsin */}
+        {!formColumns.some((c) => c.key === 'kimden_alinib') && (
+          <div className="depo-box" style={{ marginTop: 8, maxWidth: 760 }}>
+            <DepoFileSlots
+              value={form.senedler}
+              recordId={id || null}
+              pending={pendingFiles}
+              onPendingChange={setPendingFiles}
+              onChange={(next) => saveSenedler(id, next)}
+            />
+          </div>
+        )}
         <div className="form-group" style={{ marginTop: 8, maxWidth: 760 }}>
           <label>Komment</label>
           <textarea
@@ -653,25 +680,6 @@ export default function DepoForm() {
               setForm((prev) => ({ ...prev, kommentler: v }))
             }}
             placeholder="Məhsul haqqında qeyd…"
-          />
-        </div>
-        <div style={{ marginTop: 16 }}>
-          <SenedlerField
-            folder="depo"
-            recordId={id || null}
-            value={form.senedler}
-            pendingFiles={pendingFiles}
-            onPendingChange={setPendingFiles}
-            onChange={async (next) => {
-              setForm((f) => ({ ...f, senedler: next }))
-              if (!id) return
-              const { error: e } = await supabase
-                .from(DEPO_TABLE)
-                .update({ senedler: next, updated_at: new Date().toISOString() })
-                .eq('id', id)
-              if (e) setError(e.message)
-              else setRecord((r) => (r ? { ...r, senedler: next } : r))
-            }}
           />
         </div>
         {error && <p style={{ color: 'var(--color-accent)' }}>{error}</p>}
