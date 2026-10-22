@@ -1,0 +1,69 @@
+/* Depo Yeni qeyd / Redaktə formu: sahələr alt-alta, yaxın-yaxın; izahlar xananın sağında */
+.depo-stack {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+  max-width: 760px;
+}
+
+.depo-stack .form-group {
+  margin-bottom: 0;
+}
+
+.depo-stack .form-group label {
+  margin-bottom: 2px;
+}
+
+.depo-subgroup {
+  display: grid;
+  gap: 8px;
+}
+
+.depo-box {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  padding: 8px 10px;
+  background: var(--color-bg);
+  display: grid;
+  gap: 8px;
+}
+
+/* Xana + sağında izah */
+.depo-inline {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.depo-inline > input,
+.depo-inline > select,
+.depo-inline > textarea {
+  flex: 0 1 400px;
+  min-width: 0;
+}
+
+.depo-inline--suggest {
+  align-items: flex-end;
+}
+
+.depo-inline--suggest > .searchable-select {
+  flex: 0 1 400px;
+  min-width: 0;
+}
+
+.depo-inline--suggest > .depo-msg {
+  padding-bottom: 9px;
+}
+
+.depo-msg {
+  flex: 1 1 160px;
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.3;
+}
+
+.depo-msg--hint {
+  font-size: 11px;
+  color: var(--color-text-muted);
+}
