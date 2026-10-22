@@ -17,6 +17,7 @@ import { applyKeyOrder } from '../features/musteri-bazasi/columnOrder'
 import { parseSenedler, senedlerPublicUrl, SENEDLER_BUCKET } from '../lib/senedler'
 import { confirmDelete } from '../lib/confirmDelete'
 import { normMusteriName, phoneKey, mergeMusteriler } from '../lib/musteriler'
+import { loadTechizatcilar } from '../lib/techizatcilar'
 import '../features/musteri-bazasi/musteri-table.css'
 import '../styles/shared.css'
 import '../components/record-module.css'
@@ -24,7 +25,7 @@ import '../components/record-module.css'
 /**
  * Kontaktlar (test): müştərilər və təchizatçılar bir yerdə.
  * Yalnız oxuyur — bazada heç nəyi dəyişmir.
- * Təchizatçılar Depodakı "Hardan" (kimden_alinib) adlarından avtomatik yığılır.
+ * Təchizatçılar: techizatcilar cədvəli + Depodakı "Kimdən" (kimden_alinib) adları.
  */
 
 const STATUS_LABELS = {
@@ -71,7 +72,8 @@ const CUSTOMER_COLUMNS = [
 
 const SUPPLIER_COLUMNS = [
   { key: 'name', label: 'Təchizatçı', type: 'text', width: 220 },
-  { key: 'phone', label: 'Telefon (Depodan)', type: 'text', width: 170 },
+  { key: 'tukan', label: 'Tükan', type: 'text', width: 150 },
+  { key: 'phone', label: 'Telefon', type: 'text', width: 170 },
   { key: 'count', label: 'Məhsul sayı', type: 'number', width: 110 },
   { key: 'total', label: 'Alış cəmi', type: 'money', width: 140 },
   { key: 'lastDate', label: 'Son alış', type: 'date', width: 120 },
@@ -397,7 +399,7 @@ export default function KontaktlarPage() {
   const [onlyDebt, setOnlyDebt] = useState(Boolean(saved.onlyDebt))
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
-  const [data, setData] = useState({ musteriler: [], satislar: [], odenisler: [], ledger: [], depo: [] })
+  const [data, setData] = useState({ musteriler: [], satislar: [], odenisler: [], ledger: [], depo: [], techizatcilar: [] })
   const [openCustomerId, setOpenCustomerId] = useState(null)
   const [openSupplier, setOpenSupplier] = useState(null)
   const [editing, setEditing] = useState(false)
@@ -427,7 +429,7 @@ export default function KontaktlarPage() {
       setLoading(true)
       setError(null)
       try {
-        const [m, s, o, l, d] = await Promise.all([
+        const [m, s, o, l, d, t] = await Promise.all([
           fetchAllPages(() =>
             supabase
               .from('musteriler')
@@ -450,6 +452,8 @@ export default function KontaktlarPage() {
               .select('id, sira_no, kimden_alinib, nomre, model, reng, yaddas, imei_1, alis_qiymeti, alis_tarixi, miqdar, status')
               .order('id', { ascending: true })
           ),
+          // Təchizatçılar cədvəli (Depoda «Yeni Təchizatçı» ilə yaradılanlar); yoxdursa boş
+          loadTechizatcilar(),
         ])
         const err = m.error || s.error || o.error || l.error || d.error
         if (err) throw err
@@ -460,6 +464,7 @@ export default function KontaktlarPage() {
           odenisler: o.data || [],
           ledger: l.data || [],
           depo: d.data || [],
+          techizatcilar: t.data || [],
         })
       } catch (e) {
         if (!cancelled) setError(e.message)
@@ -529,11 +534,20 @@ export default function KontaktlarPage() {
 
   const suppliers = useMemo(() => {
     const map = new Map()
+    const blank = (key, name) => ({ key, name, items: [], phone: '', lastDate: null, total: 0, info: null })
+    // Əvvəl cədvəldəki təchizatçılar (Tükan, nömrələr, komment)
+    for (const t of data.techizatcilar || []) {
+      const name = String(t.ad_soyad || '').trim().replace(/\s+/g, ' ')
+      if (!name) continue
+      const key = norm(name)
+      if (!map.has(key)) map.set(key, blank(key, name))
+      map.get(key).info = t
+    }
     for (const d of data.depo) {
       const name = String(d.kimden_alinib || '').trim().replace(/\s+/g, ' ')
       if (!name) continue
       const key = norm(name)
-      if (!map.has(key)) map.set(key, { key, name, items: [], phone: '', lastDate: null, total: 0 })
+      if (!map.has(key)) map.set(key, blank(key, name))
       const g = map.get(key)
       g.items.push(d)
       const qty = Math.max(1, num(d.miqdar) || 1)
@@ -550,6 +564,8 @@ export default function KontaktlarPage() {
         return {
           ...g,
           id: g.key,
+          tukan: g.info?.tukan || '',
+          phone: [g.info?.nomre_1, g.info?.nomre_2].filter(Boolean).join(', ') || g.phone,
           total: round2(g.total),
           count: g.items.length,
           ledger,
@@ -558,7 +574,7 @@ export default function KontaktlarPage() {
         }
       })
       .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name, 'az'))
-  }, [data.depo, ledgerByName])
+  }, [data.depo, data.techizatcilar, ledgerByName])
 
   const q = norm(search)
 
@@ -727,7 +743,7 @@ export default function KontaktlarPage() {
         <div>
           <h1 style={{ marginBottom: 4 }}>Kontaktlar</h1>
           <p style={{ margin: 0, fontSize: 13, color: 'var(--color-text-muted)' }}>
-            Müştərilər və təchizatçılar (test). Təchizatçılar Depodakı "Hardan" adlarından avtomatik yığılır.
+            Müştərilər və təchizatçılar (test). Təchizatçılar Depoda «Yeni Təchizatçı» ilə yaradılanlar və Depodakı «Kimdən» adlarıdır.
           </p>
         </div>
       </div>
@@ -1119,7 +1135,10 @@ export default function KontaktlarPage() {
             <FieldGrid
               items={[
                 { label: 'Təchizatçı', value: openSupplier.name },
-                { label: 'Telefon (Depodan)', value: openSupplier.phone },
+                { label: 'Hansı Tükan', value: openSupplier.tukan },
+                { label: 'Əlaqə Nömrəsi 1', value: openSupplier.info?.nomre_1 || openSupplier.phone },
+                { label: 'Əlaqə Nömrəsi 2', value: openSupplier.info?.nomre_2 },
+                { label: 'Komment', value: openSupplier.info?.komment },
                 { label: 'Məhsul sayı', value: openSupplier.count },
                 { label: 'Alış cəmi', value: formatMoney(openSupplier.total) },
                 { label: 'Son alış', value: formatDate(openSupplier.lastDate) },
