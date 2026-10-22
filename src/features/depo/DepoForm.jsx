@@ -27,6 +27,20 @@ import {
   syncDepoPurchaseNisyeLedger,
 } from './constants'
 import { LEDGER_TABLE } from '../borc-nisye/constants'
+import { findOrCreateMusteri, normMusteriName } from '../../lib/musteriler'
+import { loadTechizatcilar, findOrCreateTechizatci } from '../../lib/techizatcilar'
+import {
+  NEW_PICK,
+  emptySource,
+  emptySystem,
+  sourceFromRow,
+  systemFromRow,
+  systemAmount,
+  systemPayload,
+  validateSourceAndSystem,
+  HaradanBlock,
+  SistemBlock,
+} from './DepoSourceFields'
 import '../musteri-bazasi/musteri-table.css'
 import '../../styles/shared.css'
 import '../../components/record-module.css'
@@ -135,6 +149,16 @@ function DynamicField({
   )
 }
 
+/** Redaktə üçün: "Mənim" sistem məbləği alış qiymətindən çıxılır (saxlananda yenidən əlavə olunur) */
+function formFromRow(row, columns) {
+  const f = rowToForm(row, columns)
+  if (row?.sistem && row.sistem_nov === 'menim' && row.sistem_mebleg != null && row.alis_qiymeti != null) {
+    const base = Number(row.alis_qiymeti) - Number(row.sistem_mebleg)
+    f.alis_qiymeti = String(Math.round(base * 100) / 100)
+  }
+  return f
+}
+
 function uniqueSorted(values) {
   return [...new Set(values.map((v) => String(v).trim()).filter(Boolean))].sort((a, b) =>
     a.localeCompare(b, 'az')
@@ -156,6 +180,48 @@ export default function DepoForm() {
   const [error, setError] = useState(null)
   const [pendingFiles, setPendingFiles] = useState([])
   const [invalidKeys, setInvalidKeys] = useState(() => new Set())
+  // Haradan (Təchizatçı / Müştəri) və Sistem
+  const [src, setSrc] = useState(() => emptySource())
+  const [sys, setSys] = useState(() => emptySystem())
+  const [techizatcilar, setTechizatcilar] = useState([])
+  const [musteriler, setMusteriler] = useState([])
+
+  const supplierOptions = useMemo(() => {
+    const seen = new Set()
+    const out = []
+    for (const t of techizatcilar) {
+      seen.add(normMusteriName(t.ad_soyad))
+      out.push({ value: `t:${t.id}`, name: t.ad_soyad, label: t.tukan ? `${t.ad_soyad} (${t.tukan})` : t.ad_soyad })
+    }
+    for (const n of suggestions.kimden_alinib || []) {
+      const k = normMusteriName(n)
+      if (!k || seen.has(k)) continue
+      seen.add(k)
+      out.push({ value: `n:${n}`, name: n, label: n })
+    }
+    return out.sort((a, b) => a.label.localeCompare(b.label, 'az'))
+  }, [techizatcilar, suggestions.kimden_alinib])
+
+  const customerOptions = useMemo(
+    () =>
+      musteriler.map((m) => ({
+        value: `m:${m.id}`,
+        name: m.ad_soyad,
+        label: m.nomre_1 ? `${m.ad_soyad} · ${m.nomre_1}` : m.ad_soyad,
+      })),
+    [musteriler]
+  )
+
+  function applyRow(row) {
+    setRecord(row)
+    setForm(formFromRow(row, columns))
+    setSrc(sourceFromRow(row))
+    setSys(systemFromRow(row))
+  }
+
+  function setKimden(name) {
+    setForm((prev) => ({ ...prev, kimden_alinib: name }))
+  }
 
   const formColumns = useMemo(() => {
     return columns
@@ -181,6 +247,14 @@ export default function DepoForm() {
           supabase.from(DEPO_TABLE).select('model, reng, yaddas, kimden_alinib, sexsiyyet')
         )
         const rows = data || []
+        const [tRes, mRes] = await Promise.all([
+          loadTechizatcilar(),
+          fetchAllPages(() => supabase.from('musteriler').select('id, ad_soyad, nomre_1').order('ad_soyad')),
+        ])
+        if (!cancelled) {
+          setTechizatcilar(tRes.data || [])
+          setMusteriler(mRes.data || [])
+        }
         setSuggestions({
           model: uniqueSorted(rows.map((r) => r.model)),
           reng: uniqueSorted(rows.map((r) => r.reng)),
@@ -192,12 +266,13 @@ export default function DepoForm() {
           const { data: row, error: e } = await supabase.from(DEPO_TABLE).select('*').eq('id', id).single()
           if (cancelled) return
           if (e) throw e
-          setRecord(row)
-          setForm(rowToForm(row, columns))
+          applyRow(row)
           setEditing(false)
         } else {
           setRecord(null)
           setForm(emptyDepoForm(columns))
+          setSrc(emptySource())
+          setSys(emptySystem())
           setEditing(true)
         }
       } catch (err) {
@@ -250,9 +325,55 @@ export default function DepoForm() {
       setError(nisyeErr)
       return
     }
+    const srcErr = validateSourceAndSystem(src, sys)
+    if (srcErr) {
+      setError(srcErr)
+      return
+    }
     setSaving(true)
     try {
       const payload = toDepoPayload(form, columns)
+
+      // Haradan: seçilmiş / yeni Təchizatçı və ya Müştəri
+      payload.haradan_tip = src.tip || null
+      payload.techizatci_id = null
+      payload.musteri_id = null
+      if (src.tip === 'techizatci') {
+        if (src.pick === NEW_PICK) {
+          payload.techizatci_id = await findOrCreateTechizatci(src.yeni)
+          payload.kimden_alinib = src.yeni.ad_soyad.trim()
+        } else if (src.pick.startsWith('t:')) {
+          payload.techizatci_id = src.pick.slice(2)
+        }
+      } else if (src.tip === 'musteri') {
+        if (src.pick === NEW_PICK) {
+          const ad = src.yeni.ad_soyad.trim()
+          payload.musteri_id = await findOrCreateMusteri({
+            ad_soyad: ad,
+            nomre_1: src.yeni.nomre_1.trim() || null,
+            nomre_2: src.yeni.nomre_2.trim() || null,
+            updated_at: new Date().toISOString(),
+          })
+          if (src.yeni.komment.trim()) {
+            await supabase
+              .from('musteriler')
+              .update({ komment: src.yeni.komment.trim() })
+              .eq('id', payload.musteri_id)
+              .is('komment', null)
+          }
+          payload.kimden_alinib = ad
+        } else if (src.pick.startsWith('m:')) {
+          payload.musteri_id = src.pick.slice(2)
+        }
+      }
+
+      // Sistem: "Mənim" məbləği alış qiymətinin üstünə gəlir
+      Object.assign(payload, systemPayload(sys))
+      const sysAmount = systemAmount(sys)
+      if (sysAmount > 0) {
+        payload.alis_qiymeti = Math.round(((Number(payload.alis_qiymeti) || 0) + sysAmount) * 100) / 100
+      }
+
       let err
       let newId = id
       let savedRow = null
@@ -308,10 +429,7 @@ export default function DepoForm() {
       }
 
       if (isEdit) {
-        if (savedRow) {
-          setRecord(savedRow)
-          setForm(rowToForm(savedRow, columns))
-        }
+        if (savedRow) applyRow(savedRow)
         setEditing(false)
       } else if (newId) {
         navigate(`/depo/${newId}`)
@@ -368,6 +486,26 @@ export default function DepoForm() {
           </>
         }
       >
+        {(record.haradan_tip || record.sistem) && (
+          <dl className="record-module__grid" style={{ marginTop: 16 }}>
+            {record.haradan_tip && (
+              <div className="record-module__field">
+                <dt>Haradan</dt>
+                <dd>{record.haradan_tip === 'techizatci' ? 'Təchizatçı' : 'Müştəri'}{record.kimden_alinib ? ` · ${record.kimden_alinib}` : ''}</dd>
+              </div>
+            )}
+            {record.sistem && (
+              <div className="record-module__field">
+                <dt>Sistem</dt>
+                <dd>
+                  {record.sistem_nov === 'menim'
+                    ? `Mənim · ${record.sistem_mebleg ?? 0} AZN (alış qiymətinə daxildir)`
+                    : `Digər · ${record.sistem_adi || '—'}${record.sistem_zamin ? ` · Zamin: ${record.sistem_zamin}` : ''}`}
+                </dd>
+              </div>
+            )}
+          </dl>
+        )}
         {record.kommentler ? (
           <div className="form-group" style={{ marginTop: 20, marginBottom: 0 }}>
             <label>Komment</label>
@@ -410,7 +548,7 @@ export default function DepoForm() {
               className="btn btn--secondary"
               onClick={() => {
                 setError(null)
-                if (record) setForm(rowToForm(record, columns))
+                if (record) applyRow(record)
                 setEditing(false)
               }}
             >
@@ -420,11 +558,12 @@ export default function DepoForm() {
         )}
       </div>
       <form onSubmit={handleSubmit} noValidate>
-        <div className="form-row">
+        {/* Sahələr alt-alta (bir sütun) */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 12, maxWidth: 560 }}>
           {formColumns.filter((c) => c.key !== 'senedler' && c.key !== 'kommentler').map((col) => {
             const isYeni = form.veziyyet_cihaz === 'teze'
             const isKohne = form.veziyyet_cihaz === 'kohne'
-            return (
+            const field = (
               <DynamicField
                 key={col.key}
                 col={col}
@@ -451,7 +590,10 @@ export default function DepoForm() {
                   }
                 }}
                 suggestions={suggestions}
-                forceReadonly={col.key === 'battery_faiz' && isYeni}
+                forceReadonly={
+                  (col.key === 'battery_faiz' && isYeni) ||
+                  (col.key === 'kimden_alinib' && Boolean(src.tip && src.pick))
+                }
                 required={
                   col.key === 'veziyyet_cihaz' ||
                   (form.odenis_novu === 'nisye' &&
@@ -469,6 +611,33 @@ export default function DepoForm() {
                 }
               />
             )
+            if (col.key === 'kimden_alinib') {
+              return (
+                <div key={col.key} style={{ display: 'grid', gap: 12 }}>
+                  <HaradanBlock
+                    src={src}
+                    setSrc={setSrc}
+                    suppliers={supplierOptions}
+                    customers={customerOptions}
+                    onPickName={setKimden}
+                  />
+                  {field}
+                </div>
+              )
+            }
+            if (col.key === 'alis_qiymeti') {
+              return (
+                <div key={col.key} style={{ display: 'grid', gap: 12 }}>
+                  {field}
+                  <SistemBlock
+                    sys={sys}
+                    setSys={setSys}
+                    baseAmount={Number(String(form.alis_qiymeti || '').replace(',', '.')) || 0}
+                  />
+                </div>
+              )
+            }
+            return field
           })}
         </div>
         <div className="form-group" style={{ marginTop: 16 }}>
@@ -512,7 +681,7 @@ export default function DepoForm() {
             className="btn btn--secondary"
             onClick={() => {
               if (isEdit) {
-                if (record) setForm(rowToForm(record, columns))
+                if (record) applyRow(record)
                 setEditing(false)
               } else {
                 navigate('/depo')
