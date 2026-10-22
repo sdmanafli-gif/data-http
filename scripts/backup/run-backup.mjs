@@ -16,7 +16,8 @@
  *
  * Env (optional):
  *  BACKUP_BUCKETS            comma list (default: Mobideal)
- *  BACKUP_RETENTION_HOURS    default 24 (stay inside free 10GB)
+ *  BACKUP_RETENTION_HOURS    default 24 — bu müddətdə HƏR saatlıq backup saxlanılır
+ *  BACKUP_DAILY_DAYS         default 30 — daha köhnələrdən hər gün üçün 1 backup (günün ilki) saxlanılır
  *  BACKUP_PREFIX             default mobideal-backup
  *  R2_ENDPOINT               override (default https://<account>.r2.cloudflarestorage.com)
  */
@@ -204,8 +205,17 @@ async function uploadToR2(client, bucket, key, filePath) {
   await upload.done()
 }
 
-async function pruneOldBackups(client, bucket, prefix, retentionHours) {
-  const cutoff = Date.now() - retentionHours * 3600 * 1000
+/**
+ * Saxlama qaydası:
+ *  - son `retentionHours` saat: bütün saatlıq backup-lar qalır
+ *  - ondan köhnə, son `dailyDays` gün: hər gün üçün yalnız 1 backup (Bakı vaxtı ilə günün ilki)
+ *  - daha köhnələr silinir
+ */
+async function pruneOldBackups(client, bucket, prefix, retentionHours, dailyDays) {
+  const now = Date.now()
+  const hourlyCutoff = now - retentionHours * 3600 * 1000
+  const dailyCutoff = now - dailyDays * 24 * 3600 * 1000
+  const all = []
   let token
   do {
     const listed = await client.send(
@@ -217,18 +227,30 @@ async function pruneOldBackups(client, bucket, prefix, retentionHours) {
     )
     for (const obj of listed.Contents || []) {
       const modified = obj.LastModified ? obj.LastModified.getTime() : 0
-      if (modified && modified < cutoff && obj.Key) {
-        await client.send(
-          new DeleteObjectCommand({
-            Bucket: bucket,
-            Key: obj.Key,
-          })
-        )
-        console.log(`  pruned ${obj.Key}`)
-      }
+      if (modified && obj.Key) all.push({ key: obj.Key, t: modified })
     }
     token = listed.IsTruncated ? listed.NextContinuationToken : undefined
   } while (token)
+
+  all.sort((a, b) => a.t - b.t)
+  const keptDays = new Set()
+  let kept = 0
+  for (const o of all) {
+    if (o.t >= hourlyCutoff) {
+      kept++
+      continue
+    }
+    // Bakı günü (UTC+4)
+    const day = new Date(o.t + 4 * 3600 * 1000).toISOString().slice(0, 10)
+    if (o.t >= dailyCutoff && !keptDays.has(day)) {
+      keptDays.add(day)
+      kept++
+      continue
+    }
+    await client.send(new DeleteObjectCommand({ Bucket: bucket, Key: o.key }))
+    console.log(`  pruned ${o.key}`)
+  }
+  console.log(`  kept ${kept} backups (${keptDays.size} daily + recent hourly)`)
 }
 
 async function main() {
@@ -240,8 +262,9 @@ async function main() {
     .split(',')
     .map((s) => s.trim())
     .filter(Boolean)
-  // 24h default to stay inside R2 free ~10GB more easily
+  // Son 24 saat saatlıq + 30 gün gündəlik (R2 pulsuz 10 GB-ın çox altında qalır)
   const retentionHours = Number(process.env.BACKUP_RETENTION_HOURS || 24)
+  const dailyDays = Number(process.env.BACKUP_DAILY_DAYS || 30)
   const prefix = process.env.BACKUP_PREFIX || 'mobideal-backup'
   const tag = stamp()
   const zipName = `${prefix}-${tag}.zip`
@@ -274,6 +297,7 @@ async function main() {
         r2_bucket: r2Bucket,
         buckets,
         retention_hours: retentionHours,
+        daily_days: dailyDays,
       },
       null,
       2
@@ -291,8 +315,8 @@ async function main() {
   await uploadToR2(s3, r2Bucket, objectKey, zipPath)
   console.log(`   uploaded s3://${r2Bucket}/${objectKey}`)
 
-  console.log(`6) Prune backups older than ${retentionHours}h…`)
-  await pruneOldBackups(s3, r2Bucket, `${prefix}/`, retentionHours)
+  console.log(`6) Prune: keep ${retentionHours}h hourly + ${dailyDays} days daily…`)
+  await pruneOldBackups(s3, r2Bucket, `${prefix}/`, retentionHours, dailyDays)
 
   fs.rmSync(WORK, { recursive: true, force: true })
   console.log('Backup complete.')
