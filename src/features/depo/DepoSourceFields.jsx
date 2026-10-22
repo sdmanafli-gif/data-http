@@ -82,15 +82,7 @@ export function systemPayload(sys) {
   }
 }
 
-const hintStyle = { margin: '4px 0 0', fontSize: 11, color: 'var(--color-text-muted)' }
-const boxStyle = {
-  border: '1px solid var(--color-border)',
-  borderRadius: 'var(--radius)',
-  padding: 12,
-  background: 'var(--color-bg)',
-  display: 'grid',
-  gap: 10,
-}
+// Görünüş: depo-form.css (.depo-box, .depo-inline, .depo-msg)
 
 /**
  * @param {{ src, setSrc, suppliers: {value,label,name}[], customers: {value,label,name}[], onPickName: (name)=>void }} p
@@ -106,7 +98,7 @@ export function HaradanBlock({ src, setSrc, suppliers, customers, onPickName }) 
     })
 
   return (
-    <div style={boxStyle}>
+    <div className="depo-box">
       <div className="form-group" style={{ marginBottom: 0 }}>
         <label>Haradan</label>
         <select
@@ -126,26 +118,28 @@ export function HaradanBlock({ src, setSrc, suppliers, customers, onPickName }) 
       {src.tip && (
         <div className="form-group" style={{ marginBottom: 0 }}>
           <label>{isSup ? 'Təchizatçı' : 'Müştəri'}</label>
-          <select
-            value={src.pick}
-            onChange={(e) => {
-              const pick = e.target.value
-              setSrc((prev) => ({ ...prev, pick }))
-              if (pick === NEW_PICK) onPickName(src.yeni.ad_soyad || '')
-              else onPickName(list.find((o) => o.value === pick)?.name || '')
-            }}
-          >
-            <option value="">— Seçin —</option>
-            <option value={NEW_PICK}>{isSup ? '+ Yeni Təchizatçı' : '+ Yeni Müştəri'}</option>
-            {list.map((o) => (
-              <option key={o.value} value={o.value}>
-                {o.label}
-              </option>
-            ))}
-          </select>
-          <p style={hintStyle}>
-            {isSup ? 'Siyahı Kontaktlar → Təchizatçılar bölməsindəndir' : 'Siyahı Kontaktlar → Müştərilər bölməsindəndir'}
-          </p>
+          <div className="depo-inline">
+            <select
+              value={src.pick}
+              onChange={(e) => {
+                const pick = e.target.value
+                setSrc((prev) => ({ ...prev, pick }))
+                if (pick === NEW_PICK) onPickName(src.yeni.ad_soyad || '')
+                else onPickName(list.find((o) => o.value === pick)?.name || '')
+              }}
+            >
+              <option value="">— Seçin —</option>
+              <option value={NEW_PICK}>{isSup ? '+ Yeni Təchizatçı' : '+ Yeni Müştəri'}</option>
+              {list.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+            <p className="depo-msg depo-msg--hint">
+              {isSup ? 'Siyahı Kontaktlar → Təchizatçılar bölməsindəndir' : 'Siyahı Kontaktlar → Müştərilər bölməsindəndir'}
+            </p>
+          </div>
         </div>
       )}
 
@@ -186,7 +180,7 @@ export function SistemBlock({ sys, setSys, baseAmount }) {
   const set = (k, v) => setSys((prev) => ({ ...prev, [k]: v }))
   const extra = systemAmount(sys)
   return (
-    <div style={boxStyle}>
+    <div className="depo-box">
       <div className="form-group" style={{ marginBottom: 0 }}>
         <label>Sistemi</label>
         <select
@@ -212,11 +206,13 @@ export function SistemBlock({ sys, setSys, baseAmount }) {
       {sys.sistem === 'var' && sys.nov === 'menim' && (
         <div className="form-group" style={{ marginBottom: 0 }}>
           <label>Sistemin məbləği (AZN) *</label>
-          <input type="number" step="0.01" value={sys.mebleg} onChange={(e) => set('mebleg', e.target.value)} />
-          <p style={hintStyle}>
-            Saxlananda alış qiymətinin üstünə gəlir
-            {extra > 0 ? ` — alış: ${baseAmount || 0} + ${extra} = ${Math.round(((baseAmount || 0) + extra) * 100) / 100} AZN` : ''}
-          </p>
+          <div className="depo-inline">
+            <input type="number" step="0.01" value={sys.mebleg} onChange={(e) => set('mebleg', e.target.value)} />
+            <p className="depo-msg depo-msg--hint">
+              Saxlananda alış qiymətinin üstünə gəlir
+              {extra > 0 ? ` — alış: ${baseAmount || 0} + ${extra} = ${Math.round(((baseAmount || 0) + extra) * 100) / 100} AZN` : ''}
+            </p>
+          </div>
         </div>
       )}
 
