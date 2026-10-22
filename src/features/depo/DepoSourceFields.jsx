@@ -8,7 +8,18 @@ export function emptySource() {
   return {
     tip: '', // '' | 'techizatci' | 'musteri'
     pick: '', // '' | '__new__' | 't:<id>' | 'n:<ad>' | 'm:<id>'
-    yeni: { ad_soyad: '', tukan: '', nomre_1: '', nomre_2: '', komment: '' },
+    yeni: {
+      ad_soyad: '',
+      tukan: '',
+      nomre_1: '',
+      nomre_2: '',
+      komment: '',
+      // yalnız Yeni Müştəri üçün
+      sv_seriya: '',
+      fin_kod: '',
+      dogum_tarixi: '',
+      yasayis_unvani: '',
+    },
   }
 }
 
@@ -84,10 +95,39 @@ export function systemPayload(sys) {
 
 // Görünüş: depo-form.css (.depo-box, .depo-inline, .depo-msg)
 
+const SUPPLIER_NEW_FIELDS = [
+  { key: 'ad_soyad', label: 'Ad / Soyad / Ata adı *' },
+  { key: 'tukan', label: 'Hansı Tükan' },
+  { key: 'nomre_1', label: 'Əlaqə Nömrəsi 1' },
+  { key: 'nomre_2', label: 'Əlaqə Nömrəsi 2' },
+  { key: 'komment', label: 'Komment', type: 'textarea' },
+]
+
+const CUSTOMER_NEW_FIELDS = [
+  { key: 'ad_soyad', label: 'Ad / Soyad / Ata adı *' },
+  { key: 'sv_seriya', label: 'Şəxsiyyət vəsiqəsinin Nömrəsi' },
+  { key: 'fin_kod', label: 'FİN kodu' },
+  { key: 'dogum_tarixi', label: 'Doğum Tarixi', type: 'date' },
+  { key: 'nomre_1', label: 'Telefon Nömrəsi 1' },
+  { key: 'nomre_2', label: 'Telefon Nömrəsi 2' },
+  { key: 'yasayis_unvani', label: 'Yaşayış Ünvanı' },
+  { key: 'komment', label: 'Komment', type: 'textarea' },
+]
+
+/** Yeni Müştəri üçün musteriler cədvəlinə yazılacaq əlavə sahələr (boş olanlar yox) */
+export function customerExtraFields(yeni) {
+  const out = {}
+  for (const k of ['sv_seriya', 'fin_kod', 'dogum_tarixi', 'yasayis_unvani', 'komment']) {
+    const v = String(yeni?.[k] || '').trim()
+    if (v) out[k] = v
+  }
+  return out
+}
+
 /**
- * @param {{ src, setSrc, suppliers: {value,label,name}[], customers: {value,label,name}[], onPickName: (name)=>void }} p
+ * @param {{ src, setSrc, suppliers: {value,label,name}[], customers: {value,label,name}[], onPickName: (name)=>void, children?: any }} p
  */
-export function HaradanBlock({ src, setSrc, suppliers, customers, onPickName }) {
+export function HaradanBlock({ src, setSrc, suppliers, customers, onPickName, children }) {
   const isSup = src.tip === 'techizatci'
   const list = isSup ? suppliers : customers
   const setYeni = (k, v) =>
@@ -145,30 +185,25 @@ export function HaradanBlock({ src, setSrc, suppliers, customers, onPickName }) 
 
       {src.tip && src.pick === NEW_PICK && (
         <>
-          <div className="form-group" style={{ marginBottom: 0 }}>
-            <label>Ad / Soyad / Ata adı *</label>
-            <input value={src.yeni.ad_soyad} onChange={(e) => setYeni('ad_soyad', e.target.value)} />
-          </div>
-          {isSup && (
-            <div className="form-group" style={{ marginBottom: 0 }}>
-              <label>Hansı Tükan</label>
-              <input value={src.yeni.tukan} onChange={(e) => setYeni('tukan', e.target.value)} />
+          {(isSup ? SUPPLIER_NEW_FIELDS : CUSTOMER_NEW_FIELDS).map((f) => (
+            <div key={f.key} className="form-group" style={{ marginBottom: 0 }}>
+              <label>{f.label}</label>
+              {f.type === 'textarea' ? (
+                <textarea rows={2} value={src.yeni[f.key] || ''} onChange={(e) => setYeni(f.key, e.target.value)} />
+              ) : (
+                <input
+                  type={f.type === 'date' ? 'date' : 'text'}
+                  value={src.yeni[f.key] || ''}
+                  onChange={(e) => setYeni(f.key, e.target.value)}
+                />
+              )}
             </div>
-          )}
-          <div className="form-group" style={{ marginBottom: 0 }}>
-            <label>Əlaqə Nömrəsi 1</label>
-            <input value={src.yeni.nomre_1} onChange={(e) => setYeni('nomre_1', e.target.value)} />
-          </div>
-          <div className="form-group" style={{ marginBottom: 0 }}>
-            <label>Əlaqə Nömrəsi 2</label>
-            <input value={src.yeni.nomre_2} onChange={(e) => setYeni('nomre_2', e.target.value)} />
-          </div>
-          <div className="form-group" style={{ marginBottom: 0 }}>
-            <label>Komment</label>
-            <textarea rows={2} value={src.yeni.komment} onChange={(e) => setYeni('komment', e.target.value)} />
-          </div>
+          ))}
         </>
       )}
+
+      {/* Fayllar (Təchizatçı və ya Müştəri — fərq etmir) */}
+      {children}
     </div>
   )
 }
