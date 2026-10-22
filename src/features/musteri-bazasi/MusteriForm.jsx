@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { supabase, fetchAllPages } from '../../lib/supabase'
+import { findOrCreateMusteri } from '../../lib/musteriler'
 import MusteriSelect from './MusteriSelect'
 import RecordModule from '../../components/RecordModule'
 import PaymentScheduleList from './PaymentScheduleList'
@@ -257,13 +258,8 @@ export default function MusteriForm() {
       return form.musteri_id
     }
 
-    const { data, error: insErr } = await supabase
-      .from(MUSTERILER_TABLE)
-      .insert(person)
-      .select('id')
-      .single()
-    if (insErr) throw insErr
-    return data.id
+    // Eyni adlı müştəri varsa yenisini yaratma — alışı mövcud müştəriyə bağla
+    return findOrCreateMusteri(person)
   }
 
   async function handleSubmit(e) {
