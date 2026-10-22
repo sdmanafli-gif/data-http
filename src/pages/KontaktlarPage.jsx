@@ -16,6 +16,7 @@ import ResizableDataTable from '../features/musteri-bazasi/ResizableDataTable'
 import { applyKeyOrder } from '../features/musteri-bazasi/columnOrder'
 import { parseSenedler, senedlerPublicUrl, SENEDLER_BUCKET } from '../lib/senedler'
 import { confirmDelete } from '../lib/confirmDelete'
+import { normMusteriName, phoneKey, mergeMusteriler } from '../lib/musteriler'
 import '../features/musteri-bazasi/musteri-table.css'
 import '../styles/shared.css'
 import '../components/record-module.css'
@@ -387,7 +388,7 @@ function SummaryRow({ items }) {
 }
 
 export default function KontaktlarPage() {
-  const { access } = useAuth()
+  const { access, isAdmin } = useAuth()
   const canView = access.canAccessModule('kontaktlar')
   const canEditCard = canView && access.canEdit('kontaktlar')
   const [saved] = useState(() => loadPageFilters('kontaktlar', {}) || {})
@@ -403,6 +404,15 @@ export default function KontaktlarPage() {
   const [editForm, setEditForm] = useState({})
   const [saving, setSaving] = useState(false)
   const [modalError, setModalError] = useState(null)
+  // Təkrarlar / Birləşdir (yalnız admin)
+  const [dupOnly, setDupOnly] = useState(false)
+  const [selectedIds, setSelectedIds] = useState(() => new Set())
+  const [mergeOpen, setMergeOpen] = useState(false)
+  const [mergeTarget, setMergeTarget] = useState(null)
+  const [merging, setMerging] = useState(false)
+  const [mergeError, setMergeError] = useState(null)
+  const [mergeNote, setMergeNote] = useState(null)
+  const [reloadKey, setReloadKey] = useState(0)
   const [custCols, reorderCustCols, resizeCustCols] = useStoredColumns('kontaktlar_musteri', CUSTOMER_COLUMNS)
   const [supCols, reorderSupCols, resizeSupCols] = useStoredColumns('kontaktlar_techizatci', SUPPLIER_COLUMNS)
 
@@ -460,7 +470,7 @@ export default function KontaktlarPage() {
     return () => {
       cancelled = true
     }
-  }, [canView])
+  }, [canView, reloadKey])
 
   // Borc / Nisyə qalıqları ada görə
   const ledgerByName = useMemo(() => {
@@ -552,15 +562,75 @@ export default function KontaktlarPage() {
 
   const q = norm(search)
 
-  const shownCustomers = useMemo(
-    () =>
-      customers.filter((c) => {
-        if (onlyDebt && c.qalan <= 0) return false
-        if (!q) return true
-        return [c.ad_soyad, c.zamin, ...c.phones].some((v) => norm(v).includes(q))
-      }),
-    [customers, q, onlyDebt]
-  )
+  // Ehtimal olunan təkrarlar: adı eyni (yazılış fərqi nəzərə alınmır) və ya eyni telefon
+  const dupIds = useMemo(() => {
+    const byName = new Map()
+    const byPhone = new Map()
+    for (const c of customers) {
+      const n = normMusteriName(c.ad_soyad)
+      if (n) byName.set(n, [...(byName.get(n) || []), c.id])
+      for (const ph of new Set(c.phones.map(phoneKey).filter(Boolean))) {
+        byPhone.set(ph, [...(byPhone.get(ph) || []), c.id])
+      }
+    }
+    const out = new Set()
+    for (const ids of [...byName.values(), ...byPhone.values()]) {
+      if (ids.length > 1) ids.forEach((id) => out.add(id))
+    }
+    return out
+  }, [customers])
+
+  const shownCustomers = useMemo(() => {
+    const list = customers.filter((c) => {
+      if (dupOnly && !dupIds.has(c.id)) return false
+      if (onlyDebt && c.qalan <= 0) return false
+      if (!q) return true
+      return [c.ad_soyad, c.zamin, ...c.phones].some((v) => norm(v).includes(q))
+    })
+    if (dupOnly) {
+      list.sort((a, b) => normMusteriName(a.ad_soyad).localeCompare(normMusteriName(b.ad_soyad), 'az'))
+    }
+    return list
+  }, [customers, q, onlyDebt, dupOnly, dupIds])
+
+  const selectedCustomers = customers.filter((c) => selectedIds.has(c.id))
+
+  function toggleSelect(row) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(row.id)) next.delete(row.id)
+      else next.add(row.id)
+      return next
+    })
+  }
+
+  function openMerge() {
+    if (selectedCustomers.length < 2) return
+    // Default əsas: alışı ən çox olan
+    const best = [...selectedCustomers].sort((a, b) => b.saleCount - a.saleCount)[0]
+    setMergeTarget(best.id)
+    setMergeError(null)
+    setMergeOpen(true)
+  }
+
+  async function runMerge() {
+    if (!mergeTarget) return
+    const others = selectedCustomers.map((c) => c.id).filter((id) => id !== mergeTarget)
+    setMerging(true)
+    setMergeError(null)
+    try {
+      await mergeMusteriler(mergeTarget, others)
+      const t = customers.find((c) => c.id === mergeTarget)
+      setMergeNote(`${others.length + 1} müştəri «${t?.ad_soyad || ''}» adı altında birləşdirildi.`)
+      setMergeOpen(false)
+      setSelectedIds(new Set())
+      setReloadKey((k) => k + 1)
+    } catch (e) {
+      setMergeError(e.message || String(e))
+    } finally {
+      setMerging(false)
+    }
+  }
 
   const shownSuppliers = useMemo(
     () =>
@@ -692,6 +762,12 @@ export default function KontaktlarPage() {
             <input type="checkbox" checked={onlyDebt} onChange={(e) => setOnlyDebt(e.target.checked)} />
             {tab === 'musteri' ? 'Yalnız borcu olanlar' : 'Yalnız Borc / Nisyə qalığı olanlar'}
           </label>
+          {tab === 'musteri' && (
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14, marginBottom: 4 }}>
+              <input type="checkbox" checked={dupOnly} onChange={(e) => setDupOnly(e.target.checked)} />
+              Yalnız təkrarlar (eyni ad və ya nömrə) — {dupIds.size}
+            </label>
+          )}
         </div>
       </CollapsibleSummary>
 
@@ -721,6 +797,37 @@ export default function KontaktlarPage() {
         </CollapsibleSummary>
       )}
 
+      {mergeNote && (
+        <p style={{ color: '#2e7d32', fontWeight: 600 }}>
+          {mergeNote}{' '}
+          <button type="button" className="btn btn--secondary" style={{ padding: '2px 8px', fontSize: 12 }} onClick={() => setMergeNote(null)}>
+            OK
+          </button>
+        </p>
+      )}
+
+      {isAdmin && tab === 'musteri' && !loading && (
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 8 }}>
+          <button
+            type="button"
+            className="btn btn--primary"
+            disabled={selectedCustomers.length < 2}
+            onClick={openMerge}
+            title="Eyni adamın təkrar qeydlərini işarələ və birləşdir"
+          >
+            Birləşdir ({selectedCustomers.length})
+          </button>
+          {selectedCustomers.length > 0 && (
+            <button type="button" className="btn btn--secondary" onClick={() => setSelectedIds(new Set())}>
+              Seçimi təmizlə
+            </button>
+          )}
+          <span style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>
+            Eyni müştərinin sətirlərini soldakı xanadan işarələ, sonra «Birləşdir» bas.
+          </span>
+        </div>
+      )}
+
       <div className="card">
         {loading ? (
           <p className="empty-state">Yüklənir…</p>
@@ -732,6 +839,7 @@ export default function KontaktlarPage() {
             onReorderColumns={reorderCustCols}
             onResizeColumn={resizeCustCols}
             onRowOpen={openCustomerCard}
+            selection={isAdmin ? { selectedIds, onToggle: toggleSelect } : undefined}
             emptyText="Müştəri tapılmadı."
             prefsKey="kontaktlar_musteri"
           />
@@ -954,6 +1062,50 @@ export default function KontaktlarPage() {
               )}
             </CardDetails>
           </div>
+        </Modal>
+      )}
+
+      {mergeOpen && (
+        <Modal
+          title="Müştəriləri birləşdir"
+          subtitle="Hansı qeyd əsas qalsın? Digərlərinin alışları, nömrələri və faylları ona keçəcək, özləri silinəcək."
+          onClose={() => !merging && setMergeOpen(false)}
+          actions={
+            <button type="button" className="btn btn--primary" disabled={merging || !mergeTarget} onClick={runMerge}>
+              {merging ? 'Birləşdirilir…' : `Birləşdir (${selectedCustomers.length})`}
+            </button>
+          }
+        >
+          {mergeError && <p style={{ color: 'var(--color-accent)' }}>{mergeError}</p>}
+          <div style={{ display: 'grid', gap: 8 }}>
+            {selectedCustomers.map((c) => (
+              <label
+                key={c.id}
+                className="record-module__field"
+                style={{ display: 'flex', gap: 12, alignItems: 'flex-start', cursor: 'pointer' }}
+              >
+                <input
+                  type="radio"
+                  name="merge-target"
+                  checked={mergeTarget === c.id}
+                  onChange={() => setMergeTarget(c.id)}
+                  style={{ marginTop: 4 }}
+                />
+                <span>
+                  <strong>{c.ad_soyad}</strong>
+                  {mergeTarget === c.id ? ' — əsas' : ''}
+                  <br />
+                  <span style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>
+                    {c.telefon || 'nömrə yoxdur'} · Alış: {c.saleCount} · Satış cəmi: {formatMoney(c.satis)} · Qalan:{' '}
+                    {formatMoney(c.qalan)}
+                  </span>
+                </span>
+              </label>
+            ))}
+          </div>
+          <p style={{ fontSize: 13, color: 'var(--color-text-muted)', marginTop: 12, marginBottom: 0 }}>
+            Satış qeydlərinin özü (Müştəri Bazası) dəyişmir və silinmir — sadəcə hamısı bir müştərinin kartında görünəcək.
+          </p>
         </Modal>
       )}
 
