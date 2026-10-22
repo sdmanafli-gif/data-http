@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { supabase, fetchAllPages } from '../../lib/supabase'
+import { findOrCreateMusteri } from '../../lib/musteriler'
 import MusteriSelect from '../musteri-bazasi/MusteriSelect'
 import SuggestInput from '../musteri-bazasi/SuggestInput'
 import MusteriSectionedFields from '../musteri-bazasi/MusteriSectionedFields'
@@ -645,14 +646,14 @@ export default function SaleFlow() {
       await supabase.from(MUSTERILER_TABLE).update(payload).eq('id', source.musteri_id)
       return source.musteri_id
     }
-    const { data, error: e } = await supabase.from(MUSTERILER_TABLE).insert(payload).select('id').single()
-    if (e) throw e
+    // Eyni adlı müştəri varsa yenisini yaratma — satışı mövcud müştəriyə bağla
+    const newId = await findOrCreateMusteri(payload)
     if (saleType === 'kredit') {
-      setMusteriForm((prev) => ({ ...prev, musteri_id: data.id }))
+      setMusteriForm((prev) => ({ ...prev, musteri_id: newId }))
     } else {
-      setPerson((prev) => ({ ...prev, musteri_id: data.id }))
+      setPerson((prev) => ({ ...prev, musteri_id: newId }))
     }
-    return data.id
+    return newId
   }
 
   async function markDepoSold(item) {
