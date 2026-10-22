@@ -67,3 +67,50 @@
   font-size: 11px;
   color: var(--color-text-muted);
 }
+
+/* Haradan qutusunda 3 fayl yeri */
+.depo-files {
+  display: grid;
+  gap: 6px;
+  border-top: 1px dashed var(--color-border);
+  padding-top: 8px;
+}
+
+.depo-files__title {
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.depo-file-slot,
+.depo-files__extra {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 13px;
+}
+
+.depo-file-slot__label {
+  width: 56px;
+  flex: 0 0 auto;
+  color: var(--color-text-muted);
+}
+
+.depo-file-slot__name {
+  flex: 0 1 260px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.depo-file-slot__btn {
+  padding: 2px 10px;
+  font-size: 12px;
+}
+
+.depo-files__extra-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
