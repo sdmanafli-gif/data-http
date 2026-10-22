@@ -44,6 +44,14 @@ import {
 import '../musteri-bazasi/musteri-table.css'
 import '../../styles/shared.css'
 import '../../components/record-module.css'
+import './depo-form.css'
+
+/** Xananın sağında: xəta və ya izah */
+function FieldMsg({ hint = null, invalid = false }) {
+  if (invalid) return <p className="form-group__error depo-msg">Bu sahə mütləqdir</p>
+  if (hint) return <p className="depo-msg depo-msg--hint">{hint}</p>
+  return null
+}
 
 function DynamicField({
   col,
@@ -67,16 +75,16 @@ function DynamicField({
           {col.label}
           {forceReadonly ? ' (avtomatik)' : ' (avtomatik)'}
         </label>
-        <input readOnly value={value === '' || value == null ? '—' : String(value)} />
-        {hint ? (
-          <p style={{ margin: '4px 0 0', fontSize: 11, color: 'var(--color-text-muted)' }}>{hint}</p>
-        ) : null}
+        <div className="depo-inline">
+          <input readOnly value={value === '' || value == null ? '—' : String(value)} />
+          <FieldMsg hint={hint} />
+        </div>
       </div>
     )
   }
   if (SUGGEST_FIELDS.has(col.key)) {
     return (
-      <div className={groupClass}>
+      <div className={`${groupClass} depo-inline depo-inline--suggest`}>
         <SuggestInput
           id={`depo-${col.key}`}
           label={`${col.label}${isRequired ? ' *' : ''}`}
@@ -84,10 +92,7 @@ function DynamicField({
           onChange={onChange}
           options={suggestions?.[col.key] || []}
         />
-        {invalid ? <p className="form-group__error">Bu sahə mütləqdir</p> : null}
-        {hint && !invalid ? (
-          <p style={{ margin: '4px 0 0', fontSize: 11, color: 'var(--color-text-muted)' }}>{hint}</p>
-        ) : null}
+        <FieldMsg hint={hint} invalid={invalid} />
       </div>
     )
   }
@@ -110,20 +115,19 @@ function DynamicField({
           {col.label}
           {isRequired ? ' *' : ''}
         </label>
-        <select
-          value={value ?? ''}
-          onChange={(e) => onChange(e.target.value)}
-          aria-invalid={invalid}
-        >
-          <option value="">— Seçin —</option>
-          {options.map((o) => (
-            <option key={o.value} value={o.value}>{o.label}</option>
-          ))}
-        </select>
-        {invalid ? <p className="form-group__error">Bu sahə mütləqdir</p> : null}
-        {hint && !invalid ? (
-          <p style={{ margin: '4px 0 0', fontSize: 11, color: 'var(--color-text-muted)' }}>{hint}</p>
-        ) : null}
+        <div className="depo-inline">
+          <select
+            value={value ?? ''}
+            onChange={(e) => onChange(e.target.value)}
+            aria-invalid={invalid}
+          >
+            <option value="">— Seçin —</option>
+            {options.map((o) => (
+              <option key={o.value} value={o.value}>{o.label}</option>
+            ))}
+          </select>
+          <FieldMsg hint={hint} invalid={invalid} />
+        </div>
       </div>
     )
   }
@@ -134,17 +138,16 @@ function DynamicField({
         {col.label}
         {isRequired ? ' *' : ''}
       </label>
-      <input
-        type={inputType}
-        step={col.type === 'money' || col.type === 'number' ? '0.01' : undefined}
-        value={value ?? ''}
-        onChange={(e) => onChange(e.target.value)}
-        aria-invalid={invalid}
-      />
-      {invalid ? <p className="form-group__error">Bu sahə mütləqdir</p> : null}
-      {hint && !invalid ? (
-        <p style={{ margin: '4px 0 0', fontSize: 11, color: 'var(--color-text-muted)' }}>{hint}</p>
-      ) : null}
+      <div className="depo-inline">
+        <input
+          type={inputType}
+          step={col.type === 'money' || col.type === 'number' ? '0.01' : undefined}
+          value={value ?? ''}
+          onChange={(e) => onChange(e.target.value)}
+          aria-invalid={invalid}
+        />
+        <FieldMsg hint={hint} invalid={invalid} />
+      </div>
     </div>
   )
 }
@@ -559,7 +562,7 @@ export default function DepoForm() {
       </div>
       <form onSubmit={handleSubmit} noValidate>
         {/* Sahələr alt-alta (bir sütun) */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 12, maxWidth: 560 }}>
+        <div className="depo-stack">
           {formColumns.filter((c) => c.key !== 'senedler' && c.key !== 'kommentler').map((col) => {
             const isYeni = form.veziyyet_cihaz === 'teze'
             const isKohne = form.veziyyet_cihaz === 'kohne'
@@ -613,7 +616,7 @@ export default function DepoForm() {
             )
             if (col.key === 'kimden_alinib') {
               return (
-                <div key={col.key} style={{ display: 'grid', gap: 12 }}>
+                <div key={col.key} className="depo-subgroup">
                   <HaradanBlock
                     src={src}
                     setSrc={setSrc}
@@ -627,7 +630,7 @@ export default function DepoForm() {
             }
             if (col.key === 'alis_qiymeti') {
               return (
-                <div key={col.key} style={{ display: 'grid', gap: 12 }}>
+                <div key={col.key} className="depo-subgroup">
                   {field}
                   <SistemBlock
                     sys={sys}
@@ -640,7 +643,7 @@ export default function DepoForm() {
             return field
           })}
         </div>
-        <div className="form-group" style={{ marginTop: 16 }}>
+        <div className="form-group" style={{ marginTop: 8, maxWidth: 760 }}>
           <label>Komment</label>
           <textarea
             rows={3}
