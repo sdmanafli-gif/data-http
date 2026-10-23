@@ -53,6 +53,8 @@ export const FIELD_TYPES = [
 
 /** Column order matches the shop inventory sheet. */
 export const DEFAULT_COLUMNS = [
+  { key: 'kateqoriya', label: 'Kateqoriya', type: 'text', visible: true, formVisible: false, readonly: false, system: true, group: 'record' },
+  { key: 'nov', label: 'Növ', type: 'text', visible: true, formVisible: false, readonly: false, system: true, group: 'record' },
   { key: 'model', label: 'Model', type: 'text', visible: true, formVisible: true, readonly: false, system: true, group: 'record' },
   { key: 'reng', label: 'Rəng', type: 'text', visible: true, formVisible: true, readonly: false, system: true, group: 'record' },
   { key: 'veziyyet_cihaz', label: 'Status', type: 'select', visible: true, formVisible: true, readonly: false, system: true, group: 'record', options: ['teze', 'kohne'], required: true },
@@ -73,7 +75,6 @@ export const DEFAULT_COLUMNS = [
   { key: 'status', label: 'Vəziyyət', type: 'select', visible: true, formVisible: true, readonly: false, system: true, group: 'record', options: STATUS_OPTIONS },
   // Kept in DB / column manager, hidden from default sheet view
   { key: 'sira_no', label: '# / №', type: 'number', visible: false, formVisible: false, readonly: true, system: true, group: 'meta' },
-  { key: 'nov', label: 'Növ', type: 'text', visible: false, formVisible: false, readonly: false, system: true, group: 'extra' },
   { key: 'sim_type', label: 'SIM növü', type: 'select', visible: false, formVisible: false, readonly: false, system: true, group: 'extra', options: ['sim', 'esim', 'both'] },
   { key: 'kommentler', label: 'Kommentlər', type: 'text', visible: false, formVisible: false, readonly: false, system: true, group: 'extra' },
   { key: 'senedler', label: 'Sənədlər', type: 'files', visible: true, formVisible: true, readonly: false, system: true, group: 'record' },
@@ -104,6 +105,8 @@ export function mergeColumnConfig(saved) {
           formVisible:
             c.key === 'veziyyet_cihaz'
               ? true
+              : c.key === 'kateqoriya' || c.key === 'nov'
+                ? false // formda ayrıca "Məhsul Kateqoriyası" bloku var
               : typeof c.formVisible === 'boolean'
                 ? c.formVisible
                 : base.formVisible,
@@ -191,7 +194,7 @@ function textOrNull(v) {
 }
 
 const SYSTEM_DB_KEYS = [
-  'status', 'nov', 'model', 'reng', 'yaddas', 'veziyyet_cihaz', 'battery_faiz',
+  'status', 'kateqoriya', 'nov', 'model', 'reng', 'yaddas', 'veziyyet_cihaz', 'battery_faiz',
   'imei_1', 'imei_2', 'serial_no', 'model_no', 'sim_type', 'alis_qiymeti',
   'alis_tarixi', 'odenis_novu', 'qaytarma_tarixi', 'kimden_alinib', 'nomre',
   'sexsiyyet', 'miqdar', 'kommentler',
