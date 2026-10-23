@@ -1105,15 +1105,15 @@ export default function SaleFlow() {
     <div className="card">
       <div className="page-header" style={{ marginBottom: 16 }}>
         <h2 className="card__title" style={{ margin: 0 }}>
-          Satış səbəti ({basket.length})
+          {step === 0 ? `Satış səbəti (${basket.length})` : `Satış (${basket.length} məhsul)`}
         </h2>
         <Link to="/depo" className="btn btn--secondary">Geri</Link>
       </div>
 
       {error && <p style={{ color: 'var(--color-accent)', marginBottom: 12 }}>{error}</p>}
 
-      {/* Basket always visible as summary when past step 0 */}
-      {step > 0 && (
+      {/* Səbət xülasəsi yalnız satış növü seçiləndə; formda məhsullar aşağıda göstərilir */}
+      {step === 1 && (
         <div style={{ marginBottom: 16, padding: 12, background: 'var(--color-bg)', borderRadius: 6, fontSize: 13 }}>
           {basket.map((item) => (
             <div key={item.id}>
