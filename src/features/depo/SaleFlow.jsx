@@ -1696,6 +1696,7 @@ export default function SaleFlow() {
                 onPickName={(name) => setPerson((p) => ({ ...p, ad_soyad: name }))}
               />
 
+              {/* Alış qiyməti Depodan avtomatik götürülür (formda göstərilmir) */}
               <h3 className="card__title" style={{ margin: '4px 0 0' }}>Məhsul qiymətləri</h3>
               {basket.map((item) => (
                 <div key={item.id} className="depo-box">
@@ -1705,22 +1706,6 @@ export default function SaleFlow() {
                       <input
                         readOnly
                         value={`${item.model || '—'} · ${item.reng || '—'} · ${item.imei_1 || '—'}`}
-                      />
-                    </div>
-                  </div>
-                  <div className="form-group" style={{ marginBottom: 0 }}>
-                    <label>Alış</label>
-                    <div className="depo-inline">
-                      <input
-                        type="number"
-                        step="0.01"
-                        value={linePrices[item.id]?.alis ?? ''}
-                        onChange={(e) =>
-                          setLinePrices((prev) => ({
-                            ...prev,
-                            [item.id]: { ...prev[item.id], alis: e.target.value },
-                          }))
-                        }
                       />
                     </div>
                   </div>
@@ -1747,13 +1732,6 @@ export default function SaleFlow() {
                   </div>
                 </div>
               ))}
-
-                <div className="form-group">
-                  <label>Ümumi xeyir (satış − alış)</label>
-                  <div className="depo-inline">
-                    <input readOnly value={formatMoney(totals.gozlenilen)} />
-                  </div>
-                </div>
 
                 <div className="form-group">
                   <label>Ümumi satış</label>
@@ -1791,18 +1769,6 @@ export default function SaleFlow() {
                       step="0.01"
                       value={form.satici_faizi}
                       onChange={(e) => setForm((f) => ({ ...f, satici_faizi: e.target.value }))}
-                    />
-                  </div>
-                </div>
-
-                <div className="form-group">
-                  <label>Xeyir (Faizlə)</label>
-                  <div className="depo-inline">
-                    <input
-                      readOnly
-                      value={formatNagdMoney(
-                        computeXeyirFaizle(totals.alis, totals.satis, form.satici_faizi)
-                      )}
                     />
                   </div>
                 </div>
