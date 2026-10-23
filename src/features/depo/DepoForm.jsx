@@ -6,6 +6,7 @@ import { useColumnConfig } from './useColumnConfig'
 import SuggestInput from '../musteri-bazasi/SuggestInput'
 import RecordModule from '../../components/RecordModule'
 import DepoFileSlots, { uploadPendingSlots } from './DepoFileSlots'
+import DepoKateqoriyaBlock, { loadKateqoriyalar } from './DepoKateqoriya'
 import {
   DEPO_TABLE,
   SUGGEST_FIELDS,
@@ -217,6 +218,7 @@ export default function DepoForm() {
   const [sys, setSys] = useState(() => emptySystem())
   const [techizatcilar, setTechizatcilar] = useState([])
   const [musteriler, setMusteriler] = useState([])
+  const [kateqoriyalar, setKateqoriyalar] = useState([])
 
   const supplierOptions = useMemo(() => {
     const seen = new Set()
@@ -295,13 +297,15 @@ export default function DepoForm() {
           supabase.from(DEPO_TABLE).select('model, reng, yaddas, kimden_alinib, sexsiyyet')
         )
         const rows = data || []
-        const [tRes, mRes] = await Promise.all([
+        const [tRes, mRes, kRes] = await Promise.all([
           loadTechizatcilar(),
           fetchAllPages(() => supabase.from('musteriler').select('id, ad_soyad, nomre_1').order('ad_soyad')),
+          loadKateqoriyalar(),
         ])
         if (!cancelled) {
           setTechizatcilar(tRes.data || [])
           setMusteriler(mRes.data || [])
+          setKateqoriyalar(kRes.data || [])
         }
         setSuggestions({
           model: uniqueSorted(rows.map((r) => r.model)),
@@ -600,6 +604,13 @@ export default function DepoForm() {
       <form onSubmit={handleSubmit} noValidate>
         {/* Sahələr alt-alta (bir sütun) */}
         <div className="depo-stack">
+          <DepoKateqoriyaBlock
+            list={kateqoriyalar}
+            setList={setKateqoriyalar}
+            kateqoriya={form.kateqoriya || ''}
+            nov={form.nov || ''}
+            onChange={(patch) => setForm((prev) => ({ ...prev, ...patch }))}
+          />
           {formColumns.filter((c) => c.key !== 'senedler' && c.key !== 'kommentler').map((col) => {
             const isYeni = form.veziyyet_cihaz === 'teze'
             const isKohne = form.veziyyet_cihaz === 'kohne'
