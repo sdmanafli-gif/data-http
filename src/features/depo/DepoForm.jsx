@@ -46,6 +46,12 @@ import '../../styles/shared.css'
 import '../../components/record-module.css'
 import './depo-form.css'
 
+/** Yaddaş üçün sabit seçimlər */
+const YADDAS_OPTIONS = ['32 Gb', '64 Gb', '128 Gb', '256 Gb', '512 Gb', '1 Tb', '2 Tb']
+
+/** Formda göstərilməyən sahələr (bazadakı dəyəri saxlanılır) */
+const FORM_HIDDEN_KEYS = new Set(['sexsiyyet'])
+
 /** Xananın sağında: xəta və ya izah */
 function FieldMsg({ hint = null, invalid = false }) {
   if (invalid) return <p className="form-group__error depo-msg">Bu sahə mütləqdir</p>
@@ -78,6 +84,29 @@ function DynamicField({
         <div className="depo-inline">
           <input readOnly value={value === '' || value == null ? '—' : String(value)} />
           <FieldMsg hint={hint} />
+        </div>
+      </div>
+    )
+  }
+  if (col.key === 'yaddas') {
+    // Sabit siyahı; köhnə qeyddə siyahıda olmayan dəyər varsa, o da görünür (itmir)
+    const cur = String(value ?? '').trim()
+    const extraOpt = cur && !YADDAS_OPTIONS.includes(cur) ? cur : null
+    return (
+      <div className={groupClass}>
+        <label>
+          {col.label}
+          {isRequired ? ' *' : ''}
+        </label>
+        <div className="depo-inline">
+          <select value={cur} onChange={(e) => onChange(e.target.value)} aria-invalid={invalid}>
+            <option value="">— Seçin —</option>
+            {extraOpt && <option value={extraOpt}>{extraOpt} (köhnə yazılış)</option>}
+            {YADDAS_OPTIONS.map((o) => (
+              <option key={o} value={o}>{o}</option>
+            ))}
+          </select>
+          <FieldMsg hint={hint} invalid={invalid} />
         </div>
       </div>
     )
@@ -244,6 +273,7 @@ export default function DepoForm() {
   const formColumns = useMemo(() => {
     return columns
       .filter((c) => c.formVisible !== false && c.visible !== false && c.key !== 'sira_no')
+      .filter((c) => !FORM_HIDDEN_KEYS.has(c.key))
       .filter((c) => {
         if (c.key === 'qaytarma_tarixi' && form.odenis_novu !== 'nisye') return false
         return true
