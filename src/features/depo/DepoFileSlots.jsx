@@ -1,4 +1,4 @@
-import { useId, useState } from 'react'
+import { useEffect, useId, useState } from 'react'
 import { parseSenedler, senedlerPublicUrl, uploadSenedlerFiles, removeSenedlerFile } from '../../lib/senedler'
 import { confirmDelete } from '../../lib/confirmDelete'
 
@@ -37,61 +37,140 @@ export async function uploadPendingSlots(recordId, existing, pending) {
   return { files, error: lastError }
 }
 
+function isImageName(name) {
+  return /\.(png|jpe?g|gif|webp|bmp|heic|heif|svg)$/i.test(String(name || ''))
+}
+function isPdfName(name) {
+  return /\.pdf$/i.test(String(name || ''))
+}
+
+/** Faylı səhifənin üstündə açır (Müştəri bazasındakı kart kimi), yuxarıda "Bağla" */
+export function FilePreviewModal({ name, url, onClose }) {
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.key === 'Escape') onClose()
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [onClose])
+
+  return (
+    <div className="telefon-modal-overlay depo-file-preview-overlay" onClick={onClose} role="presentation">
+      <div className="card depo-file-preview" onClick={(e) => e.stopPropagation()} role="dialog" aria-label={name}>
+        <div className="depo-file-preview__header">
+          <h2 className="card__title depo-file-preview__title" title={name}>
+            {name || 'Fayl'}
+          </h2>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <a className="btn btn--secondary" href={url} target="_blank" rel="noreferrer">
+              Yeni pəncərədə aç
+            </a>
+            <button type="button" className="btn btn--secondary" onClick={onClose}>
+              Bağla
+            </button>
+          </div>
+        </div>
+        <div className="depo-file-preview__body">
+          {isImageName(name) ? (
+            <img src={url} alt={name} />
+          ) : isPdfName(name) ? (
+            <iframe src={url} title={name} />
+          ) : (
+            <p>
+              Bu faylı burada göstərmək olmur.{' '}
+              <a href={url} target="_blank" rel="noreferrer">
+                Faylı aç
+              </a>
+            </p>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function Slot({ slot, file, pendingFile, enabled, onPick, onRemove }) {
   const inputId = useId()
   const [busy, setBusy] = useState(false)
+  const [preview, setPreview] = useState(null) // { name, url, revoke? }
   const shown = file || (pendingFile ? { name: pendingFile.name } : null)
+
+  function openPreview() {
+    if (file) setPreview({ name: file.name, url: senedlerPublicUrl(file.path) })
+    else if (pendingFile) setPreview({ name: pendingFile.name, url: URL.createObjectURL(pendingFile), revoke: true })
+  }
+  function closePreview() {
+    setPreview((p) => {
+      if (p?.revoke) URL.revokeObjectURL(p.url)
+      return null
+    })
+  }
 
   return (
     <div className="depo-file-slot">
       <span className="depo-file-slot__label">Fayl {slot}</span>
       <span className="depo-file-slot__name">
-        {file ? (
-          <a href={senedlerPublicUrl(file.path)} target="_blank" rel="noreferrer">
-            {file.name || 'fayl'}
+        {shown ? (
+          <a
+            href="#"
+            onClick={(e) => {
+              e.preventDefault()
+              openPreview()
+            }}
+            title={pendingFile && !file ? 'Qeyd saxlananda yüklənəcək' : undefined}
+          >
+            {shown.name || 'fayl'}
+            {pendingFile && !file ? ' (saxlananda yüklənəcək)' : ''}
           </a>
-        ) : pendingFile ? (
-          <span title="Qeyd saxlananda yüklənəcək">{pendingFile.name} (saxlananda yüklənəcək)</span>
         ) : (
           <span style={{ color: 'var(--color-text-muted)' }}>Fayl yoxdur</span>
         )}
       </span>
-      <input
-        id={inputId}
-        type="file"
-        accept="image/*,application/pdf"
-        style={{ display: 'none' }}
-        disabled={!enabled || busy}
-        onChange={async (e) => {
-          const picked = Array.from(e.target.files || [])[0]
-          e.target.value = ''
-          if (!picked) return
-          setBusy(true)
-          await onPick(picked)
-          setBusy(false)
-        }}
-      />
-      <label
-        htmlFor={inputId}
-        className="btn btn--secondary depo-file-slot__btn"
-        style={{ opacity: enabled && !busy ? 1 : 0.5, cursor: enabled && !busy ? 'pointer' : 'not-allowed' }}
-      >
-        {busy ? 'Yüklənir…' : shown ? 'Dəyiş' : 'Fayl yüklə'}
-      </label>
-      {shown && (
-        <button
-          type="button"
-          className="btn btn--secondary depo-file-slot__btn"
-          disabled={!enabled || busy}
-          onClick={async () => {
-            setBusy(true)
-            await onRemove()
-            setBusy(false)
-          }}
-        >
-          Sil
-        </button>
+      {shown ? (
+        <>
+          <button type="button" className="btn btn--secondary depo-file-slot__btn" onClick={openPreview}>
+            Bax
+          </button>
+          <button
+            type="button"
+            className="btn btn--secondary depo-file-slot__btn"
+            disabled={!enabled || busy}
+            onClick={async () => {
+              setBusy(true)
+              await onRemove()
+              setBusy(false)
+            }}
+          >
+            {busy ? 'Gözləyin…' : 'Sil'}
+          </button>
+        </>
+      ) : (
+        <>
+          <input
+            id={inputId}
+            type="file"
+            accept="image/*,application/pdf"
+            style={{ display: 'none' }}
+            disabled={!enabled || busy}
+            onChange={async (e) => {
+              const picked = Array.from(e.target.files || [])[0]
+              e.target.value = ''
+              if (!picked) return
+              setBusy(true)
+              await onPick(picked)
+              setBusy(false)
+            }}
+          />
+          <label
+            htmlFor={inputId}
+            className="btn btn--secondary depo-file-slot__btn"
+            style={{ opacity: enabled && !busy ? 1 : 0.5, cursor: enabled && !busy ? 'pointer' : 'not-allowed' }}
+          >
+            {busy ? 'Yüklənir…' : 'Fayl yüklə'}
+          </label>
+        </>
       )}
+      {preview && <FilePreviewModal name={preview.name} url={preview.url} onClose={closePreview} />}
     </div>
   )
 }
@@ -108,6 +187,7 @@ function Slot({ slot, file, pendingFile, enabled, onPick, onRemove }) {
  */
 export default function DepoFileSlots({ value, recordId, pending = {}, onPendingChange, onChange, readOnly = false }) {
   const [error, setError] = useState(null)
+  const [extraPreview, setExtraPreview] = useState(null)
   const files = depoFilesWithSlots(value)
   const extra = files.filter((f) => !DEPO_FILE_SLOTS.includes(Number(f.slot)))
   const enabled = !readOnly && (Boolean(recordId) || Boolean(onPendingChange))
@@ -164,7 +244,13 @@ export default function DepoFileSlots({ value, recordId, pending = {}, onPending
           <span className="depo-file-slot__label">Digər fayllar</span>
           {extra.map((f) => (
             <span key={f.path} className="depo-files__extra-item">
-              <a href={senedlerPublicUrl(f.path)} target="_blank" rel="noreferrer">
+              <a
+                href="#"
+                onClick={(e) => {
+                  e.preventDefault()
+                  setExtraPreview(f)
+                }}
+              >
                 {f.name || 'fayl'}
               </a>
               {!readOnly && (
@@ -181,6 +267,13 @@ export default function DepoFileSlots({ value, recordId, pending = {}, onPending
         </div>
       )}
       {error && <div style={{ color: 'var(--color-accent)', fontSize: 12 }}>{error}</div>}
+      {extraPreview && (
+        <FilePreviewModal
+          name={extraPreview.name}
+          url={senedlerPublicUrl(extraPreview.path)}
+          onClose={() => setExtraPreview(null)}
+        />
+      )}
     </div>
   )
 }
