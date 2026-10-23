@@ -421,7 +421,7 @@ export default function SaleFlow() {
   }, [initialIds])
 
   useEffect(() => {
-    if (saleType !== 'borc_nisye') return
+    if (saleType !== 'borc_nisye' && saleType !== 'nagd') return
     let cancelled = false
     ;(async () => {
       const [tRes, dRes] = await Promise.all([
@@ -462,6 +462,46 @@ export default function SaleFlow() {
       })),
     [customers]
   )
+
+  /**
+   * "Kimə" blokundan (Təchizatçı / Müştəri) ad və müştəri id-ni çıxarır.
+   * Yeni Təchizatçı / Yeni Müştəri seçilibsə Kontaktlara əlavə edir.
+   * @returns {Promise<{ kime: string, musteriId: string|null }>}
+   */
+  async function resolveKimeParty() {
+    const isNew = kimeSrc.pick === NEW_PICK
+    const kime = String(isNew ? kimeSrc.yeni.ad_soyad : person.ad_soyad || '').trim()
+    if (kimeSrc.tip === 'techizatci') {
+      if (isNew) await findOrCreateTechizatci(kimeSrc.yeni)
+      return { kime, musteriId: null }
+    }
+    if (kimeSrc.tip === 'musteri') {
+      if (!isNew) {
+        const mid = kimeSrc.pick.startsWith('m:') ? kimeSrc.pick.slice(2) : null
+        return { kime, musteriId: mid }
+      }
+      const mid = await findOrCreateMusteri({
+        ad_soyad: kime,
+        nomre_1: kimeSrc.yeni.nomre_1.trim() || null,
+        nomre_2: kimeSrc.yeni.nomre_2.trim() || null,
+        updated_at: new Date().toISOString(),
+      })
+      const extra = customerExtraFields(kimeSrc.yeni)
+      if (Object.keys(extra).length) {
+        const { data: cur } = await supabase.from('musteriler').select('*').eq('id', mid).single()
+        const patch = {}
+        for (const [k, v] of Object.entries(extra)) {
+          if (cur && !String(cur[k] ?? '').trim()) patch[k] = v
+        }
+        if (Object.keys(patch).length) {
+          const { error: mErr } = await supabase.from('musteriler').update(patch).eq('id', mid)
+          if (mErr) throw mErr
+        }
+      }
+      return { kime, musteriId: mid }
+    }
+    return { kime, musteriId: null }
+  }
 
   async function loadExtras() {
     const inBasket = new Set(basket.map((b) => b.id))
@@ -773,28 +813,7 @@ export default function SaleFlow() {
       setSaving(true)
       try {
         // Yeni Təchizatçı / Yeni Müştəri seçilibsə — Kontaktlara əlavə et
-        if (kimeSrc.tip === 'techizatci' && kimeSrc.pick === NEW_PICK) {
-          await findOrCreateTechizatci(kimeSrc.yeni)
-        } else if (kimeSrc.tip === 'musteri' && kimeSrc.pick === NEW_PICK) {
-          const mid = await findOrCreateMusteri({
-            ad_soyad: kime,
-            nomre_1: kimeSrc.yeni.nomre_1.trim() || null,
-            nomre_2: kimeSrc.yeni.nomre_2.trim() || null,
-            updated_at: new Date().toISOString(),
-          })
-          const extra = customerExtraFields(kimeSrc.yeni)
-          if (Object.keys(extra).length) {
-            const { data: cur } = await supabase.from('musteriler').select('*').eq('id', mid).single()
-            const patch = {}
-            for (const [k, v] of Object.entries(extra)) {
-              if (cur && !String(cur[k] ?? '').trim()) patch[k] = v
-            }
-            if (Object.keys(patch).length) {
-              const { error: mErr } = await supabase.from('musteriler').update(patch).eq('id', mid)
-              if (mErr) throw mErr
-            }
-          }
-        }
+        await resolveKimeParty()
         const tip = form.ledger_tip || 'nisye_verdim'
         for (const item of basket) {
           const lp = linePrices[item.id]
@@ -830,6 +849,45 @@ export default function SaleFlow() {
           await markDepoSold(item)
         }
         navigate(counterpartPath(kime))
+      } catch (err) {
+        setError(err.message)
+      } finally {
+        setSaving(false)
+      }
+      return
+    }
+
+    // —— Nağd satış: Kimə (Təchizatçı / Müştəri) ——
+    if (saleType === 'nagd') {
+      const kimeErr = !kimeSrc.tip
+        ? 'Kimə: Təchizatçı və ya Müştəri seçin.'
+        : validateSourceAndSystem(kimeSrc, emptySystem())
+      if (kimeErr) {
+        setError(kimeErr)
+        return
+      }
+      setSaving(true)
+      try {
+        const { kime, musteriId } = await resolveKimeParty()
+        if (!kime) throw new Error('Kimə: Təchizatçı və ya Müştəri seçin.')
+        for (const item of basket) {
+          const lp = linePrices[item.id]
+          const payload = depoItemToNagdPayload(item, {
+            kime,
+            musteriId,
+            tarix: form.verilme_tarixi,
+            alis: lp.alis,
+            satis: lp.satis,
+            satici: form.satici,
+            saticiFaizi: form.satici_faizi,
+            kommentler: form.kommentler,
+            satisNovu: 'nagd',
+          })
+          const { error: nagdErr } = await supabase.from(NAGD_TABLE).insert(payload)
+          if (nagdErr) throw nagdErr
+          await markDepoSold(item)
+        }
+        navigate('/nagd-satish')
       } catch (err) {
         setError(err.message)
       } finally {
@@ -1427,12 +1485,14 @@ export default function SaleFlow() {
             </>
           ) : (
             <>
-          <MusteriSelect
-            customers={customers}
-            value={selectValue}
-            onSelectExisting={handleSelectExisting}
-            onSelectNew={handleSelectNew}
-          />
+          {saleType !== 'nagd' && (
+            <MusteriSelect
+              customers={customers}
+              value={selectValue}
+              onSelectExisting={handleSelectExisting}
+              onSelectNew={handleSelectNew}
+            />
+          )}
 
           {(mode === 'new' || mode === 'existing') && saleType === 'kredit' && (
             <>
@@ -1625,142 +1685,146 @@ export default function SaleFlow() {
             </>
           )}
 
-          {(mode === 'new' || mode === 'existing') && saleType === 'nagd' && (
-            <>
-              <div className="form-row">
-                <div className="form-group">
-                  <label>Ad Soyad Ata adı *</label>
-                  <input
-                    value={person.ad_soyad}
-                    onChange={(e) => setPerson((p) => ({ ...p, ad_soyad: e.target.value }))}
-                    required
-                  />
-                </div>
-                {['nomre_1', 'nomre_2', 'nomre_3'].map((k, i) => (
-                  <div className="form-group" key={k}>
-                    <label>Nömrə {i + 1}</label>
-                    <input
-                      value={person[k]}
-                      onChange={(e) => setPerson((p) => ({ ...p, [k]: e.target.value }))}
-                    />
-                  </div>
-                ))}
-                <div className="form-group">
-                  <label>Zamin</label>
-                  <input
-                    value={person.zamin}
-                    onChange={(e) => setPerson((p) => ({ ...p, zamin: e.target.value }))}
-                  />
-                </div>
-              </div>
+          {saleType === 'nagd' && (
+            <div className="depo-stack">
+              <HaradanBlock
+                title="Kimə"
+                src={kimeSrc}
+                setSrc={setKimeSrc}
+                suppliers={kimeSupplierOptions}
+                customers={kimeCustomerOptions}
+                onPickName={(name) => setPerson((p) => ({ ...p, ad_soyad: name }))}
+              />
 
-              <hr style={{ border: 0, borderTop: '1px solid var(--color-border)', margin: '20px 0' }} />
-
-              <h3 className="card__title">Məhsul qiymətləri</h3>
+              <h3 className="card__title" style={{ margin: '4px 0 0' }}>Məhsul qiymətləri</h3>
               {basket.map((item) => (
-                <div key={item.id} className="form-row" style={{ alignItems: 'flex-end' }}>
-                  <div className="form-group" style={{ flex: '2 1 200px' }}>
+                <div key={item.id} className="depo-box">
+                  <div className="form-group" style={{ marginBottom: 0 }}>
                     <label>Məhsul</label>
-                    <input
-                      readOnly
-                      value={`${item.model || '—'} · ${item.reng || '—'} · ${item.imei_1 || '—'}`}
-                    />
+                    <div className="depo-inline">
+                      <input
+                        readOnly
+                        value={`${item.model || '—'} · ${item.reng || '—'} · ${item.imei_1 || '—'}`}
+                      />
+                    </div>
                   </div>
-                  <div className="form-group">
+                  <div className="form-group" style={{ marginBottom: 0 }}>
                     <label>Alış</label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      value={linePrices[item.id]?.alis ?? ''}
-                      onChange={(e) =>
-                        setLinePrices((prev) => ({
-                          ...prev,
-                          [item.id]: { ...prev[item.id], alis: e.target.value },
-                        }))
-                      }
-                    />
-                  </div>
-                  <div className="form-group">
-                    <label>Satış *</label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      required
-                      value={linePrices[item.id]?.satis ?? ''}
-                      onChange={(e) => {
-                        const v = e.target.value
-                        setLinePrices((prev) => ({
-                          ...prev,
-                          [item.id]: { ...prev[item.id], satis: v },
-                        }))
-                        if (basket.length === 1) {
-                          setForm((f) => ({ ...f, verilib: v }))
+                    <div className="depo-inline">
+                      <input
+                        type="number"
+                        step="0.01"
+                        value={linePrices[item.id]?.alis ?? ''}
+                        onChange={(e) =>
+                          setLinePrices((prev) => ({
+                            ...prev,
+                            [item.id]: { ...prev[item.id], alis: e.target.value },
+                          }))
                         }
-                      }}
-                    />
+                      />
+                    </div>
+                  </div>
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label>Satış *</label>
+                    <div className="depo-inline">
+                      <input
+                        type="number"
+                        step="0.01"
+                        required
+                        value={linePrices[item.id]?.satis ?? ''}
+                        onChange={(e) => {
+                          const v = e.target.value
+                          setLinePrices((prev) => ({
+                            ...prev,
+                            [item.id]: { ...prev[item.id], satis: v },
+                          }))
+                          if (basket.length === 1) {
+                            setForm((f) => ({ ...f, verilib: v }))
+                          }
+                        }}
+                      />
+                    </div>
                   </div>
                 </div>
               ))}
 
-              <div className="form-row">
                 <div className="form-group">
                   <label>Ümumi xeyir (satış − alış)</label>
-                  <input readOnly value={formatMoney(totals.gozlenilen)} />
+                  <div className="depo-inline">
+                    <input readOnly value={formatMoney(totals.gozlenilen)} />
+                  </div>
                 </div>
+
                 <div className="form-group">
                   <label>Ümumi satış</label>
-                  <input readOnly value={formatMoney(totals.satis)} />
+                  <div className="depo-inline">
+                    <input readOnly value={formatMoney(totals.satis)} />
+                  </div>
                 </div>
-              </div>
 
-              <div className="form-row">
                 <div className="form-group">
                   <label>Satış tarixi</label>
-                  <input
-                    type="date"
-                    value={form.verilme_tarixi}
-                    onChange={(e) => setForm((f) => ({ ...f, verilme_tarixi: e.target.value }))}
-                  />
+                  <div className="depo-inline">
+                    <input
+                      type="date"
+                      value={form.verilme_tarixi}
+                      onChange={(e) => setForm((f) => ({ ...f, verilme_tarixi: e.target.value }))}
+                    />
+                  </div>
                 </div>
+
                 <div className="form-group">
                   <label>Satıcı</label>
-                  <input
-                    value={form.satici}
-                    onChange={(e) => setForm((f) => ({ ...f, satici: e.target.value }))}
-                  />
+                  <div className="depo-inline">
+                    <input
+                      value={form.satici}
+                      onChange={(e) => setForm((f) => ({ ...f, satici: e.target.value }))}
+                    />
+                  </div>
                 </div>
+
                 <div className="form-group">
                   <label>Satıcı Faizi</label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    value={form.satici_faizi}
-                    onChange={(e) => setForm((f) => ({ ...f, satici_faizi: e.target.value }))}
-                  />
+                  <div className="depo-inline">
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={form.satici_faizi}
+                      onChange={(e) => setForm((f) => ({ ...f, satici_faizi: e.target.value }))}
+                    />
+                  </div>
                 </div>
+
                 <div className="form-group">
                   <label>Xeyir (Faizlə)</label>
-                  <input
-                    readOnly
-                    value={formatNagdMoney(
-                      computeXeyirFaizle(totals.alis, totals.satis, form.satici_faizi)
-                    )}
-                  />
+                  <div className="depo-inline">
+                    <input
+                      readOnly
+                      value={formatNagdMoney(
+                        computeXeyirFaizle(totals.alis, totals.satis, form.satici_faizi)
+                      )}
+                    />
+                  </div>
                 </div>
-              </div>
 
-              <div className="form-group">
-                <label>Kommentlər</label>
-                <input
-                  value={form.kommentler}
-                  onChange={(e) => setForm((f) => ({ ...f, kommentler: e.target.value }))}
-                />
-              </div>
-            </>
+                <div className="form-group">
+                  <label>Kommentlər</label>
+                  <div className="depo-inline">
+                    <input
+                      value={form.kommentler}
+                      onChange={(e) => setForm((f) => ({ ...f, kommentler: e.target.value }))}
+                    />
+                  </div>
+                </div>
+            </div>
           )}
 
           <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
-            <button type="submit" className="btn btn--primary" disabled={saving || mode === 'pick'}>
+            <button
+              type="submit"
+              className="btn btn--primary"
+              disabled={saving || (mode === 'pick' && saleType !== 'nagd')}
+            >
               {saving
                 ? 'Saxlanılır…'
                 : saleType === 'kredit'
