@@ -40,6 +40,7 @@ import {
 } from '../borc-nisye/constants'
 import '../../styles/shared.css'
 import '../../components/record-module.css'
+import DepoFilterFields, { EMPTY_DEPO_FILTERS, applyDepoFilters, nextFilters } from './DepoFilterPanel'
 
 /** Prefill from Depo — shown read-only on kredit form */
 const DEPO_READONLY_KEYS = new Set([
@@ -268,6 +269,7 @@ export default function SaleFlow() {
   const [availableExtras, setAvailableExtras] = useState([])
   const [showAddPicker, setShowAddPicker] = useState(false)
   const [extraFilter, setExtraFilter] = useState('')
+  const [extraFilters, setExtraFilters] = useState(() => ({ ...EMPTY_DEPO_FILTERS }))
   const [step, setStep] = useState(0) // 0 basket, 1 type, 2 form, 3 schedule preview
   const [saleType, setSaleType] = useState('')
   /** Kredit: draft ödəniş qrafikləri before final save */
@@ -1098,6 +1100,19 @@ export default function SaleFlow() {
                   Bağla
                 </button>
               </div>
+              <div style={{ marginBottom: 12 }}>
+                <DepoFilterFields
+                  rows={availableExtras}
+                  filters={extraFilters}
+                  onChange={(k, v) => setExtraFilters((prev) => nextFilters(prev, k, v))}
+                  onClear={() => {
+                    setExtraFilters({ ...EMPTY_DEPO_FILTERS })
+                    setExtraFilter('')
+                  }}
+                  showVeziyyet={false}
+                  idPrefix="depo-extra-filters"
+                />
+              </div>
               <div className="form-group" style={{ marginBottom: 12 }}>
                 <label htmlFor="depo-extra-filter">Axtar</label>
                 <input
@@ -1116,15 +1131,18 @@ export default function SaleFlow() {
                   <table className="data-table">
                     <thead>
                       <tr>
+                        <th>Kateqoriya</th>
+                        <th>Növ</th>
                         <th>Model</th>
                         <th>Rəng</th>
                         <th>IMEI</th>
+                        <th>Tarix</th>
                         <th>Qiymət</th>
                         <th></th>
                       </tr>
                     </thead>
                     <tbody>
-                      {availableExtras
+                      {applyDepoFilters(availableExtras, extraFilters)
                         .filter((item) => {
                           const q = extraFilter.trim().toLowerCase()
                           if (!q) return true
@@ -1133,9 +1151,12 @@ export default function SaleFlow() {
                         })
                         .map((item) => (
                         <tr key={item.id}>
+                          <td>{item.kateqoriya || '—'}</td>
+                          <td>{item.nov || '—'}</td>
                           <td>{item.model || '—'}</td>
                           <td>{item.reng || '—'}</td>
                           <td>{item.imei_1 || '—'}</td>
+                          <td>{item.alis_tarixi ? String(item.alis_tarixi).slice(0, 10).split('-').reverse().join('.') : '—'}</td>
                           <td className="num">{formatMoney(item.alis_qiymeti)}</td>
                           <td>
                             <button type="button" className="btn btn--primary" onClick={() => addToBasket(item)}>
