@@ -41,6 +41,17 @@ import {
 import '../../styles/shared.css'
 import '../../components/record-module.css'
 import DepoFilterFields, { EMPTY_DEPO_FILTERS, applyDepoFilters, nextFilters } from './DepoFilterPanel'
+import {
+  NEW_PICK,
+  emptySource,
+  emptySystem,
+  validateSourceAndSystem,
+  customerExtraFields,
+  HaradanBlock,
+} from './DepoSourceFields'
+import { loadTechizatcilar, findOrCreateTechizatci } from '../../lib/techizatcilar'
+import { normMusteriName } from '../../lib/musteriler'
+import './depo-form.css'
 
 /** Prefill from Depo — shown read-only on kredit form */
 const DEPO_READONLY_KEYS = new Set([
@@ -270,6 +281,10 @@ export default function SaleFlow() {
   const [showAddPicker, setShowAddPicker] = useState(false)
   const [extraFilter, setExtraFilter] = useState('')
   const [extraFilters, setExtraFilters] = useState(() => ({ ...EMPTY_DEPO_FILTERS }))
+  // Borc / Nisyə satış: Kimə (Təchizatçı / Müştəri) — Depodakı "Haradan" kimi
+  const [kimeSrc, setKimeSrc] = useState(() => emptySource())
+  const [kimeTechizatcilar, setKimeTechizatcilar] = useState([])
+  const [kimeDepoNames, setKimeDepoNames] = useState([])
   const [step, setStep] = useState(0) // 0 basket, 1 type, 2 form, 3 schedule preview
   const [saleType, setSaleType] = useState('')
   /** Kredit: draft ödəniş qrafikləri before final save */
@@ -404,6 +419,49 @@ export default function SaleFlow() {
       cancelled = true
     }
   }, [initialIds])
+
+  useEffect(() => {
+    if (saleType !== 'borc_nisye') return
+    let cancelled = false
+    ;(async () => {
+      const [tRes, dRes] = await Promise.all([
+        loadTechizatcilar(),
+        fetchAllPages(() => supabase.from(DEPO_TABLE).select('kimden_alinib')),
+      ])
+      if (cancelled) return
+      setKimeTechizatcilar(tRes.data || [])
+      setKimeDepoNames(uniqueSorted((dRes.data || []).map((r) => r.kimden_alinib)))
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [saleType])
+
+  const kimeSupplierOptions = useMemo(() => {
+    const seen = new Set()
+    const out = []
+    for (const t of kimeTechizatcilar) {
+      seen.add(normMusteriName(t.ad_soyad))
+      out.push({ value: `t:${t.id}`, name: t.ad_soyad, label: t.tukan ? `${t.ad_soyad} (${t.tukan})` : t.ad_soyad })
+    }
+    for (const n of kimeDepoNames) {
+      const k = normMusteriName(n)
+      if (!k || seen.has(k)) continue
+      seen.add(k)
+      out.push({ value: `n:${n}`, name: n, label: n })
+    }
+    return out.sort((x, y) => x.label.localeCompare(y.label, 'az'))
+  }, [kimeTechizatcilar, kimeDepoNames])
+
+  const kimeCustomerOptions = useMemo(
+    () =>
+      (customers || []).map((m) => ({
+        value: `m:${m.id}`,
+        name: m.ad_soyad,
+        label: m.nomre_1 ? `${m.ad_soyad} · ${m.nomre_1}` : m.ad_soyad,
+      })),
+    [customers]
+  )
 
   async function loadExtras() {
     const inBasket = new Set(basket.map((b) => b.id))
@@ -687,7 +745,14 @@ export default function SaleFlow() {
 
     // —— Borc / Nisyə ledger sale ——
     if (saleType === 'borc_nisye') {
-      const kime = String(person.ad_soyad || '').trim()
+      const kimeErr = validateSourceAndSystem(kimeSrc, emptySystem())
+      if (kimeErr) {
+        setError(kimeErr)
+        return
+      }
+      const kime = String(
+        kimeSrc.tip && kimeSrc.pick === NEW_PICK ? kimeSrc.yeni.ad_soyad : person.ad_soyad || ''
+      ).trim()
       if (!kime) {
         setError('Kontragent (Kimə) doldurulmalıdır.')
         return
@@ -705,6 +770,29 @@ export default function SaleFlow() {
       }
       setSaving(true)
       try {
+        // Yeni Təchizatçı / Yeni Müştəri seçilibsə — Kontaktlara əlavə et
+        if (kimeSrc.tip === 'techizatci' && kimeSrc.pick === NEW_PICK) {
+          await findOrCreateTechizatci(kimeSrc.yeni)
+        } else if (kimeSrc.tip === 'musteri' && kimeSrc.pick === NEW_PICK) {
+          const mid = await findOrCreateMusteri({
+            ad_soyad: kime,
+            nomre_1: kimeSrc.yeni.nomre_1.trim() || null,
+            nomre_2: kimeSrc.yeni.nomre_2.trim() || null,
+            updated_at: new Date().toISOString(),
+          })
+          const extra = customerExtraFields(kimeSrc.yeni)
+          if (Object.keys(extra).length) {
+            const { data: cur } = await supabase.from('musteriler').select('*').eq('id', mid).single()
+            const patch = {}
+            for (const [k, v] of Object.entries(extra)) {
+              if (cur && !String(cur[k] ?? '').trim()) patch[k] = v
+            }
+            if (Object.keys(patch).length) {
+              const { error: mErr } = await supabase.from('musteriler').update(patch).eq('id', mid)
+              if (mErr) throw mErr
+            }
+          }
+        }
         const tip = form.ledger_tip || 'nisye_verdim'
         for (const item of basket) {
           const lp = linePrices[item.id]
@@ -1207,15 +1295,35 @@ export default function SaleFlow() {
 
           {saleType === 'borc_nisye' ? (
             <>
-              <SuggestInput
-                id="sale-borc-kime"
-                label="Kontragent (Kimə)"
-                value={person.ad_soyad}
-                onChange={(v) => setPerson((p) => ({ ...p, ad_soyad: v }))}
-                options={ledgerNames}
-                placeholder="Mövcuddan seçin və ya yeni yazın…"
-                required
+              {/* Sahələr alt-alta (Depo formu kimi) */}
+              <div className="depo-stack">
+              <HaradanBlock
+                title="Kimə"
+                src={kimeSrc}
+                setSrc={setKimeSrc}
+                suppliers={kimeSupplierOptions}
+                customers={kimeCustomerOptions}
+                onPickName={(name) => setPerson((p) => ({ ...p, ad_soyad: name }))}
               />
+
+              {kimeSrc.tip && kimeSrc.pick ? (
+                <div className="form-group">
+                  <label>Kontragent (Kimə) (avtomatik)</label>
+                  <div className="depo-inline">
+                    <input readOnly value={person.ad_soyad || '—'} />
+                  </div>
+                </div>
+              ) : (
+                <SuggestInput
+                  id="sale-borc-kime"
+                  label="Kontragent (Kimə)"
+                  value={person.ad_soyad}
+                  onChange={(v) => setPerson((p) => ({ ...p, ad_soyad: v }))}
+                  options={ledgerNames}
+                  placeholder="Mövcuddan seçin və ya yeni yazın…"
+                  required
+                />
+              )}
 
               <div className="form-group">
                 <label>Əməliyyat</label>
@@ -1238,46 +1346,48 @@ export default function SaleFlow() {
 
               <div className="form-group">
                 <label>Tarix</label>
-                <input
-                  type="date"
-                  value={form.verilme_tarixi}
-                  onChange={(e) => setForm((f) => ({ ...f, verilme_tarixi: e.target.value }))}
-                />
+                <div className="depo-inline">
+                  <input
+                    type="date"
+                    value={form.verilme_tarixi}
+                    onChange={(e) => setForm((f) => ({ ...f, verilme_tarixi: e.target.value }))}
+                  />
+                </div>
               </div>
 
               <div className="form-group">
                 <label>Qaytarma / ödəniş tarixi *</label>
-                <input
-                  type="date"
-                  value={form.qaytarma_tarixi || ''}
-                  onChange={(e) => setForm((f) => ({ ...f, qaytarma_tarixi: e.target.value }))}
-                  required
-                />
-                <p style={{ margin: '4px 0 0', fontSize: 11, color: 'var(--color-text-muted)' }}>
-                  Nə vaxt məbləğ alınmalı / ödənilməlidir (kalendarda görünəcək)
-                </p>
+                <div className="depo-inline">
+                  <input
+                    type="date"
+                    value={form.qaytarma_tarixi || ''}
+                    onChange={(e) => setForm((f) => ({ ...f, qaytarma_tarixi: e.target.value }))}
+                    required
+                  />
+                  <p className="depo-msg depo-msg--hint">
+                    Nə vaxt məbləğ alınmalı / ödənilməlidir (kalendarda görünəcək)
+                  </p>
+                </div>
               </div>
 
-              <h3 className="card__title">Məhsul qiymətləri</h3>
+              <h3 className="card__title" style={{ margin: '4px 0 0' }}>Məhsul qiymətləri</h3>
               {basket.map((item) => (
-                <div key={item.id} style={{ marginBottom: 16 }}>
-                  <p style={{ margin: '0 0 8px', fontSize: 13, color: 'var(--color-text-muted)' }}>
+                <div key={item.id} className="depo-box">
+                  <p style={{ margin: 0, fontSize: 13, color: 'var(--color-text-muted)' }}>
                     Depo: {item.model || '—'} · {item.reng || '—'} · {item.imei_1 || '—'}
                   </p>
-                  <div className="form-row" style={{ alignItems: 'flex-end' }}>
-                    <div style={{ flex: '2 1 200px' }}>
-                      <SuggestInput
-                        id={`sale-borc-mehsul-${item.id}`}
-                        label="Məhsul"
-                        value={lineMehsul[item.id] ?? ''}
-                        onChange={(v) => setLineMehsul((prev) => ({ ...prev, [item.id]: v }))}
-                        options={ledgerMehsul}
-                        placeholder="Mövcuddan seçin və ya yeni yazın…"
-                        required
-                      />
-                    </div>
-                    <div className="form-group">
-                      <label>Alış</label>
+                  <SuggestInput
+                    id={`sale-borc-mehsul-${item.id}`}
+                    label="Məhsul"
+                    value={lineMehsul[item.id] ?? ''}
+                    onChange={(v) => setLineMehsul((prev) => ({ ...prev, [item.id]: v }))}
+                    options={ledgerMehsul}
+                    placeholder="Mövcuddan seçin və ya yeni yazın…"
+                    required
+                  />
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label>Alış</label>
+                    <div className="depo-inline">
                       <input
                         type="number"
                         step="0.01"
@@ -1290,8 +1400,10 @@ export default function SaleFlow() {
                         }
                       />
                     </div>
-                    <div className="form-group">
-                      <label>Satış (məbləğ) *</label>
+                  </div>
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label>Satış (məbləğ) *</label>
+                    <div className="depo-inline">
                       <input
                         type="number"
                         step="0.01"
@@ -1316,6 +1428,7 @@ export default function SaleFlow() {
                   value={form.kommentler}
                   onChange={(e) => setForm((f) => ({ ...f, kommentler: e.target.value }))}
                 />
+              </div>
               </div>
 
               {error && <p style={{ color: 'var(--color-accent)' }}>{error}</p>}
