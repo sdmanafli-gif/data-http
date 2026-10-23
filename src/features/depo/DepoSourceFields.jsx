@@ -127,7 +127,7 @@ export function customerExtraFields(yeni) {
 /**
  * @param {{ src, setSrc, suppliers: {value,label,name}[], customers: {value,label,name}[], onPickName: (name)=>void, children?: any }} p
  */
-export function HaradanBlock({ src, setSrc, suppliers, customers, onPickName, children }) {
+export function HaradanBlock({ src, setSrc, suppliers, customers, onPickName, children, title = 'Haradan' }) {
   const isSup = src.tip === 'techizatci'
   const list = isSup ? suppliers : customers
   const setYeni = (k, v) =>
@@ -140,7 +140,7 @@ export function HaradanBlock({ src, setSrc, suppliers, customers, onPickName, ch
   return (
     <div className="depo-box">
       <div className="form-group" style={{ marginBottom: 0 }}>
-        <label>Haradan</label>
+        <label>{title}</label>
         <select
           value={src.tip}
           onChange={(e) => {
