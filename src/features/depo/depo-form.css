@@ -48,8 +48,36 @@
 }
 
 .depo-inline--suggest > .searchable-select {
+  flex: 1 1 400px;
+  min-width: 0;
+}
+
+/* Axtarışlı xanalar (Model, Rəng, Kimdən…): "Mövcuddan axtarıb seçin…" yazısı sağda */
+.depo-stack .searchable-select {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: 12px;
+}
+
+.depo-stack .searchable-select > label {
+  flex: 0 0 100%;
+}
+
+.depo-stack .searchable-select__control {
   flex: 0 1 400px;
   min-width: 0;
+}
+
+.depo-stack .searchable-select > .form-hint {
+  flex: 1 1 140px;
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.3;
+}
+
+.depo-stack .searchable-select__list {
+  top: 100%;
 }
 
 .depo-inline--suggest > .depo-msg {
