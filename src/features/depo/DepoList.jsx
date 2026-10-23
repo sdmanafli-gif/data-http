@@ -15,6 +15,13 @@ import {
 } from './constants'
 import { LEDGER_TABLE } from '../borc-nisye/constants'
 import CollapsibleSummary from '../../components/CollapsibleSummary'
+import { loadPageFilters, savePageFilters } from '../../lib/uiPrefs'
+import DepoFilterFields, {
+  EMPTY_DEPO_FILTERS,
+  applyDepoFilters,
+  countActiveFilters,
+  nextFilters,
+} from './DepoFilterPanel'
 import { REF_NOV, NOV_TO_MODELS } from '../mehsul-bazasi/referenceOptions'
 import '../../styles/shared.css'
 import '../musteri-bazasi/musteri-table.css'
@@ -274,7 +281,18 @@ export default function DepoList() {
   const [selectedIds, setSelectedIds] = useState(() => new Set())
   const [deletingId, setDeletingId] = useState(null)
   const [selectedModel, setSelectedModel] = useState(null)
+  // Cəmlərin altındakı "Axtarış" paneli (tarix, kateqoriya, növ, model, qalıb/satılıb)
+  const [filters, setFilters] = useState(() => ({
+    ...EMPTY_DEPO_FILTERS,
+    ...(loadPageFilters('depo_filters', {}) || {}),
+  }))
   const resizeTimer = useRef(null)
+
+  useEffect(() => {
+    savePageFilters('depo_filters', filters)
+  }, [filters])
+
+  const activeFilterCount = countActiveFilters(filters)
 
   useEffect(() => setLocalCols(columns), [columns])
 
@@ -386,13 +404,15 @@ export default function DepoList() {
   }
 
   const tableRows = useMemo(() => {
-    if (!selectedModel) return items
-    return items.filter((r) => {
-      if (r.status !== 'available') return false
-      const name = normalizeSpaces(r.model) || MODELLESS
-      return name === selectedModel
-    })
-  }, [items, selectedModel])
+    const base = selectedModel
+      ? items.filter((r) => {
+          if (r.status !== 'available') return false
+          const name = normalizeSpaces(r.model) || MODELLESS
+          return name === selectedModel
+        })
+      : items
+    return applyDepoFilters(base, filters)
+  }, [items, selectedModel, filters])
 
   function toggleSelect(row) {
     if (row.status !== 'available') return
@@ -626,6 +646,23 @@ export default function DepoList() {
         </CollapsibleSummary>
         )
       })()}
+
+      {!loading && !colsLoading && (
+        <CollapsibleSummary
+          title={activeFilterCount ? `Axtarış (${activeFilterCount} filtr)` : 'Axtarış'}
+          storageKey="filter:depo"
+          defaultOpen
+        >
+          <DepoFilterFields
+            rows={items}
+            filters={filters}
+            onChange={(k, v) => setFilters((prev) => nextFilters(prev, k, v))}
+            onClear={() => setFilters({ ...EMPTY_DEPO_FILTERS })}
+            foundCount={tableRows.length}
+            idPrefix="depo-list-filter"
+          />
+        </CollapsibleSummary>
+      )}
 
       <div className="card">
         {loading || colsLoading ? (
