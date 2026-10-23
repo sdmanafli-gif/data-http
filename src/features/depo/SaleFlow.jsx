@@ -745,7 +745,9 @@ export default function SaleFlow() {
 
     // —— Borc / Nisyə ledger sale ——
     if (saleType === 'borc_nisye') {
-      const kimeErr = validateSourceAndSystem(kimeSrc, emptySystem())
+      const kimeErr = !kimeSrc.tip
+        ? 'Kimə: Təchizatçı və ya Müştəri seçin.'
+        : validateSourceAndSystem(kimeSrc, emptySystem())
       if (kimeErr) {
         setError(kimeErr)
         return
@@ -754,7 +756,7 @@ export default function SaleFlow() {
         kimeSrc.tip && kimeSrc.pick === NEW_PICK ? kimeSrc.yeni.ad_soyad : person.ad_soyad || ''
       ).trim()
       if (!kime) {
-        setError('Kontragent (Kimə) doldurulmalıdır.')
+        setError('Kimə: Təchizatçı və ya Müştəri seçin.')
         return
       }
       if (!form.qaytarma_tarixi) {
@@ -1305,25 +1307,6 @@ export default function SaleFlow() {
                 customers={kimeCustomerOptions}
                 onPickName={(name) => setPerson((p) => ({ ...p, ad_soyad: name }))}
               />
-
-              {kimeSrc.tip && kimeSrc.pick ? (
-                <div className="form-group">
-                  <label>Kontragent (Kimə) (avtomatik)</label>
-                  <div className="depo-inline">
-                    <input readOnly value={person.ad_soyad || '—'} />
-                  </div>
-                </div>
-              ) : (
-                <SuggestInput
-                  id="sale-borc-kime"
-                  label="Kontragent (Kimə)"
-                  value={person.ad_soyad}
-                  onChange={(v) => setPerson((p) => ({ ...p, ad_soyad: v }))}
-                  options={ledgerNames}
-                  placeholder="Mövcuddan seçin və ya yeni yazın…"
-                  required
-                />
-              )}
 
               <div className="form-group">
                 <label>Əməliyyat</label>
