@@ -144,10 +144,15 @@ const CONTACT_FIELDS = [
   { key: 'sexsi_nomre_1', label: 'Şəxsi Nöm 1' },
   { key: 'sexsi_nomre_2', label: 'Şəxsi Nöm 2' },
   { key: 'nomre_1', label: 'Nöm 1' },
+  { key: 'nomre_1_kim', label: 'Nöm 1 — kimdir' },
   { key: 'nomre_2', label: 'Nöm 2' },
+  { key: 'nomre_2_kim', label: 'Nöm 2 — kimdir' },
   { key: 'nomre_3', label: 'Nöm 3' },
+  { key: 'nomre_3_kim', label: 'Nöm 3 — kimdir' },
   { key: 'nomre_4', label: 'Nöm 4' },
+  { key: 'nomre_4_kim', label: 'Nöm 4 — kimdir' },
   { key: 'nomre_5', label: 'Nöm 5' },
+  { key: 'nomre_5_kim', label: 'Nöm 5 — kimdir' },
   { key: 'zamin', label: 'Zamin' },
   { key: 'zamin_nomre', label: 'Zamin Nöm' },
   { key: 'komment', label: 'Komment' },
@@ -161,6 +166,7 @@ const ID_FIELDS = [
   { key: 'qeydiyyat_unvani', label: 'Qeydiyyat Ünvanı' },
   { key: 'yasayis_unvani', label: 'Yaşayış Ünvanı' },
   { key: 'sv_verilme_tarixi', label: 'Ş/V Verilmə Tarixi', type: 'date' },
+  { key: 'sv_veren_orqan', label: 'Ş/V Verən Orqan' },
   { key: 'sv_bitme_tarixi', label: 'Ş/V Bitmə Tarixi', type: 'date' },
 ]
 
