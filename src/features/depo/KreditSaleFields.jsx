@@ -128,6 +128,9 @@ export default function KreditSaleFields({
   mode,
   kontakt,
   setKontaktField,
+  addPicker = null,
+  onOpenAdd,
+  onRemoveItem,
   children,
 }) {
   const bitme = computeBitmeTarixi(musteriForm.birinci_ayliq_odenis_tarixi, musteriForm.nece_ay)
@@ -267,9 +270,21 @@ export default function KreditSaleFields({
           return (
             <div key={item.id} className={basket.length > 1 ? 'depo-box' : undefined} style={{ display: 'grid', gap: 8 }}>
               {basket.length > 1 && (
-                <strong style={{ fontSize: 13 }}>
-                  Məhsul {idx + 1}: {item.model || '—'}
-                </strong>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                  <strong style={{ fontSize: 13 }}>
+                    Məhsul {idx + 1}: {item.model || '—'}
+                  </strong>
+                  {onRemoveItem && (
+                    <button
+                      type="button"
+                      className="btn btn--danger"
+                      style={{ padding: '2px 10px', fontSize: 12 }}
+                      onClick={() => onRemoveItem(item.id)}
+                    >
+                      Çıxar
+                    </button>
+                  )}
+                </div>
               )}
               {cihazFields.map((f) => (
                 <Field key={f.key} label={f.label}>
@@ -283,6 +298,14 @@ export default function KreditSaleFields({
             </div>
           )
         })}
+        {onOpenAdd && !addPicker && (
+          <div>
+            <button type="button" className="btn btn--secondary" onClick={onOpenAdd}>
+              + Əlavə məhsul
+            </button>
+          </div>
+        )}
+        {addPicker}
       </Section>
 
       <Section title="Müştəri Məlumatları">
