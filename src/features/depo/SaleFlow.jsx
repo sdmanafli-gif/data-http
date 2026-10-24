@@ -23,7 +23,12 @@ import {
   isMusteriFormColumnActive,
 } from '../musteri-bazasi/constants'
 import { fetchNextMusteriNumbers, fetchNextIcloudNumber, formatIcloudEmail, formatItunesEmail, parseIcloudNumber, isAutoItunesEmail } from '../musteri-bazasi/nextRecordNumbers'
-import { computeIlkinOdenis, buildSaleScheduleWithIlkin, canBuildSchedule } from '../musteri-bazasi/paymentSchedule'
+import {
+  computeIlkinOdenis,
+  buildSaleScheduleWithIlkin,
+  canBuildSchedule,
+  normalizeScheduleLines,
+} from '../musteri-bazasi/paymentSchedule'
 import { ODENISLER_TABLE, syncMusteriPaymentTotals } from '../odenisler/constants'
 import SaleSchedulePreview from './SaleSchedulePreview'
 import { DEPO_TABLE, SALE_TYPES } from './constants'
@@ -52,6 +57,12 @@ import {
 import { loadTechizatcilar, findOrCreateTechizatci } from '../../lib/techizatcilar'
 import { normMusteriName } from '../../lib/musteriler'
 import './depo-form.css'
+import KreditSaleFields, {
+  KREDIT_KONTAKT_NEW_KEYS,
+  emptyKreditKontakt,
+  kreditKontaktFromCustomer,
+  computeBitmeTarixi,
+} from './KreditSaleFields'
 
 /** Prefill from Depo — shown read-only on kredit form */
 const DEPO_READONLY_KEYS = new Set([
@@ -309,6 +320,8 @@ export default function SaleFlow() {
   const [ilkinOdenisVerilib, setIlkinOdenisVerilib] = useState('0')
   const [ilkinQaliqTarixi, setIlkinQaliqTarixi] = useState('')
   const [ilkinManual, setIlkinManual] = useState(false)
+  /** Kredit: müştərinin vəsiqə / ünvan / "kimdir" sahələri (Kontaktlara yazılır) */
+  const [kreditKontakt, setKreditKontakt] = useState(() => emptyKreditKontakt())
   const [form, setForm] = useState({
     verilib: '0',
     nece_ay: '',
@@ -622,6 +635,13 @@ export default function SaleFlow() {
     setIlkinOdenis(String(Math.round(computedIlkin * 100) / 100))
   }, [computedIlkin, ilkinManual])
 
+  // Kredit: Bitmə tarixi = birinci aylıq ödəniş tarixi + (neçə ay − 1)
+  useEffect(() => {
+    if (saleType !== 'kredit') return
+    const bitme = computeBitmeTarixi(musteriForm.birinci_ayliq_odenis_tarixi, musteriForm.nece_ay)
+    setMusteriForm((prev) => (prev.bitme_tarixi === bitme ? prev : { ...prev, bitme_tarixi: bitme }))
+  }, [saleType, musteriForm.birinci_ayliq_odenis_tarixi, musteriForm.nece_ay])
+
   const ilkinRemaining = useMemo(() => {
     const due = Number(ilkinOdenis) || 0
     const paid = Number(ilkinOdenisVerilib) || 0
@@ -729,6 +749,7 @@ export default function SaleFlow() {
     const merged = mergePersonPrefill(customer, latest)
     setPerson(merged)
     setMusteriForm((prev) => ({ ...prev, ...merged }))
+    setKreditKontakt(kreditKontaktFromCustomer(customer))
   }
 
   function handleSelectNew() {
@@ -736,6 +757,40 @@ export default function SaleFlow() {
     const emptyPerson = personFieldsFromMusteri(null)
     setPerson(emptyPerson)
     setMusteriForm((prev) => ({ ...prev, ...emptyPerson }))
+    setKreditKontakt(emptyKreditKontakt())
+  }
+
+  /** Kredit formunda bir sahəni dəyiş (ad / nömrələr person-a da yazılır) */
+  function setMusteriField(key, value) {
+    setMusteriForm((prev) => setFormField(prev, { key, custom: false }, value))
+    if (['ad_soyad', 'nomre_1', 'nomre_2', 'nomre_3', 'nomre_4', 'nomre_5', 'zamin'].includes(key)) {
+      setPerson((p) => ({ ...p, [key]: value }))
+    }
+  }
+
+  function onKreditSatisChange(itemId, value) {
+    setLinePrices((prev) => ({ ...prev, [itemId]: { ...prev[itemId], satis: value } }))
+    if (basket.length === 1) {
+      setMusteriForm((f) => setFormField(f, { key: 'satis_qiymeti', custom: false }, value))
+    }
+  }
+
+  /** Vəsiqə / ünvan / "kimdir" sahələrini Kontaktlardakı müştəri kartına yazır */
+  async function saveKreditKontakt(musteriId) {
+    const patch = {}
+    for (const [k, val] of Object.entries(kreditKontakt)) {
+      const t = String(val ?? '').trim()
+      if (t) patch[k] = t
+    }
+    if (!musteriId || !Object.keys(patch).length) return
+    let { error: e1 } = await supabase.from(MUSTERILER_TABLE).update(patch).eq('id', musteriId)
+    if (e1 && /column|schema cache/i.test(e1.message || '')) {
+      // Baza hələ yenilənməyibsə (SQL 39) yeni sütunlar olmadan yaz
+      const safe = Object.fromEntries(Object.entries(patch).filter(([k]) => !KREDIT_KONTAKT_NEW_KEYS.has(k)))
+      if (!Object.keys(safe).length) return
+      ;({ error: e1 } = await supabase.from(MUSTERILER_TABLE).update(safe).eq('id', musteriId))
+    }
+    if (e1) throw e1
   }
 
   async function ensureMusteriId() {
@@ -744,11 +799,13 @@ export default function SaleFlow() {
     if (!payload.ad_soyad) throw new Error('Ad Soyad Ata adı doldurulmalıdır.')
     if (mode === 'existing' && source.musteri_id) {
       await supabase.from(MUSTERILER_TABLE).update(payload).eq('id', source.musteri_id)
+      if (saleType === 'kredit') await saveKreditKontakt(source.musteri_id)
       return source.musteri_id
     }
     // Eyni adlı müştəri varsa yenisini yaratma — satışı mövcud müştəriyə bağla
     const newId = await findOrCreateMusteri(payload)
     if (saleType === 'kredit') {
+      await saveKreditKontakt(newId)
       setMusteriForm((prev) => ({ ...prev, musteri_id: newId }))
     } else {
       setPerson((prev) => ({ ...prev, musteri_id: newId }))
@@ -971,6 +1028,24 @@ export default function SaleFlow() {
           lines: [],
           buildLines: () => {
             if (!canBuildSchedule(scheduleRow)) return []
+            // İlkin hissə-hissə: bu gün verilən (satış tarixi) + qalığı ayrıca sətir (seçilən tarixdə),
+            // sonra aylıq ödənişlər. Məs.: ilkin 1500, verilib 1300 → 1300 / 200 / 10 × 300.
+            if (remainingForItem > 0.009 && paidForItem > 0.009) {
+              const base =
+                buildSaleScheduleWithIlkin(scheduleRow, {
+                  ilkinMebleg: paidForItem,
+                  ilkinTarix: verilme,
+                }) || []
+              const idx = base.findIndex((l) => l.type === 'ilkin')
+              const qaliq = {
+                type: 'ilkin',
+                installment: 0,
+                tarix: String(ilkinDueDate).slice(0, 10),
+                mebleg: remainingForItem,
+              }
+              const lines = idx >= 0 ? [...base.slice(0, idx + 1), qaliq, ...base.slice(idx + 1)] : [qaliq, ...base]
+              return normalizeScheduleLines(lines, scheduleRow)
+            }
             return (
               buildSaleScheduleWithIlkin(scheduleRow, {
                 ilkinMebleg: itemIlkin,
@@ -1485,204 +1560,53 @@ export default function SaleFlow() {
             </>
           ) : (
             <>
-          {saleType !== 'nagd' && (
-            <MusteriSelect
+
+          {saleType === 'kredit' && (
+            <KreditSaleFields
+              basket={basket}
+              linePrices={linePrices}
+              onSatisChange={onKreditSatisChange}
+              lineCihaz={lineCihaz}
+              cihazFields={visibleCihazFields}
+              emptyCihaz={emptyLineCihaz}
+              onCihazChange={updateLineCihaz}
+              musteriForm={musteriForm}
+              setMusteriField={setMusteriField}
+              saticiOptions={suggestions.satici || []}
+              ilkinOdenis={ilkinOdenis}
+              onIlkinChange={(val) => {
+                setIlkinManual(true)
+                setIlkinOdenis(val)
+              }}
+              ilkinOdenisVerilib={ilkinOdenisVerilib}
+              setIlkinOdenisVerilib={setIlkinOdenisVerilib}
+              ilkinRemaining={ilkinRemaining}
+              ilkinQaliqTarixi={ilkinQaliqTarixi}
+              setIlkinQaliqTarixi={setIlkinQaliqTarixi}
+              totalSatis={totals.satis}
+              formatMoney={formatMoney}
               customers={customers}
-              value={selectValue}
+              selectValue={selectValue}
               onSelectExisting={handleSelectExisting}
               onSelectNew={handleSelectNew}
+              mode={mode}
+              kontakt={kreditKontakt}
+              setKontaktField={(k, val) => setKreditKontakt((prev) => ({ ...prev, [k]: val }))}
+            >
+            <MusteriNotesAndFiles
+              columns={columns}
+              form={musteriForm}
+              onKommentChange={(v) =>
+                setMusteriForm((prev) => setFormField(prev, { key: 'kommentler' }, v))
+              }
+              senedlerProps={{
+                folder: 'musteri_bazasi',
+                recordId: null,
+                value: musteriForm.senedler,
+                onChange: (files) => setMusteriForm((prev) => ({ ...prev, senedler: files })),
+              }}
             />
-          )}
-
-          {(mode === 'new' || mode === 'existing') && saleType === 'kredit' && (
-            <>
-              <h3 className="card__title">Məhsul qiymətləri</h3>
-              {basket.map((item) => (
-                <div key={item.id} className="form-row" style={{ alignItems: 'flex-end' }}>
-                  <div className="form-group" style={{ flex: '2 1 200px' }}>
-                    <label>Məhsul</label>
-                    <input
-                      readOnly
-                      value={`${item.model || '—'} · ${item.reng || '—'} · ${item.imei_1 || '—'}`}
-                    />
-                  </div>
-                  <div className="form-group">
-                    <label>Alış</label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      value={linePrices[item.id]?.alis ?? ''}
-                      onChange={(e) => {
-                        const v = e.target.value
-                        setLinePrices((prev) => ({
-                          ...prev,
-                          [item.id]: { ...prev[item.id], alis: v },
-                        }))
-                        if (basket.length === 1) {
-                          setMusteriForm((f) =>
-                            setFormField(f, { key: 'alis_qiymeti', custom: false }, v)
-                          )
-                        }
-                      }}
-                    />
-                  </div>
-                  <div className="form-group">
-                    <label>Satış *</label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      required
-                      value={linePrices[item.id]?.satis ?? ''}
-                      onChange={(e) => {
-                        const v = e.target.value
-                        setLinePrices((prev) => ({
-                          ...prev,
-                          [item.id]: { ...prev[item.id], satis: v },
-                        }))
-                        if (basket.length === 1) {
-                          setMusteriForm((f) =>
-                            setFormField(f, { key: 'satis_qiymeti', custom: false }, v)
-                          )
-                        }
-                      }}
-                    />
-                  </div>
-                </div>
-              ))}
-
-              <div className="form-row" style={{ marginBottom: 12 }}>
-                <div className="form-group">
-                  <label>İlkin ödəniş</label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    value={ilkinOdenis}
-                    onChange={(e) => {
-                      setIlkinManual(true)
-                      setIlkinOdenis(e.target.value)
-                    }}
-                  />
-                  <p style={{ margin: '4px 0 0', fontSize: 11, color: 'var(--color-text-muted)' }}>
-                    Avtomatik: satış − (aylıq × neçə ay). Əl ilə dəyişə bilərsiniz.
-                  </p>
-                </div>
-                <div className="form-group">
-                  <label>İlkin ödəniş verilib</label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    value={ilkinOdenisVerilib}
-                    onChange={(e) => setIlkinOdenisVerilib(e.target.value)}
-                  />
-                  <p style={{ margin: '4px 0 0', fontSize: 11, color: 'var(--color-text-muted)' }}>
-                    Satışdan sonra Ödənişlər tabına əlavə olunur.
-                  </p>
-                </div>
-                <div className="form-group">
-                  <label>Ümumi gözlənilən gəlir</label>
-                  <input readOnly value={formatMoney(totals.gozlenilen)} />
-                </div>
-                <div className="form-group">
-                  <label>Ümumi satış</label>
-                  <input readOnly value={formatMoney(totals.satis)} />
-                </div>
-              </div>
-
-              {ilkinRemaining > 0.009 && (
-                <div className="form-row" style={{ marginBottom: 12 }}>
-                  <div className="form-group">
-                    <label>Qalan ilkin ödəniş</label>
-                    <input readOnly value={formatMoney(ilkinRemaining)} />
-                  </div>
-                  <div className="form-group">
-                    <label>Qalan ilkin ödəniş tarixi *</label>
-                    <input
-                      type="date"
-                      required
-                      value={ilkinQaliqTarixi}
-                      onChange={(e) => setIlkinQaliqTarixi(e.target.value)}
-                    />
-                    <p style={{ margin: '4px 0 0', fontSize: 11, color: 'var(--color-text-muted)' }}>
-                      Bu məbləğ Yığım tabında bu tarixlə görünəcək.
-                    </p>
-                  </div>
-                </div>
-              )}
-
-              {visibleCihazFields.length > 0 && (
-                <>
-              <h3 className="card__title">Cihaz məlumatları</h3>
-              <p style={{ margin: '0 0 12px', fontSize: 13, color: 'var(--color-text-muted)' }}>
-                Hər səbət məhsulu üçün ayrıca saxlanılır. Sütunlar Müştəri Bazası ayarları ilə eynidir.
-              </p>
-              {basket.map((item, idx) => {
-                const cihaz = lineCihaz[item.id] || emptyLineCihaz(item)
-                return (
-                  <details key={item.id} className="collapse-section" defaultOpen>
-                    <summary className="collapse-section__title">
-                      Cihaz {idx + 1}: {item.model || '—'} · {item.reng || '—'} · {item.imei_1 || '—'}
-                    </summary>
-                    <div className="form-row" style={{ paddingTop: 8 }}>
-                      {visibleCihazFields.map((field) => (
-                        <div className="form-group" key={field.key}>
-                          <label>
-                            {field.label}
-                            {!field.editable ? ' (depodan)' : ''}
-                          </label>
-                          {field.editable ? (
-                            <input
-                              value={cihaz[field.key] ?? ''}
-                              onChange={(e) => updateLineCihaz(item.id, field.key, e.target.value)}
-                            />
-                          ) : (
-                            <input readOnly value={cihaz[field.key] || '—'} />
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  </details>
-                )
-              })}
-                </>
-              )}
-
-              <MusteriSectionedFields
-                columns={columns}
-                form={musteriForm}
-                onFieldChange={(col, v) => {
-                  setMusteriForm((prev) => setFormField(prev, col, v))
-                  if (
-                    ['ad_soyad', 'nomre_1', 'nomre_2', 'nomre_3', 'nomre_4', 'nomre_5', 'zamin'].includes(
-                      col.key
-                    )
-                  ) {
-                    setPerson((p) => ({ ...p, [col.key]: v }))
-                  }
-                }}
-                suggestions={suggestions}
-                computedDisplay={kreditPreview}
-                readonlyKeys={DEPO_READONLY_KEYS}
-                skipKeys={KREDIT_SKIP_KEYS}
-                forceOpenIds={KREDIT_OPEN_SECTIONS}
-                requiredKeys={new Set(['ad_soyad', 'nece_ay', 'birinci_ayliq_odenis_tarixi'])}
-              />
-
-              <MusteriNotesAndFiles
-                columns={columns}
-                form={musteriForm}
-                onKommentChange={(v) =>
-                  setMusteriForm((prev) => setFormField(prev, { key: 'kommentler' }, v))
-                }
-                senedlerProps={{
-                  folder: 'musteri_bazasi',
-                  recordId: null,
-                  value: musteriForm.senedler,
-                  onChange: (files) => setMusteriForm((prev) => ({ ...prev, senedler: files })),
-                }}
-              />
-            </>
+            </KreditSaleFields>
           )}
 
           {saleType === 'nagd' && (
