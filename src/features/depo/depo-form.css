@@ -254,3 +254,10 @@
     grid-column: 1;
   }
 }
+
+/* Kredit: «Fayl Yarat» — müqavilə (Word) */
+.muqavile-yarat__btn {
+  min-width: 150px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+}
