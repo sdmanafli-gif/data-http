@@ -648,6 +648,13 @@ export default function SaleFlow() {
     setMusteriForm((prev) => (prev.bitme_tarixi === bitme ? prev : { ...prev, bitme_tarixi: bitme }))
   }, [saleType, musteriForm.birinci_ayliq_odenis_tarixi, musteriForm.nece_ay])
 
+  // Kredit: səbətə məhsul əlavə / çıxarılanda ümumi satış qiyməti yenilənsin
+  useEffect(() => {
+    if (saleType !== 'kredit') return
+    const s = totals.satis ? String(Math.round(totals.satis * 100) / 100) : ''
+    setMusteriForm((prev) => (String(prev.satis_qiymeti ?? '') === s ? prev : { ...prev, satis_qiymeti: s }))
+  }, [saleType, totals.satis])
+
   const ilkinRemaining = useMemo(() => {
     const due = Number(ilkinOdenis) || 0
     const paid = Number(ilkinOdenisVerilib) || 0
@@ -1222,6 +1229,90 @@ export default function SaleFlow() {
       ? NEW_MUSTERI_VALUE
       : (saleType === 'kredit' ? musteriForm.musteri_id : person.musteri_id) || ''
 
+  /** «Əlavə məhsul» seçim pəncərəsi — səbətdə və kredit formunda eyni */
+  const addPickerPanel = showAddPicker ? (
+            <div style={{ border: '1px solid var(--color-border)', borderRadius: 8, padding: 12 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginBottom: 8, flexWrap: 'wrap' }}>
+                <h3 className="card__title" style={{ margin: 0 }}>Mövcud məhsullardan seçin</h3>
+                <button type="button" className="btn btn--secondary" onClick={() => setShowAddPicker(false)}>
+                  Bağla
+                </button>
+              </div>
+              <div style={{ marginBottom: 12 }}>
+                <DepoFilterFields
+                  rows={availableExtras}
+                  filters={extraFilters}
+                  onChange={(k, v) => setExtraFilters((prev) => nextFilters(prev, k, v))}
+                  onClear={() => {
+                    setExtraFilters({ ...EMPTY_DEPO_FILTERS })
+                    setExtraFilter('')
+                  }}
+                  showVeziyyet={false}
+                  idPrefix="depo-extra-filters"
+                />
+              </div>
+              <div className="form-group" style={{ marginBottom: 12 }}>
+                <label htmlFor="depo-extra-filter">Axtar</label>
+                <input
+                  id="depo-extra-filter"
+                  type="search"
+                  value={extraFilter}
+                  onChange={(e) => setExtraFilter(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') e.preventDefault()
+                  }}
+                  placeholder="Model, rəng, IMEI…"
+                  autoComplete="off"
+                />
+              </div>
+              {availableExtras.length === 0 ? (
+                <p className="empty-state">Əlavə edilə biləcək məhsul yoxdur.</p>
+              ) : (
+                <div className="table-wrap">
+                  <table className="data-table">
+                    <thead>
+                      <tr>
+                        <th>Kateqoriya</th>
+                        <th>Növ</th>
+                        <th>Model</th>
+                        <th>Rəng</th>
+                        <th>IMEI</th>
+                        <th>Tarix</th>
+                        <th>Qiymət</th>
+                        <th></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {applyDepoFilters(availableExtras, extraFilters)
+                        .filter((item) => {
+                          const q = extraFilter.trim().toLowerCase()
+                          if (!q) return true
+                          const hay = `${item.model || ''} ${item.reng || ''} ${item.imei_1 || ''} ${item.imei_2 || ''}`.toLowerCase()
+                          return hay.includes(q)
+                        })
+                        .map((item) => (
+                        <tr key={item.id}>
+                          <td>{item.kateqoriya || '—'}</td>
+                          <td>{item.nov || '—'}</td>
+                          <td>{item.model || '—'}</td>
+                          <td>{item.reng || '—'}</td>
+                          <td>{item.imei_1 || '—'}</td>
+                          <td>{item.alis_tarixi ? String(item.alis_tarixi).slice(0, 10).split('-').reverse().join('.') : '—'}</td>
+                          <td className="num">{formatMoney(item.alis_qiymeti)}</td>
+                          <td>
+                            <button type="button" className="btn btn--primary" onClick={() => addToBasket(item)}>
+                              Səbətə əlavə et
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+  ) : null
+
   const kreditPreview = {
     gozlenilen_gelir: formatMoney(
       (Number(musteriForm.satis_qiymeti) || totals.satis || 0) -
@@ -1321,85 +1412,7 @@ export default function SaleFlow() {
             </button>
           </div>
 
-          {showAddPicker && (
-            <div style={{ border: '1px solid var(--color-border)', borderRadius: 8, padding: 12 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginBottom: 8, flexWrap: 'wrap' }}>
-                <h3 className="card__title" style={{ margin: 0 }}>Mövcud məhsullardan seçin</h3>
-                <button type="button" className="btn btn--secondary" onClick={() => setShowAddPicker(false)}>
-                  Bağla
-                </button>
-              </div>
-              <div style={{ marginBottom: 12 }}>
-                <DepoFilterFields
-                  rows={availableExtras}
-                  filters={extraFilters}
-                  onChange={(k, v) => setExtraFilters((prev) => nextFilters(prev, k, v))}
-                  onClear={() => {
-                    setExtraFilters({ ...EMPTY_DEPO_FILTERS })
-                    setExtraFilter('')
-                  }}
-                  showVeziyyet={false}
-                  idPrefix="depo-extra-filters"
-                />
-              </div>
-              <div className="form-group" style={{ marginBottom: 12 }}>
-                <label htmlFor="depo-extra-filter">Axtar</label>
-                <input
-                  id="depo-extra-filter"
-                  type="search"
-                  value={extraFilter}
-                  onChange={(e) => setExtraFilter(e.target.value)}
-                  placeholder="Model, rəng, IMEI…"
-                  autoComplete="off"
-                />
-              </div>
-              {availableExtras.length === 0 ? (
-                <p className="empty-state">Əlavə edilə biləcək məhsul yoxdur.</p>
-              ) : (
-                <div className="table-wrap">
-                  <table className="data-table">
-                    <thead>
-                      <tr>
-                        <th>Kateqoriya</th>
-                        <th>Növ</th>
-                        <th>Model</th>
-                        <th>Rəng</th>
-                        <th>IMEI</th>
-                        <th>Tarix</th>
-                        <th>Qiymət</th>
-                        <th></th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {applyDepoFilters(availableExtras, extraFilters)
-                        .filter((item) => {
-                          const q = extraFilter.trim().toLowerCase()
-                          if (!q) return true
-                          const hay = `${item.model || ''} ${item.reng || ''} ${item.imei_1 || ''} ${item.imei_2 || ''}`.toLowerCase()
-                          return hay.includes(q)
-                        })
-                        .map((item) => (
-                        <tr key={item.id}>
-                          <td>{item.kateqoriya || '—'}</td>
-                          <td>{item.nov || '—'}</td>
-                          <td>{item.model || '—'}</td>
-                          <td>{item.reng || '—'}</td>
-                          <td>{item.imei_1 || '—'}</td>
-                          <td>{item.alis_tarixi ? String(item.alis_tarixi).slice(0, 10).split('-').reverse().join('.') : '—'}</td>
-                          <td className="num">{formatMoney(item.alis_qiymeti)}</td>
-                          <td>
-                            <button type="button" className="btn btn--primary" onClick={() => addToBasket(item)}>
-                              Səbətə əlavə et
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
-          )}
+          {addPickerPanel}
         </>
       )}
 
@@ -1597,6 +1610,9 @@ export default function SaleFlow() {
               onSelectNew={handleSelectNew}
               mode={mode}
               kontakt={kreditKontakt}
+              addPicker={addPickerPanel}
+              onOpenAdd={openAddPicker}
+              onRemoveItem={removeFromBasket}
               setKontaktField={(k, val) => setKreditKontakt((prev) => ({ ...prev, [k]: val }))}
             >
             <MusteriNotesAndFiles
