@@ -1,0 +1,263 @@
+/* Depo Yeni qeyd / Redaktə formu: sahələr alt-alta, yaxın-yaxın; izahlar xananın sağında */
+.depo-stack {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+  max-width: 760px;
+}
+
+.depo-stack .form-group {
+  margin-bottom: 0;
+}
+
+.depo-stack .form-group label {
+  margin-bottom: 2px;
+}
+
+.depo-subgroup {
+  display: grid;
+  gap: 8px;
+}
+
+.depo-box {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  padding: 8px 10px;
+  background: var(--color-bg);
+  display: grid;
+  gap: 8px;
+}
+
+/* Xana + sağında izah */
+.depo-inline {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.depo-inline > input,
+.depo-inline > select,
+.depo-inline > textarea {
+  flex: 0 1 400px;
+  min-width: 0;
+}
+
+.depo-inline--suggest {
+  align-items: flex-end;
+}
+
+.depo-inline--suggest > .searchable-select {
+  flex: 1 1 400px;
+  min-width: 0;
+}
+
+/* Axtarışlı xanalar (Model, Rəng, Kimdən…): "Mövcuddan axtarıb seçin…" yazısı sağda */
+.depo-stack .searchable-select {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: 12px;
+}
+
+.depo-stack .searchable-select > label {
+  flex: 0 0 100%;
+}
+
+.depo-stack .searchable-select__control {
+  flex: 0 1 400px;
+  min-width: 0;
+}
+
+.depo-stack .searchable-select > .form-hint {
+  flex: 1 1 140px;
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.3;
+}
+
+.depo-stack .searchable-select__list {
+  top: 100%;
+}
+
+.depo-inline--suggest > .depo-msg {
+  padding-bottom: 9px;
+}
+
+.depo-msg {
+  flex: 1 1 160px;
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.3;
+}
+
+.depo-msg--hint {
+  font-size: 11px;
+  color: var(--color-text-muted);
+}
+
+/* Haradan qutusunda 3 fayl yeri */
+.depo-files {
+  display: grid;
+  gap: 6px;
+  border-top: 1px dashed var(--color-border);
+  padding-top: 8px;
+}
+
+.depo-files__title {
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.depo-file-slot,
+.depo-files__extra {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 13px;
+}
+
+.depo-file-slot__label {
+  width: 56px;
+  flex: 0 0 auto;
+  color: var(--color-text-muted);
+}
+
+.depo-file-slot__name {
+  flex: 0 1 260px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.depo-file-slot__btn {
+  padding: 2px 10px;
+  font-size: 12px;
+}
+
+.depo-files__extra-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Fayla "Bax": səhifənin üstündə açılan pəncərə */
+.depo-file-preview {
+  width: min(1000px, 96vw);
+  max-height: 92vh;
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+.depo-file-preview__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.depo-file-preview__title {
+  margin: 0;
+  font-size: 16px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.depo-file-preview__body {
+  flex: 1;
+  overflow: auto;
+  padding: 12px;
+  display: flex;
+  justify-content: center;
+  background: var(--color-bg);
+}
+
+.depo-file-preview__body img {
+  max-width: 100%;
+  height: auto;
+  object-fit: contain;
+}
+
+.depo-file-preview__body iframe {
+  width: 100%;
+  height: 75vh;
+  border: none;
+  background: #fff;
+}
+
+/* Kredit satış forması: sahələr alt-alta, izahlar xananın sağında */
+.kredit-stack .form-row {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+}
+
+.kredit-stack .form-row .form-group {
+  min-width: 0;
+}
+
+.kredit-stack .form-group:not(.searchable-select) {
+  display: grid;
+  grid-template-columns: minmax(0, 400px) minmax(140px, 1fr);
+  column-gap: 12px;
+  align-items: center;
+  margin-bottom: 0;
+}
+
+.kredit-stack .form-group:not(.searchable-select) > label {
+  grid-column: 1 / -1;
+  margin-bottom: 2px;
+}
+
+.kredit-stack .form-group:not(.searchable-select) > :not(label):not(p) {
+  grid-column: 1;
+}
+
+.kredit-stack .form-group:not(.searchable-select) > p {
+  grid-column: 2;
+  margin: 0 !important;
+  font-size: 11px;
+  line-height: 1.3;
+}
+
+.kredit-stack .collapse-section {
+  margin: 0;
+  /* Müştəri seçimi kimi açılan siyahılar çərçivənin altında qalmasın */
+  overflow: visible;
+}
+
+.kredit-stack .collapse-section__title {
+  border-radius: var(--radius) var(--radius) 0 0;
+}
+
+.kredit-stack .collapse-section:not([open]) .collapse-section__title {
+  border-radius: var(--radius);
+}
+
+.kredit-stack .collapse-section__body {
+  border-radius: 0 0 var(--radius) var(--radius);
+}
+
+@media (max-width: 640px) {
+  .kredit-stack .form-group:not(.searchable-select) {
+    grid-template-columns: 1fr;
+  }
+  .kredit-stack .form-group:not(.searchable-select) > p {
+    grid-column: 1;
+  }
+}
+
+/* Kredit: «Fayl Yarat» — müqavilə (Word) */
+.muqavile-yarat__btn {
+  min-width: 150px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+}

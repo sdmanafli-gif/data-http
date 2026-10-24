@@ -2,11 +2,11 @@ import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams, Link } from 'react-router-dom'
 import { supabase, fetchAllPages } from '../../lib/supabase'
 import { confirmDelete } from '../../lib/confirmDelete'
-import { uploadSenedlerFiles } from '../../lib/senedler'
 import { useColumnConfig } from './useColumnConfig'
 import SuggestInput from '../musteri-bazasi/SuggestInput'
 import RecordModule from '../../components/RecordModule'
-import SenedlerField from '../../components/SenedlerField'
+import DepoFileSlots, { uploadPendingSlots } from './DepoFileSlots'
+import DepoKateqoriyaBlock, { loadKateqoriyalar } from './DepoKateqoriya'
 import {
   DEPO_TABLE,
   SUGGEST_FIELDS,
@@ -27,9 +27,38 @@ import {
   syncDepoPurchaseNisyeLedger,
 } from './constants'
 import { LEDGER_TABLE } from '../borc-nisye/constants'
+import { findOrCreateMusteri, normMusteriName } from '../../lib/musteriler'
+import { loadTechizatcilar, findOrCreateTechizatci } from '../../lib/techizatcilar'
+import {
+  NEW_PICK,
+  emptySource,
+  emptySystem,
+  sourceFromRow,
+  systemFromRow,
+  systemAmount,
+  systemPayload,
+  validateSourceAndSystem,
+  customerExtraFields,
+  HaradanBlock,
+  SistemBlock,
+} from './DepoSourceFields'
 import '../musteri-bazasi/musteri-table.css'
 import '../../styles/shared.css'
 import '../../components/record-module.css'
+import './depo-form.css'
+
+/** Yaddaş üçün sabit seçimlər */
+const YADDAS_OPTIONS = ['32 Gb', '64 Gb', '128 Gb', '256 Gb', '512 Gb', '1 Tb', '2 Tb']
+
+/** Formda göstərilməyən sahələr (bazadakı dəyəri saxlanılır) */
+const FORM_HIDDEN_KEYS = new Set(['sexsiyyet'])
+
+/** Xananın sağında: xəta və ya izah */
+function FieldMsg({ hint = null, invalid = false }) {
+  if (invalid) return <p className="form-group__error depo-msg">Bu sahə mütləqdir</p>
+  if (hint) return <p className="depo-msg depo-msg--hint">{hint}</p>
+  return null
+}
 
 function DynamicField({
   col,
@@ -53,16 +82,39 @@ function DynamicField({
           {col.label}
           {forceReadonly ? ' (avtomatik)' : ' (avtomatik)'}
         </label>
-        <input readOnly value={value === '' || value == null ? '—' : String(value)} />
-        {hint ? (
-          <p style={{ margin: '4px 0 0', fontSize: 11, color: 'var(--color-text-muted)' }}>{hint}</p>
-        ) : null}
+        <div className="depo-inline">
+          <input readOnly value={value === '' || value == null ? '—' : String(value)} />
+          <FieldMsg hint={hint} />
+        </div>
+      </div>
+    )
+  }
+  if (col.key === 'yaddas') {
+    // Sabit siyahı; köhnə qeyddə siyahıda olmayan dəyər varsa, o da görünür (itmir)
+    const cur = String(value ?? '').trim()
+    const extraOpt = cur && !YADDAS_OPTIONS.includes(cur) ? cur : null
+    return (
+      <div className={groupClass}>
+        <label>
+          {col.label}
+          {isRequired ? ' *' : ''}
+        </label>
+        <div className="depo-inline">
+          <select value={cur} onChange={(e) => onChange(e.target.value)} aria-invalid={invalid}>
+            <option value="">— Seçin —</option>
+            {extraOpt && <option value={extraOpt}>{extraOpt} (köhnə yazılış)</option>}
+            {YADDAS_OPTIONS.map((o) => (
+              <option key={o} value={o}>{o}</option>
+            ))}
+          </select>
+          <FieldMsg hint={hint} invalid={invalid} />
+        </div>
       </div>
     )
   }
   if (SUGGEST_FIELDS.has(col.key)) {
     return (
-      <div className={groupClass}>
+      <div className={`${groupClass} depo-inline depo-inline--suggest`}>
         <SuggestInput
           id={`depo-${col.key}`}
           label={`${col.label}${isRequired ? ' *' : ''}`}
@@ -70,10 +122,7 @@ function DynamicField({
           onChange={onChange}
           options={suggestions?.[col.key] || []}
         />
-        {invalid ? <p className="form-group__error">Bu sahə mütləqdir</p> : null}
-        {hint && !invalid ? (
-          <p style={{ margin: '4px 0 0', fontSize: 11, color: 'var(--color-text-muted)' }}>{hint}</p>
-        ) : null}
+        <FieldMsg hint={hint} invalid={invalid} />
       </div>
     )
   }
@@ -96,20 +145,19 @@ function DynamicField({
           {col.label}
           {isRequired ? ' *' : ''}
         </label>
-        <select
-          value={value ?? ''}
-          onChange={(e) => onChange(e.target.value)}
-          aria-invalid={invalid}
-        >
-          <option value="">— Seçin —</option>
-          {options.map((o) => (
-            <option key={o.value} value={o.value}>{o.label}</option>
-          ))}
-        </select>
-        {invalid ? <p className="form-group__error">Bu sahə mütləqdir</p> : null}
-        {hint && !invalid ? (
-          <p style={{ margin: '4px 0 0', fontSize: 11, color: 'var(--color-text-muted)' }}>{hint}</p>
-        ) : null}
+        <div className="depo-inline">
+          <select
+            value={value ?? ''}
+            onChange={(e) => onChange(e.target.value)}
+            aria-invalid={invalid}
+          >
+            <option value="">— Seçin —</option>
+            {options.map((o) => (
+              <option key={o.value} value={o.value}>{o.label}</option>
+            ))}
+          </select>
+          <FieldMsg hint={hint} invalid={invalid} />
+        </div>
       </div>
     )
   }
@@ -120,19 +168,28 @@ function DynamicField({
         {col.label}
         {isRequired ? ' *' : ''}
       </label>
-      <input
-        type={inputType}
-        step={col.type === 'money' || col.type === 'number' ? '0.01' : undefined}
-        value={value ?? ''}
-        onChange={(e) => onChange(e.target.value)}
-        aria-invalid={invalid}
-      />
-      {invalid ? <p className="form-group__error">Bu sahə mütləqdir</p> : null}
-      {hint && !invalid ? (
-        <p style={{ margin: '4px 0 0', fontSize: 11, color: 'var(--color-text-muted)' }}>{hint}</p>
-      ) : null}
+      <div className="depo-inline">
+        <input
+          type={inputType}
+          step={col.type === 'money' || col.type === 'number' ? '0.01' : undefined}
+          value={value ?? ''}
+          onChange={(e) => onChange(e.target.value)}
+          aria-invalid={invalid}
+        />
+        <FieldMsg hint={hint} invalid={invalid} />
+      </div>
     </div>
   )
+}
+
+/** Redaktə üçün: "Mənim" sistem məbləği alış qiymətindən çıxılır (saxlananda yenidən əlavə olunur) */
+function formFromRow(row, columns) {
+  const f = rowToForm(row, columns)
+  if (row?.sistem && row.sistem_nov === 'menim' && row.sistem_mebleg != null && row.alis_qiymeti != null) {
+    const base = Number(row.alis_qiymeti) - Number(row.sistem_mebleg)
+    f.alis_qiymeti = String(Math.round(base * 100) / 100)
+  }
+  return f
 }
 
 function uniqueSorted(values) {
@@ -154,12 +211,71 @@ export default function DepoForm() {
   const [saving, setSaving] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [error, setError] = useState(null)
-  const [pendingFiles, setPendingFiles] = useState([])
+  const [pendingFiles, setPendingFiles] = useState({}) // { 1: File, 2: File, 3: File } — yeni qeyd üçün
   const [invalidKeys, setInvalidKeys] = useState(() => new Set())
+  // Haradan (Təchizatçı / Müştəri) və Sistem
+  const [src, setSrc] = useState(() => emptySource())
+  const [sys, setSys] = useState(() => emptySystem())
+  const [techizatcilar, setTechizatcilar] = useState([])
+  const [musteriler, setMusteriler] = useState([])
+  const [kateqoriyalar, setKateqoriyalar] = useState([])
+
+  const supplierOptions = useMemo(() => {
+    const seen = new Set()
+    const out = []
+    for (const t of techizatcilar) {
+      seen.add(normMusteriName(t.ad_soyad))
+      out.push({ value: `t:${t.id}`, name: t.ad_soyad, label: t.tukan ? `${t.ad_soyad} (${t.tukan})` : t.ad_soyad })
+    }
+    for (const n of suggestions.kimden_alinib || []) {
+      const k = normMusteriName(n)
+      if (!k || seen.has(k)) continue
+      seen.add(k)
+      out.push({ value: `n:${n}`, name: n, label: n })
+    }
+    return out.sort((a, b) => a.label.localeCompare(b.label, 'az'))
+  }, [techizatcilar, suggestions.kimden_alinib])
+
+  const customerOptions = useMemo(
+    () =>
+      musteriler.map((m) => ({
+        value: `m:${m.id}`,
+        name: m.ad_soyad,
+        label: m.nomre_1 ? `${m.ad_soyad} · ${m.nomre_1}` : m.ad_soyad,
+      })),
+    [musteriler]
+  )
+
+  function applyRow(row) {
+    setRecord(row)
+    setForm(formFromRow(row, columns))
+    setSrc(sourceFromRow(row))
+    setSys(systemFromRow(row))
+  }
+
+  /** Fayl siyahısını bazaya yazır (mövcud qeyd üçün) */
+  async function saveSenedler(recordId, next) {
+    const { error: e } = await supabase
+      .from(DEPO_TABLE)
+      .update({ senedler: next, updated_at: new Date().toISOString() })
+      .eq('id', recordId)
+    if (e) {
+      setError(e.message)
+      return false
+    }
+    setRecord((r) => (r ? { ...r, senedler: next } : r))
+    setForm((f) => ({ ...f, senedler: next }))
+    return true
+  }
+
+  function setKimden(name) {
+    setForm((prev) => ({ ...prev, kimden_alinib: name }))
+  }
 
   const formColumns = useMemo(() => {
     return columns
       .filter((c) => c.formVisible !== false && c.visible !== false && c.key !== 'sira_no')
+      .filter((c) => !FORM_HIDDEN_KEYS.has(c.key))
       .filter((c) => {
         if (c.key === 'qaytarma_tarixi' && form.odenis_novu !== 'nisye') return false
         return true
@@ -181,6 +297,16 @@ export default function DepoForm() {
           supabase.from(DEPO_TABLE).select('model, reng, yaddas, kimden_alinib, sexsiyyet')
         )
         const rows = data || []
+        const [tRes, mRes, kRes] = await Promise.all([
+          loadTechizatcilar(),
+          fetchAllPages(() => supabase.from('musteriler').select('id, ad_soyad, nomre_1').order('ad_soyad')),
+          loadKateqoriyalar(),
+        ])
+        if (!cancelled) {
+          setTechizatcilar(tRes.data || [])
+          setMusteriler(mRes.data || [])
+          setKateqoriyalar(kRes.data || [])
+        }
         setSuggestions({
           model: uniqueSorted(rows.map((r) => r.model)),
           reng: uniqueSorted(rows.map((r) => r.reng)),
@@ -192,12 +318,13 @@ export default function DepoForm() {
           const { data: row, error: e } = await supabase.from(DEPO_TABLE).select('*').eq('id', id).single()
           if (cancelled) return
           if (e) throw e
-          setRecord(row)
-          setForm(rowToForm(row, columns))
+          applyRow(row)
           setEditing(false)
         } else {
           setRecord(null)
           setForm(emptyDepoForm(columns))
+          setSrc(emptySource())
+          setSys(emptySystem())
           setEditing(true)
         }
       } catch (err) {
@@ -250,9 +377,65 @@ export default function DepoForm() {
       setError(nisyeErr)
       return
     }
+    const srcErr = validateSourceAndSystem(src, sys)
+    if (srcErr) {
+      setError(srcErr)
+      return
+    }
     setSaving(true)
     try {
       const payload = toDepoPayload(form, columns)
+
+      // Haradan: seçilmiş / yeni Təchizatçı və ya Müştəri
+      payload.haradan_tip = src.tip || null
+      payload.techizatci_id = null
+      payload.musteri_id = null
+      if (src.tip === 'techizatci') {
+        if (src.pick === NEW_PICK) {
+          payload.techizatci_id = await findOrCreateTechizatci(src.yeni)
+          payload.kimden_alinib = src.yeni.ad_soyad.trim()
+        } else if (src.pick.startsWith('t:')) {
+          payload.techizatci_id = src.pick.slice(2)
+        }
+      } else if (src.tip === 'musteri') {
+        if (src.pick === NEW_PICK) {
+          const ad = src.yeni.ad_soyad.trim()
+          payload.musteri_id = await findOrCreateMusteri({
+            ad_soyad: ad,
+            nomre_1: src.yeni.nomre_1.trim() || null,
+            nomre_2: src.yeni.nomre_2.trim() || null,
+            updated_at: new Date().toISOString(),
+          })
+          // Vəsiqə məlumatları, ünvan, komment — yalnız müştəridə boş olan sahələr doldurulur
+          const extra = customerExtraFields(src.yeni)
+          if (Object.keys(extra).length) {
+            const { data: cur } = await supabase
+              .from('musteriler')
+              .select('*')
+              .eq('id', payload.musteri_id)
+              .single()
+            const patch = {}
+            for (const [k, v] of Object.entries(extra)) {
+              if (cur && !String(cur[k] ?? '').trim()) patch[k] = v
+            }
+            if (Object.keys(patch).length) {
+              const { error: mErr } = await supabase.from('musteriler').update(patch).eq('id', payload.musteri_id)
+              if (mErr) throw mErr
+            }
+          }
+          payload.kimden_alinib = ad
+        } else if (src.pick.startsWith('m:')) {
+          payload.musteri_id = src.pick.slice(2)
+        }
+      }
+
+      // Sistem: "Mənim" məbləği alış qiymətinin üstünə gəlir
+      Object.assign(payload, systemPayload(sys))
+      const sysAmount = systemAmount(sys)
+      if (sysAmount > 0) {
+        payload.alis_qiymeti = Math.round(((Number(payload.alis_qiymeti) || 0) + sysAmount) * 100) / 100
+      }
+
       let err
       let newId = id
       let savedRow = null
@@ -277,29 +460,22 @@ export default function DepoForm() {
       }
       if (err) throw err
 
-      if (!isEdit && newId && pendingFiles.length > 0) {
-        const { files: uploaded, error: upErr } = await uploadSenedlerFiles(
-          'depo',
+      if (!isEdit && newId && Object.keys(pendingFiles).length > 0) {
+        const { files: nextSenedler, error: upErr } = await uploadPendingSlots(
           newId,
+          savedRow?.senedler,
           pendingFiles
         )
-        if (uploaded.length) {
-          const nextSenedler = [...(savedRow?.senedler || []), ...uploaded]
-          const { data: withFiles, error: senedErr } = await supabase
-            .from(DEPO_TABLE)
-            .update({ senedler: nextSenedler, updated_at: new Date().toISOString() })
-            .eq('id', newId)
-            .select('*')
-            .single()
-          if (senedErr) throw senedErr
-          savedRow = withFiles
-          setPendingFiles([])
-        }
-        if (upErr && (!uploaded || uploaded.length === 0)) throw new Error(upErr)
-        if (upErr) {
-          // Partial upload — still navigate but keep message
-          setError(upErr)
-        }
+        const { data: withFiles, error: senedErr } = await supabase
+          .from(DEPO_TABLE)
+          .update({ senedler: nextSenedler, updated_at: new Date().toISOString() })
+          .eq('id', newId)
+          .select('*')
+          .single()
+        if (senedErr) throw senedErr
+        savedRow = withFiles
+        setPendingFiles({})
+        if (upErr) setError(upErr)
       }
 
       if (savedRow) {
@@ -308,10 +484,7 @@ export default function DepoForm() {
       }
 
       if (isEdit) {
-        if (savedRow) {
-          setRecord(savedRow)
-          setForm(rowToForm(savedRow, columns))
-        }
+        if (savedRow) applyRow(savedRow)
         setEditing(false)
       } else if (newId) {
         navigate(`/depo/${newId}`)
@@ -368,28 +541,37 @@ export default function DepoForm() {
           </>
         }
       >
+        {(record.haradan_tip || record.sistem) && (
+          <dl className="record-module__grid" style={{ marginTop: 16 }}>
+            {record.haradan_tip && (
+              <div className="record-module__field">
+                <dt>Haradan</dt>
+                <dd>{record.haradan_tip === 'techizatci' ? 'Təchizatçı' : 'Müştəri'}{record.kimden_alinib ? ` · ${record.kimden_alinib}` : ''}</dd>
+              </div>
+            )}
+            {record.sistem && (
+              <div className="record-module__field">
+                <dt>Sistem</dt>
+                <dd>
+                  {record.sistem_nov === 'menim'
+                    ? `Mənim · ${record.sistem_mebleg ?? 0} AZN (alış qiymətinə daxildir)`
+                    : `Digər · ${record.sistem_adi || '—'}${record.sistem_zamin ? ` · Zamin: ${record.sistem_zamin}` : ''}`}
+                </dd>
+              </div>
+            )}
+          </dl>
+        )}
         {record.kommentler ? (
           <div className="form-group" style={{ marginTop: 20, marginBottom: 0 }}>
             <label>Komment</label>
             <p style={{ margin: 0, whiteSpace: 'pre-wrap' }}>{record.kommentler}</p>
           </div>
         ) : null}
-        <div style={{ marginTop: 20 }}>
-          <SenedlerField
-            folder="depo"
-            recordId={record.id}
+        <div style={{ marginTop: 16, maxWidth: 760 }}>
+          <DepoFileSlots
             value={record.senedler}
-            onChange={async (next) => {
-              const { error: e } = await supabase
-                .from(DEPO_TABLE)
-                .update({ senedler: next, updated_at: new Date().toISOString() })
-                .eq('id', record.id)
-              if (e) setError(e.message)
-              else {
-                setRecord((r) => (r ? { ...r, senedler: next } : r))
-                setForm((f) => ({ ...f, senedler: next }))
-              }
-            }}
+            recordId={record.id}
+            onChange={(next) => saveSenedler(record.id, next)}
           />
         </div>
       </RecordModule>
@@ -410,7 +592,7 @@ export default function DepoForm() {
               className="btn btn--secondary"
               onClick={() => {
                 setError(null)
-                if (record) setForm(rowToForm(record, columns))
+                if (record) applyRow(record)
                 setEditing(false)
               }}
             >
@@ -420,11 +602,19 @@ export default function DepoForm() {
         )}
       </div>
       <form onSubmit={handleSubmit} noValidate>
-        <div className="form-row">
+        {/* Sahələr alt-alta (bir sütun) */}
+        <div className="depo-stack">
+          <DepoKateqoriyaBlock
+            list={kateqoriyalar}
+            setList={setKateqoriyalar}
+            kateqoriya={form.kateqoriya || ''}
+            nov={form.nov || ''}
+            onChange={(patch) => setForm((prev) => ({ ...prev, ...patch }))}
+          />
           {formColumns.filter((c) => c.key !== 'senedler' && c.key !== 'kommentler').map((col) => {
             const isYeni = form.veziyyet_cihaz === 'teze'
             const isKohne = form.veziyyet_cihaz === 'kohne'
-            return (
+            const field = (
               <DynamicField
                 key={col.key}
                 col={col}
@@ -451,7 +641,10 @@ export default function DepoForm() {
                   }
                 }}
                 suggestions={suggestions}
-                forceReadonly={col.key === 'battery_faiz' && isYeni}
+                forceReadonly={
+                  (col.key === 'battery_faiz' && isYeni) ||
+                  (col.key === 'kimden_alinib' && Boolean(src.tip && src.pick))
+                }
                 required={
                   col.key === 'veziyyet_cihaz' ||
                   (form.odenis_novu === 'nisye' &&
@@ -469,9 +662,56 @@ export default function DepoForm() {
                 }
               />
             )
+            if (col.key === 'kimden_alinib') {
+              return (
+                <div key={col.key} className="depo-subgroup">
+                  <HaradanBlock
+                    src={src}
+                    setSrc={setSrc}
+                    suppliers={supplierOptions}
+                    customers={customerOptions}
+                    onPickName={setKimden}
+                  >
+                    <DepoFileSlots
+                      value={form.senedler}
+                      recordId={id || null}
+                      pending={pendingFiles}
+                      onPendingChange={setPendingFiles}
+                      onChange={(next) => saveSenedler(id, next)}
+                    />
+                  </HaradanBlock>
+                  {field}
+                </div>
+              )
+            }
+            if (col.key === 'alis_qiymeti') {
+              return (
+                <div key={col.key} className="depo-subgroup">
+                  {field}
+                  <SistemBlock
+                    sys={sys}
+                    setSys={setSys}
+                    baseAmount={Number(String(form.alis_qiymeti || '').replace(',', '.')) || 0}
+                  />
+                </div>
+              )
+            }
+            return field
           })}
         </div>
-        <div className="form-group" style={{ marginTop: 16 }}>
+        {/* "Kimdən" sütunu gizlədilibsə Haradan qutusu görünmür — fayllar yenə də itməsin */}
+        {!formColumns.some((c) => c.key === 'kimden_alinib') && (
+          <div className="depo-box" style={{ marginTop: 8, maxWidth: 760 }}>
+            <DepoFileSlots
+              value={form.senedler}
+              recordId={id || null}
+              pending={pendingFiles}
+              onPendingChange={setPendingFiles}
+              onChange={(next) => saveSenedler(id, next)}
+            />
+          </div>
+        )}
+        <div className="form-group" style={{ marginTop: 8, maxWidth: 760 }}>
           <label>Komment</label>
           <textarea
             rows={3}
@@ -481,25 +721,6 @@ export default function DepoForm() {
               setForm((prev) => ({ ...prev, kommentler: v }))
             }}
             placeholder="Məhsul haqqında qeyd…"
-          />
-        </div>
-        <div style={{ marginTop: 16 }}>
-          <SenedlerField
-            folder="depo"
-            recordId={id || null}
-            value={form.senedler}
-            pendingFiles={pendingFiles}
-            onPendingChange={setPendingFiles}
-            onChange={async (next) => {
-              setForm((f) => ({ ...f, senedler: next }))
-              if (!id) return
-              const { error: e } = await supabase
-                .from(DEPO_TABLE)
-                .update({ senedler: next, updated_at: new Date().toISOString() })
-                .eq('id', id)
-              if (e) setError(e.message)
-              else setRecord((r) => (r ? { ...r, senedler: next } : r))
-            }}
           />
         </div>
         {error && <p style={{ color: 'var(--color-accent)' }}>{error}</p>}
@@ -512,7 +733,7 @@ export default function DepoForm() {
             className="btn btn--secondary"
             onClick={() => {
               if (isEdit) {
-                if (record) setForm(rowToForm(record, columns))
+                if (record) applyRow(record)
                 setEditing(false)
               } else {
                 navigate('/depo')

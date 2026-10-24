@@ -104,6 +104,12 @@ export async function mergeMusteriler(targetId, otherIds) {
     .update({ musteri_id: targetId })
     .in('musteri_id', others)
   if (moveErr) throw moveErr
+  // Depoda bu müştəridən alınmış məhsullar da əsas müştəriyə keçsin (sütun hələ yoxdursa keç)
+  const { error: depoErr } = await supabase
+    .from('depo')
+    .update({ musteri_id: targetId })
+    .in('musteri_id', others)
+  if (depoErr && !/musteri_id|schema cache|does not exist/i.test(depoErr.message || '')) throw depoErr
 
   // 2) Sahələri birləşdir
   const patch = {}

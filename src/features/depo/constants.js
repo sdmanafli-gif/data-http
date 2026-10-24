@@ -53,6 +53,8 @@ export const FIELD_TYPES = [
 
 /** Column order matches the shop inventory sheet. */
 export const DEFAULT_COLUMNS = [
+  { key: 'kateqoriya', label: 'Kateqoriya', type: 'text', visible: true, formVisible: false, readonly: false, system: true, group: 'record' },
+  { key: 'nov', label: 'Növ', type: 'text', visible: true, formVisible: false, readonly: false, system: true, group: 'record' },
   { key: 'model', label: 'Model', type: 'text', visible: true, formVisible: true, readonly: false, system: true, group: 'record' },
   { key: 'reng', label: 'Rəng', type: 'text', visible: true, formVisible: true, readonly: false, system: true, group: 'record' },
   { key: 'veziyyet_cihaz', label: 'Status', type: 'select', visible: true, formVisible: true, readonly: false, system: true, group: 'record', options: ['teze', 'kohne'], required: true },
@@ -63,7 +65,7 @@ export const DEFAULT_COLUMNS = [
   { key: 'qaytarma_tarixi', label: 'Qaytarma tarixi', type: 'date', visible: true, formVisible: true, readonly: false, system: true, group: 'record' },
   { key: 'miqdar', label: 'Miqdar', type: 'number', visible: true, formVisible: true, readonly: false, system: true, group: 'record' },
   { key: 'yaddas', label: 'Yaddaş', type: 'text', visible: true, formVisible: true, readonly: false, system: true, group: 'record' },
-  { key: 'kimden_alinib', label: 'Hardan', type: 'text', visible: true, formVisible: true, readonly: false, system: true, group: 'record' },
+  { key: 'kimden_alinib', label: 'Kimdən', type: 'text', visible: true, formVisible: true, readonly: false, system: true, group: 'record' },
   { key: 'nomre', label: 'Nömrə', type: 'text', visible: true, formVisible: true, readonly: false, system: true, group: 'record' },
   { key: 'sexsiyyet', label: 'Şəxsiyyət', type: 'text', visible: true, formVisible: true, readonly: false, system: true, group: 'record' },
   { key: 'imei_1', label: 'Imei 1', type: 'text', visible: true, formVisible: true, readonly: false, system: true, group: 'record' },
@@ -73,7 +75,6 @@ export const DEFAULT_COLUMNS = [
   { key: 'status', label: 'Vəziyyət', type: 'select', visible: true, formVisible: true, readonly: false, system: true, group: 'record', options: STATUS_OPTIONS },
   // Kept in DB / column manager, hidden from default sheet view
   { key: 'sira_no', label: '# / №', type: 'number', visible: false, formVisible: false, readonly: true, system: true, group: 'meta' },
-  { key: 'nov', label: 'Növ', type: 'text', visible: false, formVisible: false, readonly: false, system: true, group: 'extra' },
   { key: 'sim_type', label: 'SIM növü', type: 'select', visible: false, formVisible: false, readonly: false, system: true, group: 'extra', options: ['sim', 'esim', 'both'] },
   { key: 'kommentler', label: 'Kommentlər', type: 'text', visible: false, formVisible: false, readonly: false, system: true, group: 'extra' },
   { key: 'senedler', label: 'Sənədlər', type: 'files', visible: true, formVisible: true, readonly: false, system: true, group: 'record' },
@@ -91,7 +92,10 @@ export function mergeColumnConfig(saved) {
         const base = byKey.get(c.key)
         byKey.set(c.key, {
           ...base,
-          label: c.key === 'veziyyet_cihaz' ? base.label : c.label || base.label,
+          label:
+            c.key === 'veziyyet_cihaz' || (c.key === 'kimden_alinib' && (!c.label || c.label === 'Hardan'))
+              ? base.label
+              : c.label || base.label,
           visible:
             c.key === 'veziyyet_cihaz'
               ? true
@@ -101,6 +105,8 @@ export function mergeColumnConfig(saved) {
           formVisible:
             c.key === 'veziyyet_cihaz'
               ? true
+              : c.key === 'kateqoriya' || c.key === 'nov'
+                ? false // formda ayrıca "Məhsul Kateqoriyası" bloku var
               : typeof c.formVisible === 'boolean'
                 ? c.formVisible
                 : base.formVisible,
@@ -188,7 +194,7 @@ function textOrNull(v) {
 }
 
 const SYSTEM_DB_KEYS = [
-  'status', 'nov', 'model', 'reng', 'yaddas', 'veziyyet_cihaz', 'battery_faiz',
+  'status', 'kateqoriya', 'nov', 'model', 'reng', 'yaddas', 'veziyyet_cihaz', 'battery_faiz',
   'imei_1', 'imei_2', 'serial_no', 'model_no', 'sim_type', 'alis_qiymeti',
   'alis_tarixi', 'odenis_novu', 'qaytarma_tarixi', 'kimden_alinib', 'nomre',
   'sexsiyyet', 'miqdar', 'kommentler',
@@ -273,7 +279,7 @@ export function getRowValue(row, col) {
 export function validateDepoNisye(form) {
   if (form.odenis_novu !== 'nisye') return null
   const kime = String(form.kimden_alinib || '').trim()
-  if (!kime) return 'Nisyə üçün «Hardan / Kimdən alınıb» mütləqdir.'
+  if (!kime) return 'Nisyə üçün «Kimdən» mütləqdir.'
   if (!form.qaytarma_tarixi) return 'Nisyə üçün qaytarma tarixi mütləqdir.'
   const alis = Number(String(form.alis_qiymeti || '').replace(',', '.'))
   if (!Number.isFinite(alis) || alis <= 0) {
@@ -300,7 +306,7 @@ export function getDepoMissingRequiredFields(form) {
   }
   if (form?.odenis_novu === 'nisye') {
     if (!String(form.kimden_alinib || '').trim()) {
-      missing.push({ key: 'kimden_alinib', label: 'Hardan' })
+      missing.push({ key: 'kimden_alinib', label: 'Kimdən' })
     }
     if (!form.qaytarma_tarixi) {
       missing.push({ key: 'qaytarma_tarixi', label: 'Qaytarma tarixi' })
@@ -325,7 +331,10 @@ export async function syncDepoPurchaseNisyeLedger(supabase, depoRow) {
   }
 
   const kime = String(depoRow.kimden_alinib || '').trim()
-  const mebleg = Number(depoRow.alis_qiymeti)
+  // "Mənim" sistem məbləği bizim xərcimizdir — satıcıya borca daxil deyil
+  const sistemMebleg =
+    depoRow.sistem && depoRow.sistem_nov === 'menim' ? Number(depoRow.sistem_mebleg) || 0 : 0
+  const mebleg = Math.round((Number(depoRow.alis_qiymeti) - sistemMebleg) * 100) / 100
   if (!kime || !Number.isFinite(mebleg) || mebleg <= 0) {
     return { error: new Error('Nisyə ledger üçün kimdən / alış qiyməti lazımdır.') }
   }

@@ -16,7 +16,9 @@ import ResizableDataTable from '../features/musteri-bazasi/ResizableDataTable'
 import { applyKeyOrder } from '../features/musteri-bazasi/columnOrder'
 import { parseSenedler, senedlerPublicUrl, SENEDLER_BUCKET } from '../lib/senedler'
 import { confirmDelete } from '../lib/confirmDelete'
-import { normMusteriName, phoneKey, mergeMusteriler } from '../lib/musteriler'
+import { normMusteriName, mergeMusteriler } from '../lib/musteriler'
+import { loadTechizatcilar, mergeTechizatcilar } from '../lib/techizatcilar'
+import { findSimilarGroups } from '../lib/oxsarAdlar'
 import '../features/musteri-bazasi/musteri-table.css'
 import '../styles/shared.css'
 import '../components/record-module.css'
@@ -24,7 +26,7 @@ import '../components/record-module.css'
 /**
  * Kontaktlar (test): müştərilər və təchizatçılar bir yerdə.
  * Yalnız oxuyur — bazada heç nəyi dəyişmir.
- * Təchizatçılar Depodakı "Hardan" (kimden_alinib) adlarından avtomatik yığılır.
+ * Təchizatçılar: techizatcilar cədvəli + Depodakı "Kimdən" (kimden_alinib) adları.
  */
 
 const STATUS_LABELS = {
@@ -71,13 +73,26 @@ const CUSTOMER_COLUMNS = [
 
 const SUPPLIER_COLUMNS = [
   { key: 'name', label: 'Təchizatçı', type: 'text', width: 220 },
-  { key: 'phone', label: 'Telefon (Depodan)', type: 'text', width: 170 },
+  { key: 'tukan', label: 'Tükan', type: 'text', width: 150 },
+  { key: 'phone', label: 'Telefon', type: 'text', width: 170 },
   { key: 'count', label: 'Məhsul sayı', type: 'number', width: 110 },
   { key: 'total', label: 'Alış cəmi', type: 'money', width: 140 },
   { key: 'lastDate', label: 'Son alış', type: 'date', width: 120 },
   { key: 'qaliqBorc', label: 'Qalıq borc', type: 'money', width: 130 },
   { key: 'qaliqNisye', label: 'Qalıq nisyə', type: 'money', width: 130 },
 ]
+
+// «Oxşar adlar» rejimində cədvəlin əvvəlinə əlavə olunan sütun (yadda saxlanmır)
+const GROUP_COLUMN = { key: 'oxsarQrup', label: 'Qrup', type: 'number', width: 70 }
+
+function withGroupColumn(cols, on, reorder, resize) {
+  if (!on) return [cols, reorder, resize]
+  return [
+    [GROUP_COLUMN, ...cols],
+    (visible) => reorder(visible.filter((c) => c.key !== GROUP_COLUMN.key)),
+    (key, width) => (key === GROUP_COLUMN.key ? undefined : resize(key, width)),
+  ]
+}
 
 function useStoredColumns(tableKey, defaults) {
   const [cols, setCols] = useState(() => {
@@ -129,12 +144,18 @@ const CONTACT_FIELDS = [
   { key: 'sexsi_nomre_1', label: 'Şəxsi Nöm 1' },
   { key: 'sexsi_nomre_2', label: 'Şəxsi Nöm 2' },
   { key: 'nomre_1', label: 'Nöm 1' },
+  { key: 'nomre_1_kim', label: 'Nöm 1 — kimdir' },
   { key: 'nomre_2', label: 'Nöm 2' },
+  { key: 'nomre_2_kim', label: 'Nöm 2 — kimdir' },
   { key: 'nomre_3', label: 'Nöm 3' },
+  { key: 'nomre_3_kim', label: 'Nöm 3 — kimdir' },
   { key: 'nomre_4', label: 'Nöm 4' },
+  { key: 'nomre_4_kim', label: 'Nöm 4 — kimdir' },
   { key: 'nomre_5', label: 'Nöm 5' },
+  { key: 'nomre_5_kim', label: 'Nöm 5 — kimdir' },
   { key: 'zamin', label: 'Zamin' },
   { key: 'zamin_nomre', label: 'Zamin Nöm' },
+  { key: 'komment', label: 'Komment' },
 ]
 
 // Şəxsiyyət vəsiqəsi məlumatları (bazada yeni sütunlar; yoxdursa sahə bağlı qalır)
@@ -145,6 +166,7 @@ const ID_FIELDS = [
   { key: 'qeydiyyat_unvani', label: 'Qeydiyyat Ünvanı' },
   { key: 'yasayis_unvani', label: 'Yaşayış Ünvanı' },
   { key: 'sv_verilme_tarixi', label: 'Ş/V Verilmə Tarixi', type: 'date' },
+  { key: 'sv_veren_orqan', label: 'Ş/V Verən Orqan' },
   { key: 'sv_bitme_tarixi', label: 'Ş/V Bitmə Tarixi', type: 'date' },
 ]
 
@@ -368,6 +390,20 @@ function CardDetails({ title, defaultOpen = false, children }) {
 
 const fieldInputStyle = { width: '100%', boxSizing: 'border-box' }
 
+const SUPPLIER_EDIT_FIELDS = [
+  { key: 'ad_soyad', label: 'Təchizatçı (Ad / Soyad / Ata adı)' },
+  { key: 'tukan', label: 'Hansı Tükan' },
+  { key: 'nomre_1', label: 'Əlaqə Nömrəsi 1' },
+  { key: 'nomre_2', label: 'Əlaqə Nömrəsi 2' },
+  { key: 'komment', label: 'Komment' },
+]
+
+function chunks(arr, size = 100) {
+  const out = []
+  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size))
+  return out
+}
+
 function moneyColor(n) {
   if (n > 0) return '#2e7d32'
   if (n < 0) return '#c62828'
@@ -397,9 +433,12 @@ export default function KontaktlarPage() {
   const [onlyDebt, setOnlyDebt] = useState(Boolean(saved.onlyDebt))
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
-  const [data, setData] = useState({ musteriler: [], satislar: [], odenisler: [], ledger: [], depo: [] })
+  const [data, setData] = useState({ musteriler: [], satislar: [], odenisler: [], ledger: [], depo: [], techizatcilar: [] })
   const [openCustomerId, setOpenCustomerId] = useState(null)
-  const [openSupplier, setOpenSupplier] = useState(null)
+  const [openSupplierKey, setOpenSupplierKey] = useState(null)
+  const [supEditing, setSupEditing] = useState(false)
+  const [supForm, setSupForm] = useState({})
+  const [deleting, setDeleting] = useState(false)
   const [editing, setEditing] = useState(false)
   const [editForm, setEditForm] = useState({})
   const [saving, setSaving] = useState(false)
@@ -415,6 +454,8 @@ export default function KontaktlarPage() {
   const [reloadKey, setReloadKey] = useState(0)
   const [custCols, reorderCustCols, resizeCustCols] = useStoredColumns('kontaktlar_musteri', CUSTOMER_COLUMNS)
   const [supCols, reorderSupCols, resizeSupCols] = useStoredColumns('kontaktlar_techizatci', SUPPLIER_COLUMNS)
+  const custView = withGroupColumn(custCols, dupOnly, reorderCustCols, resizeCustCols)
+  const supView = withGroupColumn(supCols, dupOnly, reorderSupCols, resizeSupCols)
 
   useEffect(() => {
     savePageFilters('kontaktlar', { tab, search, onlyDebt })
@@ -427,7 +468,7 @@ export default function KontaktlarPage() {
       setLoading(true)
       setError(null)
       try {
-        const [m, s, o, l, d] = await Promise.all([
+        const [m, s, o, l, d, t] = await Promise.all([
           fetchAllPages(() =>
             supabase
               .from('musteriler')
@@ -450,6 +491,8 @@ export default function KontaktlarPage() {
               .select('id, sira_no, kimden_alinib, nomre, model, reng, yaddas, imei_1, alis_qiymeti, alis_tarixi, miqdar, status')
               .order('id', { ascending: true })
           ),
+          // Təchizatçılar cədvəli (Depoda «Yeni Təchizatçı» ilə yaradılanlar); yoxdursa boş
+          loadTechizatcilar(),
         ])
         const err = m.error || s.error || o.error || l.error || d.error
         if (err) throw err
@@ -460,6 +503,7 @@ export default function KontaktlarPage() {
           odenisler: o.data || [],
           ledger: l.data || [],
           depo: d.data || [],
+          techizatcilar: t.data || [],
         })
       } catch (e) {
         if (!cancelled) setError(e.message)
@@ -529,11 +573,20 @@ export default function KontaktlarPage() {
 
   const suppliers = useMemo(() => {
     const map = new Map()
+    const blank = (key, name) => ({ key, name, items: [], phone: '', lastDate: null, total: 0, info: null })
+    // Əvvəl cədvəldəki təchizatçılar (Tükan, nömrələr, komment)
+    for (const t of data.techizatcilar || []) {
+      const name = String(t.ad_soyad || '').trim().replace(/\s+/g, ' ')
+      if (!name) continue
+      const key = norm(name)
+      if (!map.has(key)) map.set(key, blank(key, name))
+      map.get(key).info = t
+    }
     for (const d of data.depo) {
       const name = String(d.kimden_alinib || '').trim().replace(/\s+/g, ' ')
       if (!name) continue
       const key = norm(name)
-      if (!map.has(key)) map.set(key, { key, name, items: [], phone: '', lastDate: null, total: 0 })
+      if (!map.has(key)) map.set(key, blank(key, name))
       const g = map.get(key)
       g.items.push(d)
       const qty = Math.max(1, num(d.miqdar) || 1)
@@ -550,6 +603,8 @@ export default function KontaktlarPage() {
         return {
           ...g,
           id: g.key,
+          tukan: g.info?.tukan || '',
+          phone: [g.info?.nomre_1, g.info?.nomre_2].filter(Boolean).join(', ') || g.phone,
           total: round2(g.total),
           count: g.items.length,
           ledger,
@@ -558,42 +613,44 @@ export default function KontaktlarPage() {
         }
       })
       .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name, 'az'))
-  }, [data.depo, ledgerByName])
+  }, [data.depo, data.techizatcilar, ledgerByName])
 
   const q = norm(search)
 
-  // Ehtimal olunan təkrarlar: adı eyni (yazılış fərqi nəzərə alınmır) və ya eyni telefon
-  const dupIds = useMemo(() => {
-    const byName = new Map()
-    const byPhone = new Map()
-    for (const c of customers) {
-      const n = normMusteriName(c.ad_soyad)
-      if (n) byName.set(n, [...(byName.get(n) || []), c.id])
-      for (const ph of new Set(c.phones.map(phoneKey).filter(Boolean))) {
-        byPhone.set(ph, [...(byPhone.get(ph) || []), c.id])
-      }
-    }
-    const out = new Set()
-    for (const ids of [...byName.values(), ...byPhone.values()]) {
-      if (ids.length > 1) ids.forEach((id) => out.add(id))
-    }
-    return out
-  }, [customers])
+  // Oxşar adlar: eyni ad, fərqli yazılış (BulBul = bul bul store), 1 hərf səhvi və ya eyni telefon
+  const custGroups = useMemo(
+    () => findSimilarGroups(customers, (c) => c.id, (c) => c.ad_soyad, (c) => c.phones),
+    [customers]
+  )
+  const supGroups = useMemo(
+    () => findSimilarGroups(suppliers, (x) => x.id, (x) => x.name, (x) => [x.info?.nomre_1, x.info?.nomre_2, x.phone]),
+    [suppliers]
+  )
+  const groups = tab === 'musteri' ? custGroups : supGroups
+  const groupCount = useMemo(() => new Set(groups.values()).size, [groups])
 
   const shownCustomers = useMemo(() => {
     const list = customers.filter((c) => {
-      if (dupOnly && !dupIds.has(c.id)) return false
+      if (dupOnly && !custGroups.has(c.id)) return false
       if (onlyDebt && c.qalan <= 0) return false
       if (!q) return true
       return [c.ad_soyad, c.zamin, ...c.phones].some((v) => norm(v).includes(q))
     })
     if (dupOnly) {
-      list.sort((a, b) => normMusteriName(a.ad_soyad).localeCompare(normMusteriName(b.ad_soyad), 'az'))
+      return list
+        .map((c) => ({ ...c, oxsarQrup: custGroups.get(c.id) }))
+        .sort(
+          (a, b) =>
+            a.oxsarQrup - b.oxsarQrup ||
+            normMusteriName(a.ad_soyad).localeCompare(normMusteriName(b.ad_soyad), 'az')
+        )
     }
     return list
-  }, [customers, q, onlyDebt, dupOnly, dupIds])
+  }, [customers, q, onlyDebt, dupOnly, custGroups])
 
   const selectedCustomers = customers.filter((c) => selectedIds.has(c.id))
+  const selectedSuppliers = suppliers.filter((x) => selectedIds.has(x.id))
+  const selectedRows = tab === 'musteri' ? selectedCustomers : selectedSuppliers
 
   function toggleSelect(row) {
     setSelectedIds((prev) => {
@@ -605,9 +662,11 @@ export default function KontaktlarPage() {
   }
 
   function openMerge() {
-    if (selectedCustomers.length < 2) return
-    // Default əsas: alışı ən çox olan
-    const best = [...selectedCustomers].sort((a, b) => b.saleCount - a.saleCount)[0]
+    if (selectedRows.length < 2) return
+    // Default əsas: alışı / məhsulu ən çox olan
+    const best = [...selectedRows].sort((a, b) =>
+      tab === 'musteri' ? b.saleCount - a.saleCount : b.count - a.count
+    )[0]
     setMergeTarget(best.id)
     setMergeError(null)
     setMergeOpen(true)
@@ -615,13 +674,24 @@ export default function KontaktlarPage() {
 
   async function runMerge() {
     if (!mergeTarget) return
-    const others = selectedCustomers.map((c) => c.id).filter((id) => id !== mergeTarget)
     setMerging(true)
     setMergeError(null)
     try {
-      await mergeMusteriler(mergeTarget, others)
-      const t = customers.find((c) => c.id === mergeTarget)
-      setMergeNote(`${others.length + 1} müştəri «${t?.ad_soyad || ''}» adı altında birləşdirildi.`)
+      if (tab === 'musteri') {
+        const others = selectedCustomers.map((c) => c.id).filter((id) => id !== mergeTarget)
+        await mergeMusteriler(mergeTarget, others)
+        const t = customers.find((c) => c.id === mergeTarget)
+        setMergeNote(`${others.length + 1} müştəri «${t?.ad_soyad || ''}» adı altında birləşdirildi.`)
+      } else {
+        const t = selectedSuppliers.find((x) => x.id === mergeTarget)
+        const others = selectedSuppliers.filter((x) => x.id !== mergeTarget)
+        const otherKeys = new Set(others.map((o) => o.key))
+        const ledgerNames = [...new Set(data.ledger.map((l) => l.kime).filter((k) => otherKeys.has(norm(k))))]
+        const r = await mergeTechizatcilar(t, others, ledgerNames, LEDGER_TABLE)
+        setMergeNote(
+          `${others.length + 1} təchizatçı «${t.name}» adı altında birləşdirildi (${r.moved} məhsulun «Kimdən» xanası yeniləndi).`
+        )
+      }
       setMergeOpen(false)
       setSelectedIds(new Set())
       setReloadKey((k) => k + 1)
@@ -635,11 +705,14 @@ export default function KontaktlarPage() {
   const shownSuppliers = useMemo(
     () =>
       suppliers.filter((s) => {
+        if (dupOnly && !supGroups.has(s.id)) return false
         if (onlyDebt && !(s.ledger && (s.ledger.qaliq_borc !== 0 || s.ledger.qaliq_nisye !== 0))) return false
         if (!q) return true
-        return [s.name, s.phone].some((v) => norm(v).includes(q))
-      }),
-    [suppliers, q, onlyDebt]
+        return [s.name, s.phone, s.tukan].some((v) => norm(v).includes(q))
+      })
+      .map((s) => (dupOnly ? { ...s, oxsarQrup: supGroups.get(s.id) } : s))
+      .sort((a, b) => (dupOnly ? a.oxsarQrup - b.oxsarQrup || a.name.localeCompare(b.name, 'az') : 0)),
+    [suppliers, q, onlyDebt, dupOnly, supGroups]
   )
 
   const openCustomer = openCustomerId ? customers.find((c) => c.id === openCustomerId) || null : null
@@ -707,6 +780,161 @@ export default function KontaktlarPage() {
     return true
   }
 
+  const openSupplier = openSupplierKey ? suppliers.find((x) => x.key === openSupplierKey) || null : null
+
+  function closeSupplier() {
+    if (saving || deleting) return
+    setOpenSupplierKey(null)
+    setSupEditing(false)
+    setModalError(null)
+  }
+
+  function startSupEdit() {
+    if (!openSupplier) return
+    const info = openSupplier.info
+    setSupForm({
+      ad_soyad: openSupplier.name,
+      tukan: info?.tukan || '',
+      nomre_1: info ? info.nomre_1 || '' : openSupplier.phone || '',
+      nomre_2: info?.nomre_2 || '',
+      komment: info?.komment || '',
+    })
+    setModalError(null)
+    setSupEditing(true)
+  }
+
+  /** Təchizatçını yadda saxlayır. Ad dəyişibsə, Depodakı "Kimdən" və Borc/Nisyədəki ad da yenilənir. */
+  async function saveSupEdit() {
+    const sup = openSupplier
+    if (!sup) return
+    const newName = String(supForm.ad_soyad || '').trim().replace(/\s+/g, ' ')
+    if (!newName) {
+      setModalError('Təchizatçının adı boş ola bilməz.')
+      return
+    }
+    const newKey = norm(newName)
+    const other = newKey !== sup.key ? suppliers.find((x) => x.key === newKey) : null
+    if (other) {
+      setModalError(`«${other.name}» adlı təchizatçı artıq var. Başqa ad yazın.`)
+      return
+    }
+    const renamed = newName !== sup.name
+    const ledgerNames = renamed
+      ? [...new Set(data.ledger.map((l) => l.kime).filter((k) => norm(k) === sup.key))]
+      : []
+    if (
+      renamed &&
+      (sup.items.length || ledgerNames.length) &&
+      !window.confirm(
+        `Ad dəyişir: «${sup.name}» → «${newName}».\n\n` +
+          `Depoda ${sup.items.length} məhsulun «Kimdən» xanasında` +
+          (ledgerNames.length ? ' və Borc / Nisyə yazılarında' : '') +
+          ' da yeni ad yazılacaq. Davam edilsin?'
+      )
+    ) {
+      return
+    }
+    const row = {
+      ad_soyad: newName,
+      tukan: String(supForm.tukan || '').trim() || null,
+      nomre_1: String(supForm.nomre_1 || '').trim() || null,
+      nomre_2: String(supForm.nomre_2 || '').trim() || null,
+      komment: String(supForm.komment || '').trim() || null,
+      updated_at: new Date().toISOString(),
+    }
+    setSaving(true)
+    setModalError(null)
+    try {
+      if (sup.info?.id) {
+        const { error: e } = await supabase.from('techizatcilar').update(row).eq('id', sup.info.id)
+        if (e) throw e
+      } else {
+        const { error: e } = await supabase.from('techizatcilar').insert(row)
+        if (e) throw e
+      }
+      if (renamed) {
+        for (const ids of chunks(sup.items.map((d) => d.id))) {
+          const { error: e } = await supabase
+            .from('depo')
+            .update({ kimden_alinib: newName, updated_at: new Date().toISOString() })
+            .in('id', ids)
+          if (e) throw e
+        }
+        for (const oldName of ledgerNames) {
+          const { error: e } = await supabase.from(LEDGER_TABLE).update({ kime: newName }).eq('kime', oldName)
+          if (e) throw e
+        }
+      }
+      setSupEditing(false)
+      setOpenSupplierKey(newKey)
+      setReloadKey((k) => k + 1)
+    } catch (e) {
+      setModalError(e.message || String(e))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  /** Təchizatçını silir (yalnız admin; məhsulu və Borc/Nisyə yazısı olmayan) */
+  async function deleteSupplier() {
+    const sup = openSupplier
+    if (!sup || !isAdmin) return
+    if (sup.items.length) {
+      setModalError(
+        `Bu təchizatçıdan Depoda ${sup.items.length} məhsul alınıb — silmək olmaz. ` +
+          'Lazımdırsa, əvvəlcə həmin məhsullarda «Kimdən» xanasını dəyişin.'
+      )
+      return
+    }
+    if (data.ledger.some((l) => norm(l.kime) === sup.key)) {
+      setModalError('Bu adla Borc / Nisyə yazıları var — silmək olmaz.')
+      return
+    }
+    if (!sup.info?.id) {
+      setModalError('Silinəcək qeyd tapılmadı.')
+      return
+    }
+    if (!confirmDelete(`«${sup.name}» təchizatçısı silinsin?`)) return
+    setDeleting(true)
+    setModalError(null)
+    const { error: e } = await supabase.from('techizatcilar').delete().eq('id', sup.info.id)
+    setDeleting(false)
+    if (e) {
+      setModalError(e.message)
+      return
+    }
+    setData((d) => ({ ...d, techizatcilar: d.techizatcilar.filter((t) => t.id !== sup.info.id) }))
+    setOpenSupplierKey(null)
+  }
+
+  /** Müştərini silir (yalnız admin; alışı olmayan). Vəsiqə faylları da silinir. */
+  async function deleteCustomer() {
+    const c = openCustomer
+    if (!c || !isAdmin) return
+    if (c.saleCount > 0) {
+      setModalError(
+        `Bu müştərinin ${c.saleCount} alışı var — silmək olmaz. ` +
+          'Təkrar qeyddirsə, «Təkrarlar» ilə əsas qeydə birləşdirin.'
+      )
+      return
+    }
+    if (!confirmDelete(`«${c.ad_soyad}» müştərisi silinsin?`)) return
+    setDeleting(true)
+    setModalError(null)
+    const { error: e } = await supabase.from('musteriler').delete().eq('id', c.id)
+    if (e) {
+      setDeleting(false)
+      setModalError(e.message)
+      return
+    }
+    for (const f of parseSenedler(c.senedler)) {
+      await removeIdFile(f)
+    }
+    setDeleting(false)
+    setData((d) => ({ ...d, musteriler: d.musteriler.filter((m) => m.id !== c.id) }))
+    setOpenCustomerId(null)
+  }
+
   if (!canView) return <Navigate to="/" replace />
 
   const custTotals = {
@@ -727,7 +955,7 @@ export default function KontaktlarPage() {
         <div>
           <h1 style={{ marginBottom: 4 }}>Kontaktlar</h1>
           <p style={{ margin: 0, fontSize: 13, color: 'var(--color-text-muted)' }}>
-            Müştərilər və təchizatçılar (test). Təchizatçılar Depodakı "Hardan" adlarından avtomatik yığılır.
+            Müştərilər və təchizatçılar (test). Təchizatçılar Depoda «Yeni Təchizatçı» ilə yaradılanlar və Depodakı «Kimdən» adlarıdır.
           </p>
         </div>
       </div>
@@ -741,7 +969,11 @@ export default function KontaktlarPage() {
             key={t.id}
             type="button"
             className={`btn ${tab === t.id ? 'btn--primary' : 'btn--secondary'}`}
-            onClick={() => setTab(t.id)}
+            onClick={() => {
+              setTab(t.id)
+              setSelectedIds(new Set())
+              setMergeNote(null)
+            }}
           >
             {t.label}
           </button>
@@ -762,12 +994,13 @@ export default function KontaktlarPage() {
             <input type="checkbox" checked={onlyDebt} onChange={(e) => setOnlyDebt(e.target.checked)} />
             {tab === 'musteri' ? 'Yalnız borcu olanlar' : 'Yalnız Borc / Nisyə qalığı olanlar'}
           </label>
-          {tab === 'musteri' && (
-            <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14, marginBottom: 4 }}>
-              <input type="checkbox" checked={dupOnly} onChange={(e) => setDupOnly(e.target.checked)} />
-              Yalnız təkrarlar (eyni ad və ya nömrə) — {dupIds.size}
-            </label>
-          )}
+          <label
+            style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14, marginBottom: 4 }}
+            title="Eyni ad, fərqli yazılış (BulBul = bul bul store), 1 hərf səhvi və ya eyni telefon nömrəsi. Qrup nömrəsi eyni olanlar ehtimal ki, eyni adamdır / tükandır."
+          >
+            <input type="checkbox" checked={dupOnly} onChange={(e) => setDupOnly(e.target.checked)} />
+            Yalnız oxşar adlar — {groupCount} qrup
+          </label>
         </div>
       </CollapsibleSummary>
 
@@ -806,24 +1039,25 @@ export default function KontaktlarPage() {
         </p>
       )}
 
-      {isAdmin && tab === 'musteri' && !loading && (
+      {isAdmin && !loading && (
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 8 }}>
           <button
             type="button"
             className="btn btn--primary"
-            disabled={selectedCustomers.length < 2}
+            disabled={selectedRows.length < 2}
             onClick={openMerge}
-            title="Eyni adamın təkrar qeydlərini işarələ və birləşdir"
+            title="Eyni adamın / tükanın təkrar qeydlərini işarələ və birləşdir"
           >
-            Birləşdir ({selectedCustomers.length})
+            Birləşdir ({selectedRows.length})
           </button>
-          {selectedCustomers.length > 0 && (
+          {selectedRows.length > 0 && (
             <button type="button" className="btn btn--secondary" onClick={() => setSelectedIds(new Set())}>
               Seçimi təmizlə
             </button>
           )}
           <span style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>
-            Eyni müştərinin sətirlərini soldakı xanadan işarələ, sonra «Birləşdir» bas.
+            {tab === 'musteri' ? 'Eyni müştərinin' : 'Eyni təchizatçının'} sətirlərini soldakı xanadan işarələ, sonra «Birləşdir» bas.
+            {!dupOnly && ' Təkrarları tapmaq üçün yuxarıda «Yalnız oxşar adlar»ı aç.'}
           </span>
         </div>
       )}
@@ -833,11 +1067,11 @@ export default function KontaktlarPage() {
           <p className="empty-state">Yüklənir…</p>
         ) : tab === 'musteri' ? (
           <ResizableDataTable
-            columns={custCols}
+            columns={custView[0]}
             rows={shownCustomers}
             formatCell={formatKontaktCell}
-            onReorderColumns={reorderCustCols}
-            onResizeColumn={resizeCustCols}
+            onReorderColumns={custView[1]}
+            onResizeColumn={custView[2]}
             onRowOpen={openCustomerCard}
             selection={isAdmin ? { selectedIds, onToggle: toggleSelect } : undefined}
             emptyText="Müştəri tapılmadı."
@@ -845,12 +1079,17 @@ export default function KontaktlarPage() {
           />
         ) : (
           <ResizableDataTable
-            columns={supCols}
+            columns={supView[0]}
             rows={shownSuppliers}
             formatCell={formatKontaktCell}
-            onReorderColumns={reorderSupCols}
-            onResizeColumn={resizeSupCols}
-            onRowOpen={(row) => setOpenSupplier(row)}
+            onReorderColumns={supView[1]}
+            onResizeColumn={supView[2]}
+            selection={isAdmin ? { selectedIds, onToggle: toggleSelect } : undefined}
+            onRowOpen={(row) => {
+              setOpenSupplierKey(row.key)
+              setSupEditing(false)
+              setModalError(null)
+            }}
             emptyText="Təchizatçı tapılmadı."
             prefsKey="kontaktlar_techizatci"
           />
@@ -878,11 +1117,20 @@ export default function KontaktlarPage() {
                   Ləğv et
                 </button>
               </>
-            ) : canEditCard ? (
-              <button type="button" className="btn btn--primary" onClick={startEdit}>
-                Redaktə
-              </button>
-            ) : null
+            ) : (
+              <>
+                {canEditCard && (
+                  <button type="button" className="btn btn--primary" onClick={startEdit}>
+                    Redaktə
+                  </button>
+                )}
+                {isAdmin && (
+                  <button type="button" className="btn btn--danger" disabled={deleting} onClick={deleteCustomer}>
+                    {deleting ? 'Silinir…' : 'Sil'}
+                  </button>
+                )}
+              </>
+            )
           }
         >
           {modalError && <p style={{ color: 'var(--color-accent)' }}>{modalError}</p>}
@@ -1067,18 +1315,22 @@ export default function KontaktlarPage() {
 
       {mergeOpen && (
         <Modal
-          title="Müştəriləri birləşdir"
-          subtitle="Hansı qeyd əsas qalsın? Digərlərinin alışları, nömrələri və faylları ona keçəcək, özləri silinəcək."
+          title={tab === 'musteri' ? 'Müştəriləri birləşdir' : 'Təchizatçıları birləşdir'}
+          subtitle={
+            tab === 'musteri'
+              ? 'Hansı qeyd əsas qalsın? Digərlərinin alışları, nömrələri və faylları ona keçəcək, özləri silinəcək.'
+              : 'Hansı ad əsas qalsın? Digərlərindən alınan məhsullar, Borc / Nisyə yazıları və nömrələr bu ada keçəcək.'
+          }
           onClose={() => !merging && setMergeOpen(false)}
           actions={
             <button type="button" className="btn btn--primary" disabled={merging || !mergeTarget} onClick={runMerge}>
-              {merging ? 'Birləşdirilir…' : `Birləşdir (${selectedCustomers.length})`}
+              {merging ? 'Birləşdirilir…' : `Birləşdir (${selectedRows.length})`}
             </button>
           }
         >
           {mergeError && <p style={{ color: 'var(--color-accent)' }}>{mergeError}</p>}
           <div style={{ display: 'grid', gap: 8 }}>
-            {selectedCustomers.map((c) => (
+            {selectedRows.map((c) => (
               <label
                 key={c.id}
                 className="record-module__field"
@@ -1092,19 +1344,22 @@ export default function KontaktlarPage() {
                   style={{ marginTop: 4 }}
                 />
                 <span>
-                  <strong>{c.ad_soyad}</strong>
+                  <strong>{tab === 'musteri' ? c.ad_soyad : c.name}</strong>
                   {mergeTarget === c.id ? ' — əsas' : ''}
                   <br />
                   <span style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>
-                    {c.telefon || 'nömrə yoxdur'} · Alış: {c.saleCount} · Satış cəmi: {formatMoney(c.satis)} · Qalan:{' '}
-                    {formatMoney(c.qalan)}
+                    {tab === 'musteri'
+                      ? `${c.telefon || 'nömrə yoxdur'} · Alış: ${c.saleCount} · Satış cəmi: ${formatMoney(c.satis)} · Qalan: ${formatMoney(c.qalan)}`
+                      : `${c.phone || 'nömrə yoxdur'}${c.tukan ? ` · Tükan: ${c.tukan}` : ''} · Məhsul: ${c.count} · Alış cəmi: ${formatMoney(c.total)}`}
                   </span>
                 </span>
               </label>
             ))}
           </div>
           <p style={{ fontSize: 13, color: 'var(--color-text-muted)', marginTop: 12, marginBottom: 0 }}>
-            Satış qeydlərinin özü (Müştəri Bazası) dəyişmir və silinmir — sadəcə hamısı bir müştərinin kartında görünəcək.
+            {tab === 'musteri'
+              ? 'Satış qeydlərinin özü (Müştəri Bazası) dəyişmir və silinmir — sadəcə hamısı bir müştərinin kartında görünəcək.'
+              : 'Məhsulların özü silinmir — Depoda yalnız «Kimdən» xanasındakı ad əsas ada dəyişir.'}
           </p>
         </Modal>
       )}
@@ -1113,13 +1368,77 @@ export default function KontaktlarPage() {
         <Modal
           title={openSupplier.name}
           subtitle={openSupplier.phone ? `Telefon: ${openSupplier.phone}` : 'Telefon qeyd olunmayıb'}
-          onClose={() => setOpenSupplier(null)}
+          onClose={closeSupplier}
+          actions={
+            supEditing ? (
+              <>
+                <button type="button" className="btn btn--primary" disabled={saving} onClick={saveSupEdit}>
+                  {saving ? 'Saxlanılır…' : 'Yadda saxla'}
+                </button>
+                <button
+                  type="button"
+                  className="btn btn--secondary"
+                  disabled={saving}
+                  onClick={() => {
+                    setSupEditing(false)
+                    setModalError(null)
+                  }}
+                >
+                  Ləğv et
+                </button>
+              </>
+            ) : (
+              <>
+                {canEditCard && (
+                  <button type="button" className="btn btn--primary" onClick={startSupEdit}>
+                    Redaktə
+                  </button>
+                )}
+                {isAdmin && (
+                  <button type="button" className="btn btn--danger" disabled={deleting} onClick={deleteSupplier}>
+                    {deleting ? 'Silinir…' : 'Sil'}
+                  </button>
+                )}
+              </>
+            )
+          }
         >
+          {modalError && <p style={{ color: 'var(--color-accent)' }}>{modalError}</p>}
           <CardSection title="Əsas Məlumatlar">
+            {supEditing ? (
+              <FieldGrid
+                items={SUPPLIER_EDIT_FIELDS.map((f) => ({
+                  key: f.key,
+                  label: f.label,
+                  value:
+                    f.key === 'komment' ? (
+                      <textarea
+                        rows={2}
+                        style={fieldInputStyle}
+                        value={supForm[f.key] ?? ''}
+                        onChange={(e) => setSupForm((prev) => ({ ...prev, [f.key]: e.target.value }))}
+                      />
+                    ) : (
+                      <input
+                        style={fieldInputStyle}
+                        value={supForm[f.key] ?? ''}
+                        onChange={(e) => setSupForm((prev) => ({ ...prev, [f.key]: e.target.value }))}
+                      />
+                    ),
+                }))}
+              />
+            ) : null}
             <FieldGrid
               items={[
-                { label: 'Təchizatçı', value: openSupplier.name },
-                { label: 'Telefon (Depodan)', value: openSupplier.phone },
+                ...(supEditing
+                  ? []
+                  : [
+                      { label: 'Təchizatçı', value: openSupplier.name },
+                      { label: 'Hansı Tükan', value: openSupplier.tukan },
+                      { label: 'Əlaqə Nömrəsi 1', value: openSupplier.info?.nomre_1 || openSupplier.phone },
+                      { label: 'Əlaqə Nömrəsi 2', value: openSupplier.info?.nomre_2 },
+                      { label: 'Komment', value: openSupplier.info?.komment },
+                    ]),
                 { label: 'Məhsul sayı', value: openSupplier.count },
                 { label: 'Alış cəmi', value: formatMoney(openSupplier.total) },
                 { label: 'Son alış', value: formatDate(openSupplier.lastDate) },

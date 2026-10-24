@@ -147,15 +147,19 @@ export function buildSaleScheduleWithIlkin(row, { ilkinMebleg, ilkinTarix } = {}
 /** Normalize a custom/auto schedule line list for storage & display. */
 export function normalizeScheduleLines(lines, row) {
   const months = Number(row?.nece_ay) || 0
+  let ilkinSeen = 0
   return (lines || []).map((item, idx) => {
     const type = item.type === 'ilkin' ? 'ilkin' : 'ayliq'
     const installment =
       type === 'ilkin' ? 0 : Number(item.installment) > 0 ? Number(item.installment) : idx
+    if (type === 'ilkin') ilkinSeen += 1
     return {
       type,
       label:
         type === 'ilkin'
-          ? 'İlkin ödəniş'
+          ? ilkinSeen > 1
+            ? 'İlkin ödəniş (qalığı)'
+            : 'İlkin ödəniş'
           : `Aylıq ödəniş (${installment}${months ? `/${months}` : ''})`,
       installment,
       tarix: item.tarix ? String(item.tarix).slice(0, 10) : '',
@@ -214,9 +218,11 @@ export function validatePaymentSchedule(schedule, row) {
     )
   }
 
-  if (ilkinLines.length !== 1) {
-    warnings.push(`İlkin ödəniş sətiri ${ilkinLines.length} dəfədir (1 olmalıdır).`)
+  // İlkin bir sətir və ya iki sətir ola bilər: satışda verilən + qalığı (sonrakı tarixdə)
+  if (ilkinLines.length < 1 || ilkinLines.length > 2) {
+    warnings.push(`İlkin ödəniş sətiri ${ilkinLines.length} dəfədir (1 və ya 2 olmalıdır).`)
   }
+  const ilkinSum = Math.round(ilkinLines.reduce((a, l) => a + (Number(l.mebleg) || 0), 0) * 100) / 100
 
   if (Number.isFinite(aylıq) && aylıqLines.some((l) => Math.abs((Number(l.mebleg) || 0) - aylıq) > 0.01)) {
     warnings.push(
@@ -227,10 +233,10 @@ export function validatePaymentSchedule(schedule, row) {
   if (
     expectedIlkin != null &&
     ilkinLines[0] &&
-    Math.abs((Number(ilkinLines[0].mebleg) || 0) - expectedIlkin) > 0.01
+    Math.abs(ilkinSum - expectedIlkin) > 0.01
   ) {
     warnings.push(
-      `İlkin ödəniş (${formatAz(ilkinLines[0].mebleg)}) gözlənilənə (${formatAz(expectedIlkin)}) uyğun gəlmir.`
+      `İlkin ödəniş (${formatAz(ilkinSum)}) gözlənilənə (${formatAz(expectedIlkin)}) uyğun gəlmir.`
     )
   }
 
