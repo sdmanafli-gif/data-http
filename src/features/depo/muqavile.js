@@ -181,6 +181,18 @@ function malAdi(cihaz, item, withColor) {
   return parts.filter(Boolean).join(' ') || '—'
 }
 
+/** Telefon kateqoriyasıdır? Kateqoriya yazılmayıbsa — IMEI varsa telefon sayılır */
+function isTelefon(item, cihaz) {
+  const kat = String(item?.kateqoriya || '').trim().toLocaleLowerCase('az')
+  if (kat) return kat === 'telefon'
+  return Boolean(String(cihaz?.imei_1 || item?.imei_1 || '').trim())
+}
+
+function malImeiText(p) {
+  const imei = [p.imei1, p.imei2].filter(Boolean).join(', ')
+  return imei ? `${p.ad} markalı, İMEİ kodu: ${imei}` : `${p.ad} markalı`
+}
+
 /**
  * Formdakı məlumatlardan müqavilə sahələri.
  * @param {{
@@ -205,6 +217,7 @@ export function buildMuqavileData({ musteriForm, kontakt, basket, linePrices, li
       satis,
       imei1: String(c.imei_1 || item.imei_1 || '').trim(),
       imei2: String(c.imei_2 || item.imei_2 || '').trim(),
+      telefon: isTelefon(item, c),
     }
   })
   const satisCem = products.reduce((s, p) => s + p.satis, 0)
@@ -261,18 +274,15 @@ export function buildMuqavileData({ musteriForm, kontakt, basket, linePrices, li
       NISYE: pul(nisye),
       AYLIQ: pul(f.ayliq_odenis),
       MUDDET: String(f.nece_ay || ''),
-      MAL_IMEI: products
-        .map((p) => {
-          const imei = [p.imei1, p.imei2].filter(Boolean).join(', ')
-          return imei ? `${p.ad} markalı, İMEİ kodu: ${imei}` : `${p.ad} markalı`
-        })
-        .join('; '),
+      MAL_IMEI: products.map(malImeiText).join('; '),
       MOB1: mob(1),
       MOB2: mob(2),
       MOB3: mob(3),
       MOB4: mob(4),
       MOB5: mob(5),
     },
+    /** «1 saylı Əlavə» (İMEİ razılığı) səhifəsi — yalnız telefonlar üçün, hər telefona ayrıca səhifə */
+    phonePages: products.filter((p) => p.telefon).map((p) => ({ MAL_IMEI: malImeiText(p) })),
     /** Boş olanda bütün sətri (paraqrafı) silinən sahələr */
     removeIfEmpty: ['MOB2', 'MOB3', 'MOB4', 'MOB5'],
     tables: [
@@ -341,6 +351,26 @@ export function fillDocumentXml(xml, data) {
       const range = enclosing(out, 'w:p', idx)
       if (!range) break
       out = out.slice(0, range[0]) + out.slice(range[1])
+    }
+  }
+  // «1 saylı Əlavə» səhifəsi (sənədin sonu): hər telefon üçün ayrıca səhifə; telefon yoxdursa səhifə silinir
+  if (Array.isArray(data.phonePages)) {
+    const mi = out.indexOf('{MAL_IMEI}')
+    const ti = out.indexOf('{TARIX_SOZ}')
+    const bodyEnd = out.lastIndexOf('<w:sectPr')
+    if (mi >= 0 && ti >= 0 && ti < mi && bodyEnd > mi) {
+      const start = lastOpenTag(out, 'w:p', ti)
+      const block = out.slice(start, bodyEnd)
+      if (data.phonePages.length) {
+        const pageBreak = '<w:p><w:r><w:br w:type="page"/></w:r></w:p>'
+        const pages = data.phonePages.map((pg, k) => (k ? pageBreak : '') + fillPlaceholders(block, pg)).join('')
+        out = out.slice(0, start) + pages + out.slice(bodyEnd)
+      } else {
+        // Səhifəni və onu yeni səhifəyə itələyən boş sətirləri sil (əvvəlki səhifənin «İmza: ___ Tarix» sətrindən sonra)
+        const imza = out.lastIndexOf('İmza: ____', start)
+        const cut = imza >= 0 ? out.indexOf('</w:p>', imza) + 6 : start
+        out = out.slice(0, cut) + out.slice(bodyEnd)
+      }
     }
   }
   // «Mal haqqında məlumat» cədvəli sabit hündürlüklü çərçivədədir — bir neçə məhsul sığsın deyə çərçivə böyüyə bilsin
