@@ -63,6 +63,9 @@ import KreditSaleFields, {
   kreditKontaktFromCustomer,
   computeBitmeTarixi,
 } from './KreditSaleFields'
+import MuqavileYarat from './MuqavileYarat'
+import { buildMuqavileData, createMuqavileDocx } from './muqavile'
+import { parseSenedler, uploadSenedlerFiles } from '../../lib/senedler'
 
 /** Prefill from Depo — shown read-only on kredit form */
 const DEPO_READONLY_KEYS = new Set([
@@ -325,6 +328,9 @@ export default function SaleFlow() {
   const [ilkinOdenis, setIlkinOdenis] = useState('')
   const [ilkinOdenisVerilib, setIlkinOdenisVerilib] = useState('0')
   const [ilkinQaliqTarixi, setIlkinQaliqTarixi] = useState('')
+  /** Kredit: «YARAT» ilə hazırlanan müqavilə (Word) + yaradılan andakı məlumatın izi */
+  const [muqavileFile, setMuqavileFile] = useState(null)
+  const [muqavileSig, setMuqavileSig] = useState('')
   const [ilkinManual, setIlkinManual] = useState(false)
   /** Kredit: müştərinin vəsiqə / ünvan / "kimdir" sahələri (Kontaktlara yazılır) */
   const [kreditKontakt, setKreditKontakt] = useState(() => emptyKreditKontakt())
@@ -842,6 +848,77 @@ export default function SaleFlow() {
     if (depoErr) throw depoErr
   }
 
+  /** Kredit qrafikinin əsas parametrləri + sətirləri (Ödəniş qrafiki addımı və müqavilə üçün eyni) */
+  function kreditSchedulePlan() {
+    const totalSatis = totals.satis
+    const itemIlkin = Number(ilkinOdenis) || 0
+    const paidForItem = Number(ilkinOdenisVerilib) || 0
+    const remainingForItem = Math.max(0, Math.round((itemIlkin - paidForItem) * 100) / 100)
+    const verilme = musteriForm.verilme_tarixi || localTodayYmd()
+    const ilkinDueDate = remainingForItem > 0.009 ? ilkinQaliqTarixi || verilme : verilme
+
+    const scheduleRow = {
+      satis_qiymeti: Number(totalSatis) || 0,
+      ayliq_odenis: Number(musteriForm.ayliq_odenis) || 0,
+      nece_ay: Number(musteriForm.nece_ay) || 0,
+      verilme_tarixi: verilme,
+      birinci_ayliq_odenis_tarixi: musteriForm.birinci_ayliq_odenis_tarixi,
+      odenis_gunu: musteriForm.odenis_gunu,
+    }
+
+    const buildLines = () => {
+      if (!canBuildSchedule(scheduleRow)) return []
+      // İlkin hissə-hissə: bu gün verilən (satış tarixi) + qalığı ayrıca sətir (seçilən tarixdə),
+      // sonra aylıq ödənişlər. Məs.: ilkin 1500, verilib 1300 → 1300 / 200 / 10 × 300.
+      if (remainingForItem > 0.009 && paidForItem > 0.009) {
+        const base =
+          buildSaleScheduleWithIlkin(scheduleRow, {
+            ilkinMebleg: paidForItem,
+            ilkinTarix: verilme,
+          }) || []
+        const idx = base.findIndex((l) => l.type === 'ilkin')
+        const qaliq = {
+          type: 'ilkin',
+          installment: 0,
+          tarix: String(ilkinDueDate).slice(0, 10),
+          mebleg: remainingForItem,
+        }
+        const lines = idx >= 0 ? [...base.slice(0, idx + 1), qaliq, ...base.slice(idx + 1)] : [qaliq, ...base]
+        return normalizeScheduleLines(lines, scheduleRow)
+      }
+      return (
+        buildSaleScheduleWithIlkin(scheduleRow, {
+          ilkinMebleg: itemIlkin,
+          ilkinTarix: ilkinDueDate,
+        }) || []
+      )
+    }
+
+    return { scheduleRow, itemIlkin, paidForItem, remainingForItem, verilme, ilkinDueDate, buildLines }
+  }
+
+  /** Müqavilə (Word) üçün məlumat — formdakı cari dəyərlərdən */
+  function muqavileDataFrom(lines) {
+    return buildMuqavileData({
+      musteriForm: { ...musteriForm, verilme_tarixi: musteriForm.verilme_tarixi || localTodayYmd() },
+      kontakt: kreditKontakt,
+      basket,
+      linePrices,
+      lineCihaz,
+      paidNow: Number(ilkinOdenisVerilib) || 0,
+      scheduleLines: lines,
+    })
+  }
+
+  function muqavileMissing() {
+    if (!String(musteriForm.ad_soyad || '').trim()) return 'Əvvəlcə müştərinin adını yazın.'
+    if (basket.some((item) => !(Number(linePrices[item.id]?.satis) > 0))) return 'Satış qiymətini yazın.'
+    if (!musteriForm.ayliq_odenis || !musteriForm.nece_ay || !musteriForm.birinci_ayliq_odenis_tarixi) {
+      return 'Aylıq ödəniş, neçə ay və birinci aylıq tarixi doldurun.'
+    }
+    return ''
+  }
+
   async function handleSubmit(e) {
     e.preventDefault()
     setError(null)
@@ -1007,24 +1084,7 @@ export default function SaleFlow() {
       }
 
       // One combined ödəniş qrafiki for the whole basket (single müştəri row)
-      const totalSatis = totals.satis
-      const itemIlkin = Number(ilkinOdenis) || 0
-      const paidForItem = Number(ilkinOdenisVerilib) || 0
-      const remainingForItem = Math.max(0, Math.round((itemIlkin - paidForItem) * 100) / 100)
-      const verilme =
-        musteriForm.verilme_tarixi || localTodayYmd()
-      const ilkinDueDate =
-        remainingForItem > 0.009 ? ilkinQaliqTarixi || verilme : verilme
-
-      const scheduleRow = {
-        satis_qiymeti: Number(totalSatis) || 0,
-        ayliq_odenis: Number(musteriForm.ayliq_odenis) || 0,
-        nece_ay: Number(musteriForm.nece_ay) || 0,
-        verilme_tarixi: verilme,
-        birinci_ayliq_odenis_tarixi: musteriForm.birinci_ayliq_odenis_tarixi,
-        odenis_gunu: musteriForm.odenis_gunu,
-      }
-
+      const plan = kreditSchedulePlan()
       const label = basket
         .map((item) => `${item.model || 'Məhsul'} · ${item.reng || '—'} · ${item.imei_1 || '—'}`)
         .join(' / ')
@@ -1034,38 +1094,12 @@ export default function SaleFlow() {
           itemId: 'combined',
           basketIds: basket.map((item) => item.id),
           label,
-          scheduleRow,
-          itemIlkin,
-          ilkinDueDate,
-          paidForItem,
+          scheduleRow: plan.scheduleRow,
+          itemIlkin: plan.itemIlkin,
+          ilkinDueDate: plan.ilkinDueDate,
+          paidForItem: plan.paidForItem,
           lines: [],
-          buildLines: () => {
-            if (!canBuildSchedule(scheduleRow)) return []
-            // İlkin hissə-hissə: bu gün verilən (satış tarixi) + qalığı ayrıca sətir (seçilən tarixdə),
-            // sonra aylıq ödənişlər. Məs.: ilkin 1500, verilib 1300 → 1300 / 200 / 10 × 300.
-            if (remainingForItem > 0.009 && paidForItem > 0.009) {
-              const base =
-                buildSaleScheduleWithIlkin(scheduleRow, {
-                  ilkinMebleg: paidForItem,
-                  ilkinTarix: verilme,
-                }) || []
-              const idx = base.findIndex((l) => l.type === 'ilkin')
-              const qaliq = {
-                type: 'ilkin',
-                installment: 0,
-                tarix: String(ilkinDueDate).slice(0, 10),
-                mebleg: remainingForItem,
-              }
-              const lines = idx >= 0 ? [...base.slice(0, idx + 1), qaliq, ...base.slice(idx + 1)] : [qaliq, ...base]
-              return normalizeScheduleLines(lines, scheduleRow)
-            }
-            return (
-              buildSaleScheduleWithIlkin(scheduleRow, {
-                ilkinMebleg: itemIlkin,
-                ilkinTarix: ilkinDueDate,
-              }) || []
-            )
-          },
+          buildLines: plan.buildLines,
         },
       ]
       setScheduleDrafts(drafts)
@@ -1179,7 +1213,7 @@ export default function SaleFlow() {
       const { data: inserted, error: saleErr } = await supabase
         .from(MUSTERI_TABLE)
         .insert(payload)
-        .select('id, sira_no, ad_soyad')
+        .select('id, sira_no, ad_soyad, senedler')
         .single()
       if (saleErr) throw saleErr
 
@@ -1204,6 +1238,27 @@ export default function SaleFlow() {
 
       for (const item of basket) {
         await markDepoSold(item)
+      }
+
+      // Müqavilə yaradılıbsa: təsdiqlənmiş qrafiklə yenidən hazırlayıb müştərinin sənədlərinə yüklə
+      if (muqavileFile && inserted?.id) {
+        try {
+          const finalLines = approvedLines?.length ? approvedLines : payload.odenis_qrafiki || []
+          const fresh = await createMuqavileDocx(
+            muqavileDataFrom(finalLines)
+          )
+          const { files: up, error: upErr } = await uploadSenedlerFiles('musteri_bazasi', inserted.id, [fresh])
+          if (upErr) throw new Error(upErr)
+          if (up.length) {
+            const { error: docErr } = await supabase
+              .from(MUSTERI_TABLE)
+              .update({ senedler: [...parseSenedler(inserted.senedler), ...up] })
+              .eq('id', inserted.id)
+            if (docErr) throw docErr
+          }
+        } catch (docError) {
+          window.alert(`Satış saxlandı, amma müqavilə faylı sənədlərə yüklənmədi: ${docError.message || docError}`)
+        }
       }
 
       navigate('/musteri-bazasi')
@@ -1312,6 +1367,15 @@ export default function SaleFlow() {
               )}
             </div>
   ) : null
+
+  let currentMuqavileSig = ''
+  if (saleType === 'kredit' && step === 2 && muqavileFile) {
+    try {
+      currentMuqavileSig = JSON.stringify(muqavileDataFrom(kreditSchedulePlan().buildLines()))
+    } catch (_) {
+      currentMuqavileSig = ''
+    }
+  }
 
   const kreditPreview = {
     gozlenilen_gelir: formatMoney(
@@ -1618,15 +1682,22 @@ export default function SaleFlow() {
             <MusteriNotesAndFiles
               columns={columns}
               form={musteriForm}
+              showSenedler={false}
               onKommentChange={(v) =>
                 setMusteriForm((prev) => setFormField(prev, { key: 'kommentler' }, v))
               }
-              senedlerProps={{
-                folder: 'musteri_bazasi',
-                recordId: null,
-                value: musteriForm.senedler,
-                onChange: (files) => setMusteriForm((prev) => ({ ...prev, senedler: files })),
+            />
+            <MuqavileYarat
+              file={muqavileFile}
+              stale={Boolean(muqavileFile) && muqavileSig !== currentMuqavileSig}
+              disabledReason={muqavileMissing()}
+              onCreate={async () => {
+                const data = muqavileDataFrom(kreditSchedulePlan().buildLines())
+                const f = await createMuqavileDocx(data)
+                setMuqavileSig(JSON.stringify(data))
+                return f
               }}
+              onChange={setMuqavileFile}
             />
             </KreditSaleFields>
           )}
