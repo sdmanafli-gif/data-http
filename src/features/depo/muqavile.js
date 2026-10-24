@@ -173,7 +173,9 @@ function malAdi(cihaz, item, withColor) {
   const model = String(cihaz?.model || item?.model || '').trim()
   const yaddas = String(cihaz?.yaddas || item?.yaddas || '').trim()
   const reng = String(cihaz?.reng || item?.reng || '').trim()
-  const parts = [model]
+  // Növ (məs. iPhone, MacBook) modeldə yazılmayıbsa önə əlavə olunur: «iPhone 11 64 Gb»
+  const nov = String(item?.nov || '').trim()
+  const parts = nov && !model.toLowerCase().includes(nov.toLowerCase()) ? [nov, model] : [model]
   if (yaddas && !model.toLowerCase().includes(yaddas.toLowerCase())) parts.push(yaddas)
   if (withColor && reng) parts.push(reng)
   return parts.filter(Boolean).join(' ') || '—'
