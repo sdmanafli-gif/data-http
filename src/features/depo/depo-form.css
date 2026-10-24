@@ -230,6 +230,20 @@
 
 .kredit-stack .collapse-section {
   margin: 0;
+  /* Müştəri seçimi kimi açılan siyahılar çərçivənin altında qalmasın */
+  overflow: visible;
+}
+
+.kredit-stack .collapse-section__title {
+  border-radius: var(--radius) var(--radius) 0 0;
+}
+
+.kredit-stack .collapse-section:not([open]) .collapse-section__title {
+  border-radius: var(--radius);
+}
+
+.kredit-stack .collapse-section__body {
+  border-radius: 0 0 var(--radius) var(--radius);
 }
 
 @media (max-width: 640px) {
