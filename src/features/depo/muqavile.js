@@ -283,6 +283,8 @@ export function buildMuqavileData({ musteriForm, kontakt, basket, linePrices, li
     },
     /** «1 saylı Əlavə» (İMEİ razılığı) səhifəsi — yalnız telefonlar üçün, hər telefona ayrıca səhifə */
     phonePages: products.filter((p) => p.telefon).map((p) => ({ MAL_IMEI: malImeiText(p) })),
+    /** «ƏLAVƏ 1» səhifəsi kodla qurulur (məhsul / ay sayı çox olanda struktur qarışmasın) */
+    elave: { products, rows },
     /** Boş olanda bütün sətri (paraqrafı) silinən sahələr */
     removeIfEmpty: ['MOB2', 'MOB3', 'MOB4', 'MOB5'],
     tables: [
@@ -331,8 +333,165 @@ function fillPlaceholders(xml, values) {
   return xml.replace(/\{([A-Z0-9_]+)\}/g, (m, key) => (key in values ? xmlEscape(values[key]) : m))
 }
 
+/* ───────────── «ƏLAVƏ 1» səhifəsi (Mal haqqında məlumat + ödəniş cədvəli + rekvizitlər) ─────────────
+ * Şablondakı bu səhifə üzən (floating) cədvəllərdən ibarətdir — sətir çoxalanda üst-üstə düşür.
+ * Ona görə həmin hissə adi (axan) cədvəllərlə yenidən qurulur: çox sətir olanda səliqəli şəkildə növbəti
+ * səhifəyə keçir, ödəniş cədvəli uzun olanda iki sütuna bölünür, rekvizit bloku bölünmür.
+ */
+const EL_FONT = '<w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman" w:cs="Times New Roman"/>'
+const EL_WIDTH = 10140
+
+function elRun(text, { bold = false, sz = 20 } = {}) {
+  const rpr = `<w:rPr>${EL_FONT}${bold ? '<w:b/><w:bCs/>' : ''}<w:sz w:val="${sz}"/><w:szCs w:val="${sz}"/></w:rPr>`
+  return `<w:r>${rpr}<w:t xml:space="preserve">${xmlEscape(text)}</w:t></w:r>`
+}
+
+function elPara(runs, { jc = 'left', after = 0, before = 0, keepNext = false, tabRight = 0, sz = 20 } = {}) {
+  const tabs = tabRight ? `<w:tabs><w:tab w:val="right" w:pos="${tabRight}"/></w:tabs>` : ''
+  const ppr = `<w:pPr>${keepNext ? '<w:keepNext/><w:keepLines/>' : ''}${tabs}<w:spacing w:before="${before}" w:after="${after}" w:line="240" w:lineRule="auto"/><w:jc w:val="${jc}"/><w:rPr>${EL_FONT}<w:sz w:val="${sz}"/><w:szCs w:val="${sz}"/></w:rPr></w:pPr>`
+  return `<w:p>${ppr}${Array.isArray(runs) ? runs.join('') : runs}</w:p>`
+}
+
+function elTab() {
+  return '<w:r><w:tab/></w:r>'
+}
+
+const EL_BORDERS =
+  '<w:tblBorders><w:top w:val="single" w:sz="4" w:space="0" w:color="000000"/><w:left w:val="single" w:sz="4" w:space="0" w:color="000000"/><w:bottom w:val="single" w:sz="4" w:space="0" w:color="000000"/><w:right w:val="single" w:sz="4" w:space="0" w:color="000000"/><w:insideH w:val="single" w:sz="4" w:space="0" w:color="000000"/><w:insideV w:val="single" w:sz="4" w:space="0" w:color="000000"/></w:tblBorders>'
+
+function elCell(content, width, { noBorder = false, shade = false, vAlign = 'center' } = {}) {
+  const borders = noBorder
+    ? '<w:tcBorders><w:top w:val="nil"/><w:left w:val="nil"/><w:bottom w:val="nil"/><w:right w:val="nil"/></w:tcBorders>'
+    : ''
+  const shd = shade ? '<w:shd w:val="clear" w:color="auto" w:fill="EDEDED"/>' : ''
+  return `<w:tc><w:tcPr><w:tcW w:w="${width}" w:type="dxa"/>${borders}${shd}<w:vAlign w:val="${vAlign}"/></w:tcPr>${content}</w:tc>`
+}
+
+/** rows: [{ cells: [content…], header?: bool }]; widths: [twips…] */
+function elTable(widths, rows, { keepTogether = false, indent = 0 } = {}) {
+  const total = widths.reduce((a, b) => a + b, 0)
+  const grid = widths.map((w) => `<w:gridCol w:w="${w}"/>`).join('')
+  const tr = rows
+    .map((r, ri) => {
+      const trPr = `<w:trPr><w:cantSplit/>${r.header ? '<w:tblHeader/>' : ''}</w:trPr>`
+      const cells = r.cells
+        .map((c, ci) => (c && c.raw != null ? elCell(c.raw, widths[ci], c.opts || {}) : elCell(c, widths[ci], r.header ? { shade: true } : {})))
+        .join('')
+      // keepTogether: hər sətrin paraqrafları növbətisinə bağlı qalsın (blok bölünməsin)
+      const row = `<w:tr>${trPr}${cells}</w:tr>`
+      return keepTogether && ri < rows.length - 1 ? row.replace(/<w:pPr>/g, '<w:pPr><w:keepNext/>') : row
+    })
+    .join('')
+  const ind = indent ? `<w:tblInd w:w="${indent}" w:type="dxa"/>` : ''
+  return `<w:tbl><w:tblPr><w:tblW w:w="${total}" w:type="dxa"/>${ind}${EL_BORDERS}<w:tblLayout w:type="fixed"/><w:tblCellMar><w:left w:w="60" w:type="dxa"/><w:right w:w="60" w:type="dxa"/></w:tblCellMar><w:tblLook w:val="0000"/></w:tblPr><w:tblGrid>${grid}</w:tblGrid>${tr}</w:tbl>`
+}
+
+export function buildElave1Xml(data) {
+  const v = data.values
+  const { products, rows } = data.elave
+  const many = products.length + rows.length > 22
+  const sz = many ? 18 : 20
+  const c = (text, opts = {}) => elPara(elRun(text, { sz, bold: opts.bold }), { jc: opts.jc || 'center', sz })
+  const hd = (text) => c(text, { bold: true })
+
+  let x = ''
+  x += elPara(elRun(`${v.TARIX} tarixli ${v.NOMRE} saylı Nisyə Alqı Satqı müqaviləsinə ƏLAVƏ 1`, { bold: true, sz: 22 }), { after: 120, sz: 22 })
+  x += elPara([elRun('Bakı şəhəri', { sz }), elTab(), elRun(v.TARIX_IL, { sz })], { tabRight: EL_WIDTH, after: 120, sz })
+  x += elPara(elRun('1. Mal haqqında məlumat:', { bold: true, sz }), { after: 60, keepNext: true, sz })
+
+  // Məhsullar
+  const pw = [450, 2990, 1000, 850, 1050, 1900, 1900]
+  x += elTable(pw, [
+    { header: true, cells: ['No', 'Malın Adı', 'Qiyməti', 'Miqdarı', 'Məbləğ', 'İMEİ 1', 'İMEİ 2'].map(hd) },
+    ...products.map((p) => ({ cells: [p.no, p.ad, p.qiymet, '1', p.qiymet, p.imei1, p.imei2].map((t) => c(t)) })),
+  ])
+
+  x += elPara(elRun('2. Nisyə alqı satqı müqaviləsinin ödəniş cədvəli:', { bold: true, sz }), { before: 200, after: 60, keepNext: true, sz })
+
+  // Xülasə
+  const sum = [
+    ['Alıcı:', v.AD],
+    ['İlkin Ödəniş:', v.ILKIN],
+    ['Nisyə Məbləği:', v.NISYE],
+    ['Aylıq Ödəniş:', v.AYLIQ],
+    ['Müddət:', v.MUDDET],
+  ]
+  x += elTable([1900, 3300], sum.map(([k, val]) => ({ cells: [c(k, { bold: true, jc: 'left' }), c(val, { jc: 'left' })] })), { keepTogether: true })
+  x += elPara('', { after: 120, sz })
+
+  // Ödəniş cədvəli (uzun olanda iki sütun)
+  const sw = [1350, 600, 1400, 1300]
+  const head = ['Tarix', '№', 'Ödəniş (aylıq)', 'Cari balans'].map(hd)
+  const cellsOf = (r) => (r ? [r.tarix, r.no, r.mebleg, r.balans].map((t) => c(t)) : ['', '', '', ''].map((t) => c(t)))
+  if (rows.length <= 14) {
+    x += elTable(sw, [{ header: true, cells: head }, ...rows.map((r) => ({ cells: cellsOf(r) }))])
+  } else {
+    const half = Math.ceil(rows.length / 2)
+    const gap = { raw: elPara('', { sz }), opts: { noBorder: true } }
+    const body = []
+    for (let i = 0; i < half; i++) body.push({ cells: [...cellsOf(rows[i]), gap, ...cellsOf(rows[half + i])] })
+    x += elTable([...sw, 300, ...sw], [{ header: true, cells: [...head, gap, ...head] }, ...body])
+  }
+
+  x += elPara('', { after: 200, sz })
+
+  // Rekvizitlər: Satıcı | Alıcı — blok bölünmür
+  const L = (t, bold = false) => elPara(elRun(t, { bold, sz }), { jc: 'left', after: 40, sz })
+  const Lc = (t, bold = false) => elPara(elRun(t, { bold, sz }), { jc: 'center', after: 40, sz })
+  const satici = [
+    Lc('“Manaflı Səid Cabid oğlu”', true),
+    Lc('VÖEN 2005392762'),
+    Lc('Ünvan: Bakı şəhəri Xətai Rayonu Xudu Məmmədov, ev4, mənzil 31'),
+    L(''),
+    L('Fiziki şəxs:'),
+    Lc('Manaflı Səid Cabid oğlu'),
+    L(''),
+    Lc('(imza, möhür)'),
+  ].join('')
+  const mobs = [1, 2, 3, 4, 5].map((n) => v[`MOB${n}`]).map((m, i) => (m ? L(`Mob${i + 1}; ${m}`, true) : '')).join('')
+  const alici = [
+    L(`Ad Soyad Ata Adı: ${v.AD}`, true),
+    L(`Şəxsiyyət Vəsiqəsinin Seriya Nömrəsi: ${v.SERIYA}`, true),
+    L(`Şəxsiyyət Vəsiqəsinin Fin Kodu: ${v.FIN}`, true),
+    L(`Şəxsiyyət Vəsiqəsinin Verilmə Tarixi: ${v.SV_TARIX}`, true),
+    L(`Şəxsiyyət Vəsiqəsini Verən Orqan: ${v.SV_ORQAN}`, true),
+    L(`Qeydiyyat Ünvanı: ${v.QEYD_UNVAN}`, true),
+    L(`Yaşayış Ünvanı: ${v.YASAYIS_UNVAN}`, true),
+    L(''),
+    mobs,
+    L(''),
+    elPara(elRun('(İmza)', { bold: true, sz }), { jc: 'right', sz }),
+  ].join('')
+  const half = EL_WIDTH / 2
+  x += elTable(
+    [half, half],
+    [
+      { cells: [hd('Satıcı'), hd('Alıcı')] },
+      { cells: [{ raw: satici, opts: { vAlign: 'top' } }, { raw: alici, opts: { vAlign: 'top' } }] },
+    ],
+    { keepTogether: true }
+  )
+  return x
+}
+
+/** Şablondakı «ƏLAVƏ 1» hissəsini (başlıqdan bölmə sonuna qədər) yeni quruluşla əvəz edir */
+function replaceElave1(out, data) {
+  if (!data.elave) return out
+  const h = out.indexOf('müqaviləsinə ƏLAVƏ 1')
+  const mProd = out.indexOf('{M_NO}')
+  const mSched = out.indexOf('{Q_TARIX}')
+  if (h < 0 || mProd < h || mSched < h) return out
+  const start = lastOpenTag(out, 'w:p', h)
+  // ƏLAVƏ 1 bölməsinin sonu: başlıqdan sonra gələn ilk bölmə (sectPr) paraqrafı
+  const sect = out.indexOf('<w:sectPr', mSched)
+  if (sect < 0) return out
+  const end = lastOpenTag(out, 'w:p', sect)
+  if (end <= start) return out
+  return out.slice(0, start) + buildElave1Xml(data) + out.slice(end)
+}
+
 export function fillDocumentXml(xml, data) {
-  let out = xml
+  let out = replaceElave1(xml, data)
   for (const t of data.tables) {
     const idx = out.indexOf(t.marker)
     if (idx < 0) continue
