@@ -192,3 +192,51 @@
   border: none;
   background: #fff;
 }
+
+/* Kredit satış forması: sahələr alt-alta, izahlar xananın sağında */
+.kredit-stack .form-row {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+}
+
+.kredit-stack .form-row .form-group {
+  min-width: 0;
+}
+
+.kredit-stack .form-group:not(.searchable-select) {
+  display: grid;
+  grid-template-columns: minmax(0, 400px) minmax(140px, 1fr);
+  column-gap: 12px;
+  align-items: center;
+  margin-bottom: 0;
+}
+
+.kredit-stack .form-group:not(.searchable-select) > label {
+  grid-column: 1 / -1;
+  margin-bottom: 2px;
+}
+
+.kredit-stack .form-group:not(.searchable-select) > :not(label):not(p) {
+  grid-column: 1;
+}
+
+.kredit-stack .form-group:not(.searchable-select) > p {
+  grid-column: 2;
+  margin: 0 !important;
+  font-size: 11px;
+  line-height: 1.3;
+}
+
+.kredit-stack .collapse-section {
+  margin: 0;
+}
+
+@media (max-width: 640px) {
+  .kredit-stack .form-group:not(.searchable-select) {
+    grid-template-columns: 1fr;
+  }
+  .kredit-stack .form-group:not(.searchable-select) > p {
+    grid-column: 1;
+  }
+}
