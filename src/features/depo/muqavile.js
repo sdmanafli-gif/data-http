@@ -343,6 +343,8 @@ export function fillDocumentXml(xml, data) {
       out = out.slice(0, range[0]) + out.slice(range[1])
     }
   }
+  // «Mal haqqında məlumat» cədvəli sabit hündürlüklü çərçivədədir — bir neçə məhsul sığsın deyə çərçivə böyüyə bilsin
+  out = out.replace(/(<w:framePr [^>]*?)w:hRule="exact"/g, '$1w:hRule="atLeast"')
   return fillPlaceholders(out, data.values)
 }
 
