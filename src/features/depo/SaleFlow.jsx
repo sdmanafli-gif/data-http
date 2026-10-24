@@ -141,6 +141,12 @@ const CIHAZ_LINE_FIELDS = [
   { key: 'itunes_bagli_nomre', label: 'iTunes bağlı nömrə', editable: true, musteriKey: 'itunes_bagli_nomre' },
 ]
 
+/** Bu günün tarixi (yerli vaxtla). toISOString UTC verir — gecə 00:00–04:00 arası dünənki gün çıxırdı. */
+function localTodayYmd() {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
 function uniqueSorted(values) {
   return [...new Set(values.map((v) => String(v).trim()).filter(Boolean))].sort((a, b) =>
     a.localeCompare(b, 'az')
@@ -328,7 +334,7 @@ export default function SaleFlow() {
     ayliq_odenis: '',
     odenis_gunu: '',
     birinci_ayliq_odenis_tarixi: '',
-    verilme_tarixi: new Date().toISOString().slice(0, 10),
+    verilme_tarixi: localTodayYmd(),
     bitme_tarixi: '',
     veziyyet: 'Qalıb',
     veziyyet_manual: false,
@@ -350,7 +356,7 @@ export default function SaleFlow() {
         ...base,
         ...prev,
         extra: { ...base.extra, ...(prev.extra || {}) },
-        verilme_tarixi: prev.verilme_tarixi || new Date().toISOString().slice(0, 10),
+        verilme_tarixi: prev.verilme_tarixi || localTodayYmd(),
         veziyyet: prev.veziyyet || 'Qalıb',
         senedler: Array.isArray(prev.senedler) ? prev.senedler : [],
       }
@@ -700,7 +706,7 @@ export default function SaleFlow() {
           satis_qiymeti: totalSatis,
           verilib: '0',
           faiz: '0',
-          verilme_tarixi: prev.verilme_tarixi || new Date().toISOString().slice(0, 10),
+          verilme_tarixi: prev.verilme_tarixi || localTodayYmd(),
           veziyyet: prev.veziyyet || 'Qalıb',
           veziyyet_manual: false,
           senedler: Array.isArray(prev.senedler) ? prev.senedler : [],
@@ -999,7 +1005,7 @@ export default function SaleFlow() {
       const paidForItem = Number(ilkinOdenisVerilib) || 0
       const remainingForItem = Math.max(0, Math.round((itemIlkin - paidForItem) * 100) / 100)
       const verilme =
-        musteriForm.verilme_tarixi || new Date().toISOString().slice(0, 10)
+        musteriForm.verilme_tarixi || localTodayYmd()
       const ilkinDueDate =
         remainingForItem > 0.009 ? ilkinQaliqTarixi || verilme : verilme
 
@@ -1113,7 +1119,7 @@ export default function SaleFlow() {
         draft?.itemIlkin != null ? draft.itemIlkin : Number(ilkinOdenis) || 0
 
       const verilme =
-        musteriForm.verilme_tarixi || new Date().toISOString().slice(0, 10)
+        musteriForm.verilme_tarixi || localTodayYmd()
 
       const saleForm = buildCombinedKreditForm({
         basket,
