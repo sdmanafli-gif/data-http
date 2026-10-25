@@ -307,8 +307,9 @@ export default function DepoForm() {
     const satici = await alisSatici()
     if (!String(satici.ad || '').trim()) throw new Error('Əvvəlcə «Haradan» bölməsində satıcını (müştəri / təchizatçı) seçin.')
     const qiymet = Number(String(form.alis_qiymeti || '').replace(',', '.')) || 0
-    const tarix = dmy(form.alis_tarixi) || dmy(new Date().toISOString())
     const now = new Date()
+    const bugun = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+    const tarix = dmy(form.alis_tarixi) || dmy(bugun)
     return createAlisDocx({
       nomre: form.sira_no ? `A-${form.sira_no}` : '',
       tarix,
