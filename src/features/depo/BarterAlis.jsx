@@ -50,8 +50,8 @@ export default function BarterAlis({ value, onChange, satici, file, onFile, onCr
   if (!b.aktiv) {
     return (
       <div>
-        <button type="button" className="btn btn--secondary muqavile-yarat__btn" onClick={() => onChange({ ...EMPTY_BARTER, aktiv: true })}>
-          + Alış Yarat (barter)
+        <button type="button" className="btn btn--primary muqavile-yarat__btn" onClick={() => onChange({ ...EMPTY_BARTER, aktiv: true })}>
+          Məhsul Alışı (BARTER)
         </button>
       </div>
     )
