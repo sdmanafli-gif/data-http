@@ -296,3 +296,7 @@
 .kredit-stack:has(.add-picker) {
   max-width: min(1200px, 100%);
 }
+
+.kredit-stack:has(.add-picker) .collapse-section__body.depo-stack {
+  max-width: none;
+}
