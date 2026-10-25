@@ -78,7 +78,16 @@ function DocxPreviewModal({ file, html, onClose, onPrint, onDownload }) {
  * Kredit satışında «Fayl Yarat»: YARAT → müqavilə (Word) yaranır, altında Bax / Yüklə / Çap et.
  * @param {{ file: File|null, onCreate: () => Promise<File>, onChange: (f: File|null) => void, disabledReason?: string, stale?: boolean }} p
  */
-export default function MuqavileYarat({ file, onCreate, onChange, disabledReason, stale = false }) {
+export default function MuqavileYarat({
+  file,
+  onCreate,
+  onChange,
+  disabledReason,
+  stale = false,
+  title = 'Fayl Yarat',
+  buttonLabel = 'YARAT',
+  note = 'Satış tamamlananda müqavilə son məlumatlarla yenidən hazırlanıb müştərinin sənədlərinə əlavə olunacaq.',
+}) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
   const [preview, setPreview] = useState(null) // { html }
@@ -133,7 +142,7 @@ export default function MuqavileYarat({ file, onCreate, onChange, disabledReason
 
   return (
     <div className="depo-box muqavile-yarat">
-      <div className="depo-files__title">Fayl Yarat</div>
+      <div className="depo-files__title">{title}</div>
       <div>
         <button
           type="button"
@@ -142,7 +151,7 @@ export default function MuqavileYarat({ file, onCreate, onChange, disabledReason
           disabled={busy || Boolean(disabledReason)}
           title={disabledReason || 'Müqaviləni (Word) yarat'}
         >
-          {busy ? 'Yaradılır…' : file ? 'YENİDƏN YARAT' : 'YARAT'}
+          {busy ? 'Yaradılır…' : file ? `YENİDƏN ${buttonLabel}` : buttonLabel}
         </button>
         {disabledReason && <span className="depo-msg depo-msg--hint" style={{ marginLeft: 12 }}>{disabledReason}</span>}
       </div>
@@ -165,12 +174,12 @@ export default function MuqavileYarat({ file, onCreate, onChange, disabledReason
       )}
       {file && stale && (
         <p className="depo-msg" style={{ margin: 0, color: '#e65100' }}>
-          Formda məlumat dəyişib — faylı yeniləmək üçün «YENİDƏN YARAT» basın.
+          Formda məlumat dəyişib — faylı yeniləmək üçün «YENİDƏN {buttonLabel}» basın.
         </p>
       )}
       {file && (
         <p className="depo-msg depo-msg--hint" style={{ margin: 0 }}>
-          Satış tamamlananda müqavilə son məlumatlarla yenidən hazırlanıb müştərinin sənədlərinə əlavə olunacaq.
+          {note}
         </p>
       )}
       {preview && file && (
