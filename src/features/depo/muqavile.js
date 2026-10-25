@@ -761,3 +761,153 @@ export const DOCX_HTML_CSS = `
 .dx-doc .dx-table td p{margin:0}
 .dx-doc .dx-page-break{break-after:page;page-break-after:always;height:0}
 `
+
+/* ───────────── Alış (barter) müqaviləsi — şablonsuz, tam kodla qurulur ───────────── */
+
+const AZ_BIR = ['', 'bir', 'iki', 'üç', 'dörd', 'beş', 'altı', 'yeddi', 'səkkiz', 'doqquz']
+const AZ_ON = ['', 'on', 'iyirmi', 'otuz', 'qırx', 'əlli', 'altmış', 'yetmiş', 'səksən', 'doxsan']
+
+function uc(n) {
+  // 0–999
+  const y = Math.floor(n / 100)
+  const o = Math.floor((n % 100) / 10)
+  const b = n % 10
+  const out = []
+  if (y) out.push(y === 1 ? 'yüz' : `${AZ_BIR[y]} yüz`)
+  if (o) out.push(AZ_ON[o])
+  if (b) out.push(AZ_BIR[b])
+  return out.join(' ')
+}
+
+/** 1250 → «min iki yüz əlli» */
+export function reqemSozle(num) {
+  let n = Math.floor(Math.abs(Number(num) || 0))
+  if (!n) return 'sıfır'
+  const parts = []
+  const mln = Math.floor(n / 1e6)
+  n %= 1e6
+  const min = Math.floor(n / 1000)
+  n %= 1000
+  if (mln) parts.push(`${uc(mln)} milyon`)
+  if (min) parts.push(min === 1 ? 'min' : `${uc(min)} min`)
+  if (n) parts.push(uc(n))
+  return parts.join(' ')
+}
+
+/** Manat + qəpik yazı ilə */
+function pulSozle(v) {
+  const n = Math.round((Number(v) || 0) * 100)
+  const man = Math.floor(n / 100)
+  const qep = n % 100
+  return qep ? `${reqemSozle(man)} manat ${reqemSozle(qep)} qəpik` : `${reqemSozle(man)} manat`
+}
+
+const AL_WIDTH = 9922
+
+/**
+ * @param {{ nomre: string, tarix: string, saat: string, krNomre: string,
+ *   satici: { ad, seriya, fin, dogum, tel, qeyd, yasayis },
+ *   mal: { model, reng, yaddas, imei1, imei2, seriya, veziyyet, qiymet } }} d
+ */
+export function buildAlisDocumentXml(d) {
+  const s = d.satici || {}
+  const m = d.mal || {}
+  const sz = 21
+  const P = (runs, o = {}) => elPara(runs, { sz, after: 40, ...o })
+  const r = (t, bold = false) => elRun(t, { bold, sz })
+  const H = (t) => P(r(t, true), { before: 120, after: 40, keepNext: true })
+  const J = (t) => P(r(t), { jc: 'both' })
+  const kv = (k, v) => P([r(k, true), r(v || '—')])
+
+  let x = ''
+  x += P(elRun('Mobideal', { bold: true, sz: 28 }), { after: 0 })
+  x += P(r('VÖEN: 2005392762'), { after: 0 })
+  x += P(r('Ünvan: Nəsimi rayonu, Mirzəağa Əliyev küçəsi 251'), { after: 0 })
+  x += P(r('Tel: 051 777 77 44'), { after: 160 })
+  x += P(elRun(`MOBİL CİHAZIN ALQI-SATQI MÜQAVİLƏSİ № ${d.nomre}`, { bold: true, sz: 26 }), { jc: 'center', after: 80 })
+  x += P([r('Bakı şəhəri'), elTab(), r(`${d.tarix}, saat ${d.saat}`)], { tabRight: AL_WIDTH, after: 120 })
+
+  x += H('1. Satıcı')
+  x += kv('Ad, soyad, ata adı: ', s.ad)
+  x += kv('Şəxsiyyət vəsiqəsi: ', `seriya/№ ${s.seriya || '—'},  FİN: ${s.fin || '—'}`)
+  x += kv('Doğum tarixi: ', `${s.dogum || '—'}      Telefon: ${s.tel || '—'}`)
+  x += kv('Qeydiyyat ünvanı: ', s.qeyd)
+  x += kv('Yaşayış ünvanı: ', s.yasayis)
+
+  x += H('2. Alıcı')
+  x += J('“Mobideal” (fiziki şəxs Manaflı Səid Cabid oğlu, VÖEN 2005392762).')
+
+  x += H('3. Müqavilənin predmeti')
+  x += J('Satıcı aşağıdakı mobil cihazı Alıcıya satır, Alıcı isə onu qəbul edib dəyərini ödəyir:')
+  const c = (t, bold = false) => elPara(elRun(t, { bold, sz: 19 }), { jc: 'center', sz: 19 })
+  const w = [2350, 1150, 1050, 1900, 1900, 1572]
+  x += elTable(w, [
+    { header: true, cells: ['Marka / Model', 'Rəng', 'Yaddaş', 'IMEI 1', 'IMEI 2', 'Seriya №'].map((t) => c(t, true)) },
+    { cells: [m.model, m.reng, m.yaddas, m.imei1, m.imei2, m.seriya].map((t) => c(t || '')) },
+  ])
+  x += P('', { after: 40 })
+  x += kv('Cihazın vəziyyəti və komplekti: ', m.veziyyet)
+  x += kv('Satış qiyməti: ', `${pul(m.qiymet)} AZN  (${pulSozle(m.qiymet)})`)
+  x += J(
+    `Ödəniş üsulu: barter — cihazın dəyəri Alıcının Satıcıya ${d.krNomre ? `№ ${d.krNomre} saylı ` : ''}nisyə alqı-satqı müqaviləsi üzrə ilkin ödənişin hesabına sayılır. Ödəniş tarixi: ${d.tarix}.`
+  )
+
+  x += H('4. Satıcının təminatları')
+  x += J('4.1. Cihaz Satıcının şəxsi mülkiyyətidir və qanuni yolla əldə edilib.')
+  x += J('4.2. Cihaz oğurlanmayıb, itirilmiş (tapıntı) deyil, girovda, borcda, həbsdə və ya mübahisədə deyil.')
+  x += J('4.3. Üçüncü şəxslərin cihaza heç bir hüququ və iddiası yoxdur.')
+  x += J('4.4. Cihaz iCloud / Google hesabından çıxarılıb, heç bir hesaba və bloka bağlı deyil.')
+
+  x += H('5. Məsuliyyət')
+  x += J('5.1. Cihazın oğurluq, tapıntı və ya başqasına məxsus olduğu aşkar edilərsə, bütün məsuliyyəti Satıcı daşıyır.')
+  x += J('5.2. Belə halda Satıcı cihazın dəyərini tam həcmdə 3 (üç) gün ərzində Alıcıya qaytarır və Alıcıya dəyən bütün zərəri ödəyir.')
+  x += J('5.3. Satıcı bilərəkdən yalan məlumat verdiyi halda qanunvericiliyə uyğun məsuliyyət daşıdığından xəbərdardır.')
+
+  x += H('6. Razılıq')
+  x += J('6.1. Satıcı şəxsiyyət vəsiqəsinin surətinin, cihazla birlikdə şəklinin çəkilməsinə və saxlanmasına razıdır.')
+  x += J('6.2. Satıcı bu müqavilənin və məlumatlarının zərurət yarandıqda hüquq-mühafizə orqanlarına təqdim edilməsinə etiraz etmir.')
+
+  x += H('7. Yekun')
+  x += J(
+    'Müqavilə 2 (iki) nüsxədə tərtib olunur və imzalandığı andan qüvvəyə minir. Satıcı müqaviləni oxuduğunu, şərtləri başa düşdüyünü və cihazın dəyərinin ilkin ödənişə sayıldığını öz imzası ilə təsdiq edir.'
+  )
+
+  const half = AL_WIDTH / 2
+  const sig = (lines) => ({ raw: lines.map(([t, b]) => P(r(t, b), { after: 160 })).join(''), opts: { noBorder: true, vAlign: 'top' } })
+  x += P('', { after: 200 })
+  x += elTable([half, half], [
+    {
+      cells: [
+        sig([['Satıcı', true], ['İmza: ______________________', false], [`Ad, soyad: ${s.ad || '__________________'}`, false]]),
+        sig([['Alıcı (Mobideal)', true], ['İmza: ______________________', false], ['Manaflı Səid Cabid oğlu', false], ['M.Y.', false]]),
+      ],
+    },
+  ]).replace(EL_BORDERS, '<w:tblBorders><w:top w:val="nil"/><w:left w:val="nil"/><w:bottom w:val="nil"/><w:right w:val="nil"/><w:insideH w:val="nil"/><w:insideV w:val="nil"/></w:tblBorders>')
+
+  const sect =
+    '<w:sectPr><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="680" w:right="850" w:bottom="567" w:left="1134" w:header="0" w:footer="0" w:gutter="0"/></w:sectPr>'
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>${x}${sect}</w:body></w:document>`
+}
+
+/** Alış (barter) müqaviləsinin .docx faylı */
+export async function createAlisDocx(d) {
+  const enc = new TextEncoder()
+  const files = [
+    {
+      name: '[Content_Types].xml',
+      data: enc.encode(
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>'
+      ),
+    },
+    {
+      name: '_rels/.rels',
+      data: enc.encode(
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>'
+      ),
+    },
+    { name: 'word/document.xml', data: enc.encode(buildAlisDocumentXml(d)) },
+  ]
+  const blob = await writeZip(files, DOCX_MIME)
+  const safeAd = String(d.satici?.ad || 'Satici').trim().replace(/[\\/:*?"<>|]+/g, '').replace(/\s+/g, '_')
+  return new File([blob], `Alis_Muqavilesi_${d.nomre || ''}_${safeAd}.docx`, { type: DOCX_MIME })
+}
