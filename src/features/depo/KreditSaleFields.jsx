@@ -131,6 +131,8 @@ export default function KreditSaleFields({
   addPicker = null,
   onOpenAdd,
   onRemoveItem,
+  barterSlot = null,
+  barterAmount = 0,
   children,
 }) {
   const bitme = computeBitmeTarixi(musteriForm.birinci_ayliq_odenis_tarixi, musteriForm.nece_ay)
@@ -198,7 +200,14 @@ export default function KreditSaleFields({
         <Field label="İlkin ödəniş" hint="Avtomatik: satış − (aylıq × neçə ay). Əl ilə dəyişə bilərsiniz.">
           <input type="number" step="0.01" min="0" value={ilkinOdenis} onChange={(e) => onIlkinChange(e.target.value)} />
         </Field>
-        <Field label="İlkin ödəniş verilib" hint="Satışdan sonra Ödənişlər tabına əlavə olunur.">
+        <Field
+          label={barterAmount > 0 ? 'İlkin ödəniş verilib (nağd)' : 'İlkin ödəniş verilib'}
+          hint={
+            barterAmount > 0
+              ? `+ barter ${formatMoney(barterAmount)} = cəmi ${formatMoney((Number(ilkinOdenisVerilib) || 0) + barterAmount)}`
+              : 'Satışdan sonra Ödənişlər tabına əlavə olunur.'
+          }
+        >
           <input
             type="number"
             step="0.01"
@@ -350,6 +359,7 @@ export default function KreditSaleFields({
             ))}
           </>
         )}
+        {barterSlot}
       </Section>
 
       {children}
