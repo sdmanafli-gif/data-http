@@ -64,7 +64,8 @@ import KreditSaleFields, {
   computeBitmeTarixi,
 } from './KreditSaleFields'
 import MuqavileYarat from './MuqavileYarat'
-import { buildMuqavileData, createMuqavileDocx } from './muqavile'
+import { buildMuqavileData, createMuqavileDocx, createAlisDocx } from './muqavile'
+import BarterAlis, { EMPTY_BARTER, barterAmount, barterMissing } from './BarterAlis'
 import { parseSenedler, uploadSenedlerFiles } from '../../lib/senedler'
 
 /** Prefill from Depo — shown read-only on kredit form */
@@ -331,6 +332,10 @@ export default function SaleFlow() {
   /** Kredit: «YARAT» ilə hazırlanan müqavilə (Word) + yaradılan andakı məlumatın izi */
   const [muqavileFile, setMuqavileFile] = useState(null)
   const [muqavileSig, setMuqavileSig] = useState('')
+  /** Kredit: barter — müştərinin verdiyi cihaz (ilkin ödənişə sayılır, satışdan sonra Depoya düşür) */
+  const [barter, setBarter] = useState(() => ({ ...EMPTY_BARTER }))
+  const [alisFile, setAlisFile] = useState(null)
+  const [alisSig, setAlisSig] = useState('')
   const [ilkinManual, setIlkinManual] = useState(false)
   /** Kredit: müştərinin vəsiqə / ünvan / "kimdir" sahələri (Kontaktlara yazılır) */
   const [kreditKontakt, setKreditKontakt] = useState(() => emptyKreditKontakt())
@@ -615,14 +620,14 @@ export default function SaleFlow() {
       alis += Number(lp.alis) || 0
       satis += Number(lp.satis) || 0
     }
-    const verilib = saleType === 'nagd' ? (Number(form.verilib) || satis) : Number(ilkinOdenisVerilib) || 0
+    const verilib = saleType === 'nagd' ? (Number(form.verilib) || satis) : (Number(ilkinOdenisVerilib) || 0) + barterAmount(barter)
     return {
       alis,
       satis,
       gozlenilen: satis - alis,
       qalan: satis - verilib,
     }
-  }, [basket, linePrices, form.verilib, saleType, ilkinOdenisVerilib])
+  }, [basket, linePrices, form.verilib, saleType, ilkinOdenisVerilib, barter])
 
   const computedIlkin = useMemo(() => {
     const satis =
@@ -663,9 +668,9 @@ export default function SaleFlow() {
 
   const ilkinRemaining = useMemo(() => {
     const due = Number(ilkinOdenis) || 0
-    const paid = Number(ilkinOdenisVerilib) || 0
+    const paid = (Number(ilkinOdenisVerilib) || 0) + barterAmount(barter)
     return Math.max(0, Math.round((due - paid) * 100) / 100)
-  }, [ilkinOdenis, ilkinOdenisVerilib])
+  }, [ilkinOdenis, ilkinOdenisVerilib, barter])
 
   function selectType(type) {
     setSaleType(type)
@@ -852,7 +857,7 @@ export default function SaleFlow() {
   function kreditSchedulePlan() {
     const totalSatis = totals.satis
     const itemIlkin = Number(ilkinOdenis) || 0
-    const paidForItem = Number(ilkinOdenisVerilib) || 0
+    const paidForItem = (Number(ilkinOdenisVerilib) || 0) + barterAmount(barter)
     const remainingForItem = Math.max(0, Math.round((itemIlkin - paidForItem) * 100) / 100)
     const verilme = musteriForm.verilme_tarixi || localTodayYmd()
     const ilkinDueDate = remainingForItem > 0.009 ? ilkinQaliqTarixi || verilme : verilme
@@ -905,7 +910,7 @@ export default function SaleFlow() {
       basket,
       linePrices,
       lineCihaz,
-      paidNow: Number(ilkinOdenisVerilib) || 0,
+      paidNow: (Number(ilkinOdenisVerilib) || 0) + barterAmount(barter),
       scheduleLines: lines,
     })
   }
@@ -917,6 +922,92 @@ export default function SaleFlow() {
       return 'Aylıq ödəniş, neçə ay və birinci aylıq tarixi doldurun.'
     }
     return ''
+  }
+
+  /** Alış (barter) müqaviləsi üçün məlumat — satıcı yuxarıdakı müştəri məlumatlarından */
+  function alisDataFrom() {
+    const kr = muqavileDataFrom([]).values
+    const now = new Date()
+    const b = barter
+    return {
+      nomre: kr.NOMRE ? `${kr.NOMRE}-A` : '',
+      krNomre: kr.NOMRE,
+      tarix: kr.TARIX,
+      saat: `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`,
+      satici: {
+        ad: kr.AD,
+        seriya: kr.SERIYA,
+        fin: kr.FIN,
+        dogum: kr.DOGUM,
+        tel: kr.TEL,
+        qeyd: kr.QEYD_UNVAN,
+        yasayis: kr.YASAYIS_UNVAN,
+      },
+      mal: {
+        model: [b.nov, b.model].map((t) => String(t || '').trim()).filter(Boolean).join(' '),
+        reng: b.reng,
+        yaddas: b.yaddas,
+        imei1: b.imei_1,
+        imei2: b.imei_2,
+        seriya: b.serial_no,
+        veziyyet: b.veziyyet,
+        qiymet: barterAmount(b),
+      },
+    }
+  }
+
+  const alisSigOf = (d) => JSON.stringify({ ...d, saat: '' })
+
+  /** Satışdan sonra: barter cihazını Depoya yaz, alış müqaviləsini Depoya və müştərinin sənədlərinə yüklə */
+  async function saveBarterToDepo({ musteriId, satisRow }) {
+    const b = barter
+    const verilme = musteriForm.verilme_tarixi || localTodayYmd()
+    const depoPayload = {
+      status: 'available',
+      miqdar: 1,
+      kateqoriya: b.kateqoriya || null,
+      nov: String(b.nov || '').trim() || null,
+      model: String(b.model || '').trim(),
+      reng: String(b.reng || '').trim() || null,
+      yaddas: b.yaddas || null,
+      imei_1: String(b.imei_1 || '').trim() || null,
+      imei_2: String(b.imei_2 || '').trim() || null,
+      serial_no: String(b.serial_no || '').trim() || null,
+      alis_qiymeti: barterAmount(b),
+      alis_tarixi: verilme,
+      odenis_novu: 'nagd',
+      veziyyet_cihaz: 'kohne',
+      kimden_alinib: String(musteriForm.ad_soyad || '').trim() || null,
+      haradan_tip: 'musteri',
+      musteri_id: musteriId || null,
+      kommentler: `Barter — kredit satış № ${satisRow?.sira_no ?? ''}${b.veziyyet ? ` · ${b.veziyyet}` : ''}`,
+      updated_at: new Date().toISOString(),
+    }
+    const { data: depoRow, error: depoErr } = await supabase.from(DEPO_TABLE).insert(depoPayload).select('id, senedler').single()
+    if (depoErr) throw depoErr
+
+    const fresh = await createAlisDocx(alisDataFrom())
+    const { files: upDepo, error: upErr } = await uploadSenedlerFiles('depo', depoRow.id, [fresh])
+    if (upErr) throw new Error(upErr)
+    if (upDepo[0]) {
+      const { error: sErr } = await supabase
+        .from(DEPO_TABLE)
+        .update({ senedler: [...parseSenedler(depoRow.senedler), { ...upDepo[0], slot: 1 }] })
+        .eq('id', depoRow.id)
+      if (sErr) throw sErr
+    }
+    if (satisRow?.id) {
+      const { files: upM, error: upMErr } = await uploadSenedlerFiles('musteri_bazasi', satisRow.id, [fresh])
+      if (upMErr) throw new Error(upMErr)
+      if (upM.length) {
+        const { data: cur } = await supabase.from(MUSTERI_TABLE).select('senedler').eq('id', satisRow.id).single()
+        const { error: mErr } = await supabase
+          .from(MUSTERI_TABLE)
+          .update({ senedler: [...parseSenedler(cur?.senedler), ...upM] })
+          .eq('id', satisRow.id)
+        if (mErr) throw mErr
+      }
+    }
   }
 
   async function handleSubmit(e) {
@@ -1064,7 +1155,12 @@ export default function SaleFlow() {
         setError('Kredit üçün «Aylıq ödəniş» doldurulmalıdır.')
         return
       }
-      const paidNow = Number(ilkinOdenisVerilib) || 0
+      const barterErr = barterMissing(barter)
+      if (barterErr) {
+        setError(barterErr)
+        return
+      }
+      const paidNow = (Number(ilkinOdenisVerilib) || 0) + barterAmount(barter)
       const ilkinDue = Number(ilkinOdenis) || 0
       if (paidNow < 0) {
         setError('İlkin ödəniş verilib mənfi ola bilməz.')
@@ -1075,7 +1171,7 @@ export default function SaleFlow() {
         return
       }
       if (paidNow - ilkinDue > 0.009) {
-        setError('İlkin ödəniş verilib, ilkin ödənişdən çox ola bilməz.')
+        setError('İlkin ödəniş verilib (barter daxil), ilkin ödənişdən çox ola bilməz.')
         return
       }
       if (ilkinDue - paidNow > 0.009 && !ilkinQaliqTarixi) {
@@ -1226,9 +1322,12 @@ export default function SaleFlow() {
           mebleg: paidTotal,
           tarix: verilme,
           qeyd:
-            basket.length > 1
+            (basket.length > 1
               ? `Kredit satış (${basket.length} məhsul) — ilkin ödəniş verilib`
-              : 'Kredit satış — ilkin ödəniş verilib',
+              : 'Kredit satış — ilkin ödəniş verilib') +
+            (barterAmount(barter) > 0
+              ? ` (nağd ${Number(ilkinOdenisVerilib) || 0} + barter ${barterAmount(barter)}: ${[barter.nov, barter.model].filter(Boolean).join(' ')})`
+              : ''),
           updated_at: new Date().toISOString(),
         })
         if (payErr) throw payErr
@@ -1258,6 +1357,17 @@ export default function SaleFlow() {
           }
         } catch (docError) {
           window.alert(`Satış saxlandı, amma müqavilə faylı sənədlərə yüklənmədi: ${docError.message || docError}`)
+        }
+      }
+
+      // Barter cihazı → Depo (+ alış müqaviləsi)
+      if (barter.aktiv && barterAmount(barter) > 0) {
+        try {
+          await saveBarterToDepo({ musteriId, satisRow: inserted })
+        } catch (bErr) {
+          window.alert(
+            `Satış saxlandı, amma barter cihazı Depoya yazılmadı: ${bErr.message || bErr}\nCihazı Depoya əl ilə əlavə edin.`
+          )
         }
       }
 
@@ -1367,6 +1477,15 @@ export default function SaleFlow() {
               )}
             </div>
   ) : null
+
+  let currentAlisSig = ''
+  if (saleType === 'kredit' && step === 2 && alisFile) {
+    try {
+      currentAlisSig = alisSigOf(alisDataFrom())
+    } catch (_) {
+      currentAlisSig = ''
+    }
+  }
 
   let currentMuqavileSig = ''
   if (saleType === 'kredit' && step === 2 && muqavileFile) {
@@ -1675,6 +1794,28 @@ export default function SaleFlow() {
               mode={mode}
               kontakt={kreditKontakt}
               addPicker={addPickerPanel}
+              barterAmount={barterAmount(barter)}
+              barterSlot={
+                <BarterAlis
+                  value={barter}
+                  onChange={setBarter}
+                  satici={{
+                    ad: String(musteriForm.ad_soyad || '').trim(),
+                    seriya: kreditKontakt.sv_seriya,
+                    fin: kreditKontakt.fin_kod,
+                    tel: musteriForm.nomre_1,
+                  }}
+                  file={alisFile}
+                  onFile={setAlisFile}
+                  stale={Boolean(alisFile) && alisSig !== currentAlisSig}
+                  onCreate={async () => {
+                    const d = alisDataFrom()
+                    const f = await createAlisDocx(d)
+                    setAlisSig(alisSigOf(d))
+                    return f
+                  }}
+                />
+              }
               onOpenAdd={openAddPicker}
               onRemoveItem={removeFromBasket}
               setKontaktField={(k, val) => setKreditKontakt((prev) => ({ ...prev, [k]: val }))}
