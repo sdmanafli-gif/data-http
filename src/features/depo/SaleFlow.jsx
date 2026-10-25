@@ -1829,6 +1829,7 @@ export default function SaleFlow() {
               }
             />
             <MuqavileYarat
+              title="Kredit Müqaviləsi"
               file={muqavileFile}
               stale={Boolean(muqavileFile) && muqavileSig !== currentMuqavileSig}
               disabledReason={muqavileMissing()}
