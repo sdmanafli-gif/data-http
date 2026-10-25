@@ -300,3 +300,9 @@
 .kredit-stack:has(.add-picker) .collapse-section__body.depo-stack {
   max-width: none;
 }
+
+/* Müqavilə blokunun başlığı (Kredit Müqaviləsi / Alış Müqaviləsi) böyük */
+.muqavile-yarat > .depo-files__title {
+  font-size: 18px;
+  font-weight: 700;
+}
