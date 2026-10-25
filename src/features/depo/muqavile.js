@@ -824,7 +824,7 @@ export function buildAlisDocumentXml(d) {
   x += P(r('VÖEN: 2005392762'), { after: 0 })
   x += P(r('Ünvan: Nəsimi rayonu, Mirzəağa Əliyev küçəsi 251'), { after: 0 })
   x += P(r('Tel: 051 777 77 44'), { after: 160 })
-  x += P(elRun(`MOBİL CİHAZIN ALQI-SATQI MÜQAVİLƏSİ № ${d.nomre}`, { bold: true, sz: 26 }), { jc: 'center', after: 80 })
+  x += P(elRun(`MOBİL CİHAZIN ALQI-SATQI MÜQAVİLƏSİ № ${d.nomre || '________'}`, { bold: true, sz: 26 }), { jc: 'center', after: 80 })
   x += P([r('Bakı şəhəri'), elTab(), r(`${d.tarix}, saat ${d.saat}`)], { tabRight: AL_WIDTH, after: 120 })
 
   x += H('1. Satıcı')
@@ -849,6 +849,7 @@ export function buildAlisDocumentXml(d) {
   x += kv('Cihazın vəziyyəti və komplekti: ', m.veziyyet)
   x += kv('Satış qiyməti: ', `${pul(m.qiymet)} AZN  (${pulSozle(m.qiymet)})`)
   x += J(
+    d.odenisText ||
     `Ödəniş üsulu: barter — cihazın dəyəri Alıcının Satıcıya ${d.krNomre ? `№ ${d.krNomre} saylı ` : ''}nisyə alqı-satqı müqaviləsi üzrə ilkin ödənişin hesabına sayılır. Ödəniş tarixi: ${d.tarix}.`
   )
 
@@ -869,7 +870,9 @@ export function buildAlisDocumentXml(d) {
 
   x += H('7. Yekun')
   x += J(
-    'Müqavilə 2 (iki) nüsxədə tərtib olunur və imzalandığı andan qüvvəyə minir. Satıcı müqaviləni oxuduğunu, şərtləri başa düşdüyünü və cihazın dəyərinin ilkin ödənişə sayıldığını öz imzası ilə təsdiq edir.'
+    d.odenisText
+      ? 'Müqavilə 2 (iki) nüsxədə tərtib olunur və imzalandığı andan qüvvəyə minir. Satıcı müqaviləni oxuduğunu, şərtləri başa düşdüyünü və pulu tam aldığını öz imzası ilə təsdiq edir.'
+      : 'Müqavilə 2 (iki) nüsxədə tərtib olunur və imzalandığı andan qüvvəyə minir. Satıcı müqaviləni oxuduğunu, şərtləri başa düşdüyünü və cihazın dəyərinin ilkin ödənişə sayıldığını öz imzası ilə təsdiq edir.'
   )
 
   const half = AL_WIDTH / 2
