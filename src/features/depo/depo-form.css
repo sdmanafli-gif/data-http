@@ -291,3 +291,8 @@
   min-width: 0;
   overflow-x: auto;
 }
+
+/* Kredit formunda «Əlavə məhsul» açıq olanda çərçivə sağa genişlənsin — «Səbətə əlavə et» düymələri görünsün */
+.kredit-stack:has(.add-picker) {
+  max-width: min(1200px, 100%);
+}
