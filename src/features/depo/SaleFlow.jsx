@@ -1396,7 +1396,7 @@ export default function SaleFlow() {
 
   /** «Əlavə məhsul» seçim pəncərəsi — səbətdə və kredit formunda eyni */
   const addPickerPanel = showAddPicker ? (
-            <div style={{ border: '1px solid var(--color-border)', borderRadius: 8, padding: 12 }}>
+            <div className="add-picker" style={{ border: '1px solid var(--color-border)', borderRadius: 8, padding: 12 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginBottom: 8, flexWrap: 'wrap' }}>
                 <h3 className="card__title" style={{ margin: 0 }}>Mövcud məhsullardan seçin</h3>
                 <button type="button" className="btn btn--secondary" onClick={() => setShowAddPicker(false)}>
