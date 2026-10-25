@@ -68,6 +68,14 @@ export function computeBitmeTarixi(birinciTarix, neceAy) {
   return addMonthsYmd(birinciTarix, n - 1)
 }
 
+/** «iPhone 11», «Samsung S25», «MacBook Air 15 M5» — Növ modeldə yoxdursa önə əlavə olunur */
+function mehsulAdi(item) {
+  const model = String(item?.model || '').trim()
+  const nov = String(item?.nov || '').trim()
+  if (!model) return nov || '—'
+  return nov && !model.toLowerCase().includes(nov.toLowerCase()) ? `${nov} ${model}` : model
+}
+
 function Field({ label, hint, children }) {
   return (
     <div className="form-group">
@@ -279,9 +287,9 @@ export default function KreditSaleFields({
           return (
             <div key={item.id} className={basket.length > 1 ? 'depo-box' : undefined} style={{ display: 'grid', gap: 8 }}>
               {basket.length > 1 && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                  <strong style={{ fontSize: 13 }}>
-                    Məhsul {idx + 1}: {item.model || '—'}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                  <strong style={{ fontSize: 17, lineHeight: 1.3 }}>
+                    Məhsul {idx + 1}: {mehsulAdi(item)}
                   </strong>
                   {onRemoveItem && (
                     <button
