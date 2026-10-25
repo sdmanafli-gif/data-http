@@ -261,3 +261,25 @@
   font-weight: 600;
   letter-spacing: 0.5px;
 }
+
+/* Kredit satış: bölmələr (Satış / Məhsul / Müştəri) və məhsul blokları aydın seçilsin */
+.kredit-stack > .collapse-section {
+  border: 2px solid var(--color-accent);
+  border-radius: 8px;
+  margin-top: 6px;
+}
+
+.kredit-stack > .collapse-section > .collapse-section__title {
+  background: color-mix(in srgb, var(--color-accent) 12%, var(--color-bg));
+  border-bottom: 2px solid var(--color-accent);
+  color: var(--color-accent);
+  font-size: 15px;
+}
+
+.kredit-stack > .collapse-section:not([open]) > .collapse-section__title {
+  border-bottom: none;
+}
+
+.kredit-stack .collapse-section .depo-box {
+  border: 2px solid #333;
+}
