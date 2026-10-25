@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams, Link } from 'react-router-dom'
 import { supabase, fetchAllPages } from '../../lib/supabase'
 import { confirmDelete } from '../../lib/confirmDelete'
@@ -351,6 +351,24 @@ export default function DepoForm() {
   function setKimden(name) {
     setForm((prev) => ({ ...prev, kimden_alinib: name }))
   }
+
+  // «Nömrə» sahəsi: Haradan bölməsində seçilən müştəri / təchizatçının telefonu avtomatik yazılır.
+  // Əl ilə dəyişilibsə toxunulmur (yalnız boşdursa və ya əvvəlki avtomatik dəyərdirsə yenilənir).
+  const autoNomre = useRef('')
+  useEffect(() => {
+    let tel = ''
+    if (src.pick === NEW_PICK) tel = src.yeni?.nomre_1 || ''
+    else if (String(src.pick || '').startsWith('m:')) tel = musteriler.find((m) => m.id === src.pick.slice(2))?.nomre_1 || ''
+    else if (String(src.pick || '').startsWith('t:')) tel = techizatcilar.find((t) => t.id === src.pick.slice(2))?.nomre_1 || ''
+    tel = String(tel).trim()
+    if (!tel) return
+    setForm((prev) => {
+      const cur = String(prev.nomre ?? '').trim()
+      if (cur && cur !== autoNomre.current) return prev
+      autoNomre.current = tel
+      return cur === tel ? prev : { ...prev, nomre: tel }
+    })
+  }, [src.pick, src.yeni?.nomre_1, musteriler, techizatcilar])
 
   const formColumns = useMemo(() => {
     return columns
