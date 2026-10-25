@@ -7,6 +7,9 @@ import SuggestInput from '../musteri-bazasi/SuggestInput'
 import RecordModule from '../../components/RecordModule'
 import DepoFileSlots, { uploadPendingSlots } from './DepoFileSlots'
 import DepoKateqoriyaBlock, { loadKateqoriyalar } from './DepoKateqoriya'
+import MuqavileYarat from './MuqavileYarat'
+import { createAlisDocx, dmy } from './muqavile'
+import { parseSenedler, uploadSenedlerFiles } from '../../lib/senedler'
 import {
   DEPO_TABLE,
   SUGGEST_FIELDS,
@@ -219,6 +222,9 @@ export default function DepoForm() {
   const [techizatcilar, setTechizatcilar] = useState([])
   const [musteriler, setMusteriler] = useState([])
   const [kateqoriyalar, setKateqoriyalar] = useState([])
+  /** Alış müqaviləsi (Word): satıcı «Haradan» blokundan, cihaz formdan */
+  const [alisVeziyyet, setAlisVeziyyet] = useState('')
+  const [alisFile, setAlisFile] = useState(null)
 
   const supplierOptions = useMemo(() => {
     const seen = new Set()
@@ -266,6 +272,79 @@ export default function DepoForm() {
     setRecord((r) => (r ? { ...r, senedler: next } : r))
     setForm((f) => ({ ...f, senedler: next }))
     return true
+  }
+
+  /** Alış müqaviləsi üçün satıcının məlumatları (Haradan → Yeni / seçilmiş müştəri / təchizatçı) */
+  async function alisSatici() {
+    const y = src.yeni || {}
+    if (src.pick === NEW_PICK) {
+      return {
+        ad: String(y.ad_soyad || '').trim(),
+        seriya: y.sv_seriya,
+        fin: y.fin_kod,
+        dogum: dmy(y.dogum_tarixi),
+        tel: y.nomre_1,
+        qeyd: '',
+        yasayis: y.yasayis_unvani,
+      }
+    }
+    if (src.tip === 'musteri' && String(src.pick || '').startsWith('m:')) {
+      const { data: m } = await supabase.from('musteriler').select('*').eq('id', src.pick.slice(2)).maybeSingle()
+      return {
+        ad: m?.ad_soyad || form.kimden_alinib || '',
+        seriya: m?.sv_seriya,
+        fin: m?.fin_kod,
+        dogum: dmy(m?.dogum_tarixi),
+        tel: m?.nomre_1,
+        qeyd: m?.qeydiyyat_unvani,
+        yasayis: m?.yasayis_unvani,
+      }
+    }
+    return { ad: String(form.kimden_alinib || '').trim() }
+  }
+
+  async function createAlisFromForm() {
+    const satici = await alisSatici()
+    if (!String(satici.ad || '').trim()) throw new Error('Əvvəlcə «Haradan» bölməsində satıcını (müştəri / təchizatçı) seçin.')
+    const qiymet = Number(String(form.alis_qiymeti || '').replace(',', '.')) || 0
+    const tarix = dmy(form.alis_tarixi) || dmy(new Date().toISOString())
+    const now = new Date()
+    return createAlisDocx({
+      nomre: form.sira_no ? `A-${form.sira_no}` : '',
+      tarix,
+      saat: `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`,
+      satici,
+      mal: {
+        model: [form.nov, form.model].map((t) => String(t || '').trim()).filter(Boolean).join(' '),
+        reng: form.reng,
+        yaddas: form.yaddas,
+        imei1: form.imei_1,
+        imei2: form.imei_2,
+        seriya: form.serial_no,
+        veziyyet: alisVeziyyet,
+        qiymet,
+      },
+      odenisText: `Ödəniş üsulu: ${form.odenis_novu === 'nisye' ? 'nisyə (sonradan ödəniş)' : 'nağd'}. Ödəniş tarixi: ${tarix}.`,
+    })
+  }
+
+  /** Yaradılmış alış müqaviləsini qeydin boş fayl yerinə yükləyir */
+  async function attachAlisFile(recordId, currentSenedler) {
+    const list = parseSenedler(currentSenedler)
+    const used = new Set(list.map((f) => Number(f.slot)))
+    const slot = [1, 2, 3].find((n) => !used.has(n))
+    const { files: up, error: upErr } = await uploadSenedlerFiles('depo', recordId, [alisFile])
+    if (upErr) throw new Error(upErr)
+    if (!up[0]) return null
+    const next = [...list, slot ? { ...up[0], slot } : up[0]]
+    const { data, error: e } = await supabase
+      .from(DEPO_TABLE)
+      .update({ senedler: next, updated_at: new Date().toISOString() })
+      .eq('id', recordId)
+      .select('*')
+      .single()
+    if (e) throw e
+    return data
   }
 
   function setKimden(name) {
@@ -476,6 +555,17 @@ export default function DepoForm() {
         savedRow = withFiles
         setPendingFiles({})
         if (upErr) setError(upErr)
+      }
+
+      // Alış müqaviləsi yaradılıbsa — qeydin fayl yerinə yüklə
+      if (alisFile && newId) {
+        try {
+          const withAlis = await attachAlisFile(newId, savedRow?.senedler)
+          if (withAlis) savedRow = withAlis
+          setAlisFile(null)
+        } catch (aErr) {
+          window.alert(`Məhsul saxlandı, amma alış müqaviləsi yüklənmədi: ${aErr.message || aErr}`)
+        }
       }
 
       if (savedRow) {
@@ -721,6 +811,31 @@ export default function DepoForm() {
               setForm((prev) => ({ ...prev, kommentler: v }))
             }}
             placeholder="Məhsul haqqında qeyd…"
+          />
+        </div>
+        <div className="depo-box kredit-stack" style={{ marginTop: 8, maxWidth: 760 }}>
+          <div className="form-group">
+            <label>Cihazın vəziyyəti və komplekti (alış müqaviləsi üçün)</label>
+            <input
+              value={alisVeziyyet}
+              onChange={(e) => setAlisVeziyyet(e.target.value)}
+              placeholder="məs. işlək, qutusu var, adapter yoxdur"
+            />
+          </div>
+          <MuqavileYarat
+            title="Alış Müqaviləsi"
+            buttonLabel="MÜQAVİLƏ YARAT"
+            note="Saxla basanda müqavilə bu məhsulun boş fayl yerinə yüklənəcək."
+            file={alisFile}
+            disabledReason={
+              !String(form.model || '').trim()
+                ? 'Əvvəlcə modeli yazın.'
+                : !src.tip && !String(form.kimden_alinib || '').trim()
+                  ? 'Əvvəlcə «Haradan» bölməsində satıcını seçin.'
+                  : ''
+            }
+            onCreate={createAlisFromForm}
+            onChange={setAlisFile}
           />
         </div>
         {error && <p style={{ color: 'var(--color-accent)' }}>{error}</p>}
