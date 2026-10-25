@@ -283,3 +283,11 @@
 .kredit-stack .collapse-section .depo-box {
   border: 2px solid #333;
 }
+
+/* «Əlavə məhsul» seçim pəncərəsi bölmənin çərçivəsindən çıxmasın — cədvəl içəridə sürüşür */
+.add-picker {
+  box-sizing: border-box;
+  max-width: 100%;
+  min-width: 0;
+  overflow-x: auto;
+}
