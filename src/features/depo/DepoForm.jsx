@@ -232,6 +232,7 @@ export default function DepoForm() {
   const [alisFile, setAlisFile] = useState(null)
   /** Yeni qeyd: eyni satıcıdan əlavə məhsullar (Məhsul 2, 3, …) — hər biri ayrıca depo sətri olur */
   const [extraItems, setExtraItems] = useState([])
+  const [mainOpen, setMainOpen] = useState(true)
 
   const supplierOptions = useMemo(() => {
     const seen = new Set()
@@ -360,6 +361,7 @@ export default function DepoForm() {
   }
 
   function addExtraItem() {
+    setMainOpen(false)
     setExtraItems((prev) => [
       ...prev.map((it) => ({ ...it, open: false })),
       {
@@ -503,6 +505,7 @@ export default function DepoForm() {
     setError(null)
     const missing = getDepoMissingRequiredFields(form)
     if (missing.length) {
+      setMainOpen(true)
       setInvalidKeys(new Set(missing.map((m) => m.key)))
       setError(`Mütləq sahələr boşdur: ${missing.map((m) => m.label).join(', ')}`)
       return
@@ -794,9 +797,22 @@ export default function DepoForm() {
         )}
       </div>
       <form onSubmit={handleSubmit} noValidate>
-        {/* Sahələr alt-alta (bir sütun) */}
-        <div className="depo-stack">
-          {!isEdit && extraItems.length > 0 && <div className="depo-item-head">Məhsul 1: {extraItemName(form)}</div>}
+        {/* Sahələr alt-alta (bir sütun). Yeni qeyddə Məhsul 1 də bağlanıb-açılan çərçivədədir */}
+        <details
+          className={isEdit ? 'depo-item depo-item--plain' : 'depo-item'}
+          open={isEdit || mainOpen}
+          onToggle={(e) => {
+            if (isEdit) return
+            const open = e.currentTarget.open
+            if (open !== mainOpen) setMainOpen(open)
+          }}
+          style={{ maxWidth: 760 }}
+        >
+        <summary className="depo-item__title">
+          Məhsul 1: {extraItemName(form)}
+          {form.alis_qiymeti ? ` · ${form.alis_qiymeti} AZN` : ''}
+        </summary>
+        <div className="depo-stack depo-item__body">
           <DepoKateqoriyaBlock
             list={kateqoriyalar}
             setList={setKateqoriyalar}
@@ -891,7 +907,15 @@ export default function DepoForm() {
             }
             return field
           })}
+          {!isEdit && (
+            <div>
+              <button type="button" className="btn btn--secondary" onClick={() => setMainOpen(false)}>
+                Bağla
+              </button>
+            </div>
+          )}
         </div>
+        </details>
         {/* "Kimdən" sütunu gizlədilibsə Haradan qutusu görünmür — fayllar yenə də itməsin */}
         {!formColumns.some((c) => c.key === 'kimden_alinib') && (
           <div className="depo-box" style={{ marginTop: 8, maxWidth: 760 }}>
