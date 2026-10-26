@@ -503,6 +503,9 @@ export default function DepoForm() {
     }
   }
 
+  /** Yeni qeyddə «Kimdən» görünmür — xəbərdarlıqda «Haradan» adı göstərilir */
+  const missLabel = (m) => (!isEdit && m.key === 'kimden_alinib' ? 'Haradan (satıcı)' : m.label)
+
   async function handleSubmit(e) {
     e.preventDefault()
     setError(null)
@@ -510,7 +513,7 @@ export default function DepoForm() {
     if (missing.length) {
       setMainOpen(true)
       setInvalidKeys(new Set(missing.map((m) => m.key)))
-      setError(`Mütləq sahələr boşdur: ${missing.map((m) => m.label).join(', ')}`)
+      setError(`Mütləq sahələr boşdur: ${missing.map(missLabel).join(', ')}`)
       return
     }
     setInvalidKeys(new Set())
@@ -522,7 +525,7 @@ export default function DepoForm() {
     }
     const nisyeErr = validateDepoNisye(form)
     if (nisyeErr) {
-      setError(nisyeErr)
+      setError(isEdit ? nisyeErr : nisyeErr.replace('«Kimdən»', '«Haradan» (satıcı)'))
       return
     }
     const srcErr = validateSourceAndSystem(src, sys)
@@ -537,7 +540,7 @@ export default function DepoForm() {
         const label = `Məhsul ${i + 2}`
         if (miss.length) {
           updateExtraItem(i, (it) => ({ ...it, open: true }))
-          setError(`${label}: mütləq sahələr boşdur — ${miss.map((m) => m.label).join(', ')}`)
+          setError(`${label}: mütləq sahələr boşdur — ${miss.map(missLabel).join(', ')}`)
           return
         }
         const cErr = validateDepoDeviceCondition(mf) || validateDepoNisye(mf)
@@ -847,7 +850,8 @@ export default function DepoForm() {
                       onChange={(next) => saveSenedler(id, next)}
                     />
                   </HaradanBlock>
-                  {field}
+                  {/* Yeni qeyddə «Kimdən» ayrıca göstərilmir — Haradan-da seçilən addan avtomatik yazılır */}
+                  {isEdit && field}
                 </div>
               )
             }
