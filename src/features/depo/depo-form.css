@@ -306,3 +306,37 @@
   font-size: 18px;
   font-weight: 700;
 }
+
+/* Depo: bir neçə məhsul birdən — hər məhsul ayrıca çərçivədə */
+.depo-item {
+  border: 2px solid var(--color-accent);
+  border-radius: 8px;
+  background: var(--color-surface, #fff);
+}
+
+.depo-item__title {
+  cursor: pointer;
+  padding: 10px 14px;
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--color-accent);
+  background: color-mix(in srgb, var(--color-accent) 10%, var(--color-bg));
+  border-radius: 6px;
+}
+
+.depo-item[open] > .depo-item__title {
+  border-bottom: 2px solid var(--color-accent);
+  border-radius: 6px 6px 0 0;
+}
+
+.depo-item__body {
+  padding: 12px 14px;
+}
+
+.depo-item-head {
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--color-accent);
+  border-bottom: 2px solid var(--color-accent);
+  padding-bottom: 4px;
+}
