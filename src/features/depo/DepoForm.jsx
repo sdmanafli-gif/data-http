@@ -53,6 +53,11 @@ import './depo-form.css'
 /** Yaddaş üçün sabit seçimlər */
 const YADDAS_OPTIONS = ['32 Gb', '64 Gb', '128 Gb', '256 Gb', '512 Gb', '1 Tb', '2 Tb']
 
+/** Bir neçə məhsul birdən: bu sahələr bütün məhsullar üçün ortaqdır (Məhsul 1-dən götürülür) */
+const SHARED_ITEM_KEYS = new Set([
+  'kimden_alinib', 'alis_tarixi', 'odenis_novu', 'qaytarma_tarixi', 'nomre', 'status', 'sira_no', 'senedler', 'kommentler',
+])
+
 /** Formda göstərilməyən sahələr (bazadakı dəyəri saxlanılır) */
 const FORM_HIDDEN_KEYS = new Set(['sexsiyyet'])
 
@@ -225,6 +230,8 @@ export default function DepoForm() {
   /** Alış müqaviləsi (Word): satıcı «Haradan» blokundan, cihaz formdan */
   const [alisVeziyyet, setAlisVeziyyet] = useState('')
   const [alisFile, setAlisFile] = useState(null)
+  /** Yeni qeyd: eyni satıcıdan əlavə məhsullar (Məhsul 2, 3, …) — hər biri ayrıca depo sətri olur */
+  const [extraItems, setExtraItems] = useState([])
 
   const supplierOptions = useMemo(() => {
     const seen = new Set()
@@ -350,6 +357,43 @@ export default function DepoForm() {
 
   function setKimden(name) {
     setForm((prev) => ({ ...prev, kimden_alinib: name }))
+  }
+
+  function addExtraItem() {
+    setExtraItems((prev) => [
+      ...prev.map((it) => ({ ...it, open: false })),
+      {
+        key: `${Date.now()}-${Math.random()}`,
+        open: true,
+        form: { ...emptyDepoForm(columns), kateqoriya: form.kateqoriya || '', nov: form.nov || '' },
+      },
+    ])
+  }
+
+  function updateExtraItem(idx, fn) {
+    setExtraItems((prev) => prev.map((it, i) => (i === idx ? fn(it) : it)))
+  }
+
+  function removeExtraItem(idx) {
+    setExtraItems((prev) => prev.filter((_, i) => i !== idx))
+  }
+
+  /** Əlavə məhsulun tam forması: ortaq sahələr Məhsul 1-dən */
+  function mergedExtraForm(itemForm) {
+    const merged = { ...itemForm }
+    for (const k of SHARED_ITEM_KEYS) {
+      if (k === 'kommentler' || k === 'senedler' || k === 'sira_no') continue
+      merged[k] = form[k]
+    }
+    merged.extra = { ...(itemForm.extra || {}) }
+    return merged
+  }
+
+  function extraItemName(f) {
+    const model = String(f.model || '').trim()
+    const nov = String(f.nov || '').trim()
+    if (!model) return nov || '—'
+    return nov && !model.toLowerCase().includes(nov.toLowerCase()) ? `${nov} ${model}` : model
   }
 
   // «Nömrə» sahəsi: Haradan bölməsində seçilən müştəri / təchizatçının telefonu avtomatik yazılır.
@@ -480,6 +524,24 @@ export default function DepoForm() {
       setError(srcErr)
       return
     }
+    if (!isEdit) {
+      for (let i = 0; i < extraItems.length; i++) {
+        const mf = mergedExtraForm(extraItems[i].form)
+        const miss = getDepoMissingRequiredFields(mf)
+        const label = `Məhsul ${i + 2}`
+        if (miss.length) {
+          updateExtraItem(i, (it) => ({ ...it, open: true }))
+          setError(`${label}: mütləq sahələr boşdur — ${miss.map((m) => m.label).join(', ')}`)
+          return
+        }
+        const cErr = validateDepoDeviceCondition(mf) || validateDepoNisye(mf)
+        if (cErr) {
+          updateExtraItem(i, (it) => ({ ...it, open: true }))
+          setError(`${label}: ${cErr}`)
+          return
+        }
+      }
+    }
     setSaving(true)
     try {
       const payload = toDepoPayload(form, columns)
@@ -558,6 +620,25 @@ export default function DepoForm() {
       }
       if (err) throw err
 
+      // Əlavə məhsullar (Məhsul 2, 3, …): eyni satıcı, tarix və ödəniş növü ilə ayrıca sətirlər
+      let extraSaved = 0
+      if (!isEdit && extraItems.length) {
+        for (let i = 0; i < extraItems.length; i++) {
+          const p = toDepoPayload(mergedExtraForm(extraItems[i].form), columns)
+          delete p.sira_no
+          p.haradan_tip = payload.haradan_tip
+          p.techizatci_id = payload.techizatci_id
+          p.musteri_id = payload.musteri_id
+          p.kimden_alinib = payload.kimden_alinib
+          const { data: row, error: xErr } = await supabase.from(DEPO_TABLE).insert(p).select('*').single()
+          if (xErr) throw new Error(`Məhsul ${i + 2} saxlanmadı: ${xErr.message}. Məhsul 1${extraSaved ? ` və ${extraSaved} əlavə məhsul` : ''} artıq saxlanıb.`)
+          extraSaved += 1
+          const { error: lErr } = await syncDepoPurchaseNisyeLedger(supabase, row)
+          if (lErr) throw lErr
+        }
+        setExtraItems([])
+      }
+
       if (!isEdit && newId && Object.keys(pendingFiles).length > 0) {
         const { files: nextSenedler, error: upErr } = await uploadPendingSlots(
           newId,
@@ -595,6 +676,8 @@ export default function DepoForm() {
       if (isEdit) {
         if (savedRow) applyRow(savedRow)
         setEditing(false)
+      } else if (newId && extraSaved > 0) {
+        navigate('/depo')
       } else if (newId) {
         navigate(`/depo/${newId}`)
       } else {
@@ -713,6 +796,7 @@ export default function DepoForm() {
       <form onSubmit={handleSubmit} noValidate>
         {/* Sahələr alt-alta (bir sütun) */}
         <div className="depo-stack">
+          {!isEdit && extraItems.length > 0 && <div className="depo-item-head">Məhsul 1: {extraItemName(form)}</div>}
           <DepoKateqoriyaBlock
             list={kateqoriyalar}
             setList={setKateqoriyalar}
@@ -832,6 +916,90 @@ export default function DepoForm() {
             placeholder="Məhsul haqqında qeyd…"
           />
         </div>
+        {!isEdit && (
+          <div style={{ marginTop: 8, maxWidth: 760, display: 'grid', gap: 8 }}>
+            {extraItems.map((it, idx) => (
+              <details
+                key={it.key}
+                className="depo-item"
+                open={it.open}
+                onToggle={(e) => {
+                  const open = e.currentTarget.open
+                  if (open !== it.open) updateExtraItem(idx, (x) => ({ ...x, open }))
+                }}
+              >
+                <summary className="depo-item__title">
+                  Məhsul {idx + 2}: {extraItemName(it.form)}
+                  {it.form.alis_qiymeti ? ` · ${it.form.alis_qiymeti} AZN` : ''}
+                </summary>
+                <div className="depo-stack depo-item__body">
+                  <DepoKateqoriyaBlock
+                    list={kateqoriyalar}
+                    setList={setKateqoriyalar}
+                    kateqoriya={it.form.kateqoriya || ''}
+                    nov={it.form.nov || ''}
+                    onChange={(patch) => updateExtraItem(idx, (x) => ({ ...x, form: { ...x.form, ...patch } }))}
+                  />
+                  {formColumns
+                    .filter((c) => !SHARED_ITEM_KEYS.has(c.key) && c.key !== 'kateqoriya' && c.key !== 'nov')
+                    .map((col) => {
+                      const f = it.form
+                      const isYeni = f.veziyyet_cihaz === 'teze'
+                      return (
+                        <DynamicField
+                          key={col.key}
+                          col={col}
+                          value={getFieldValue(f, col)}
+                          onChange={(v) =>
+                            updateExtraItem(idx, (x) => {
+                              let next = setFormField(x.form, col, v)
+                              if (col.key === 'veziyyet_cihaz') {
+                                if (v === 'teze') next = { ...next, battery_faiz: '100' }
+                                else if (v === 'kohne' && x.form.veziyyet_cihaz === 'teze') next = { ...next, battery_faiz: '' }
+                              }
+                              return { ...x, form: next }
+                            })
+                          }
+                          suggestions={suggestions}
+                          forceReadonly={col.key === 'battery_faiz' && isYeni}
+                          required={
+                            col.key === 'veziyyet_cihaz' || (form.odenis_novu === 'nisye' && col.key === 'alis_qiymeti')
+                          }
+                        />
+                      )
+                    })}
+                  <div className="form-group">
+                    <label>Komment</label>
+                    <textarea
+                      rows={2}
+                      value={it.form.kommentler ?? ''}
+                      onChange={(e) => {
+                        const v = e.target.value
+                        updateExtraItem(idx, (x) => ({ ...x, form: { ...x.form, kommentler: v } }))
+                      }}
+                    />
+                  </div>
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                    <button type="button" className="btn btn--secondary" onClick={() => updateExtraItem(idx, (x) => ({ ...x, open: false }))}>
+                      Bağla
+                    </button>
+                    <button type="button" className="btn btn--danger" onClick={() => removeExtraItem(idx)}>
+                      Bu məhsulu sil
+                    </button>
+                  </div>
+                </div>
+              </details>
+            ))}
+            <div>
+              <button type="button" className="btn btn--primary muqavile-yarat__btn" onClick={addExtraItem}>
+                + Məhsul əlavə et (eyni satıcıdan)
+              </button>
+              <span className="depo-msg depo-msg--hint" style={{ marginLeft: 12 }}>
+                Satıcı, tarix və ödəniş növü Məhsul 1-dən götürülür; hər məhsul Depoda ayrıca sətir olur.
+              </span>
+            </div>
+          </div>
+        )}
         <div className="depo-box kredit-stack" style={{ marginTop: 8, maxWidth: 760 }}>
           <div className="form-group">
             <label>Cihazın vəziyyəti və komplekti (alış müqaviləsi üçün)</label>
@@ -860,7 +1028,7 @@ export default function DepoForm() {
         {error && <p style={{ color: 'var(--color-accent)' }}>{error}</p>}
         <div style={{ display: 'flex', gap: 8, marginTop: 16, flexWrap: 'wrap' }}>
           <button type="submit" className="btn btn--primary" disabled={saving}>
-            {saving ? 'Saxlanılır…' : 'Saxla'}
+            {saving ? 'Saxlanılır…' : !isEdit && extraItems.length ? `Saxla (${extraItems.length + 1} məhsul)` : 'Saxla'}
           </button>
           <button
             type="button"
