@@ -58,6 +58,9 @@ const SHARED_ITEM_KEYS = new Set([
   'kimden_alinib', 'alis_tarixi', 'odenis_novu', 'qaytarma_tarixi', 'nomre', 'status', 'sira_no', 'senedler', 'kommentler',
 ])
 
+/** Yeni qeyddə məhsul çərçivələrindən yuxarıda (ortaq) göstərilən sahələr */
+const TOP_KEYS = new Set(['kimden_alinib', 'odenis_novu', 'qaytarma_tarixi'])
+
 /** Formda göstərilməyən sahələr (bazadakı dəyəri saxlanılır) */
 const FORM_HIDDEN_KEYS = new Set(['sexsiyyet'])
 
@@ -774,53 +777,8 @@ export default function DepoForm() {
     )
   }
 
-  return (
-    <div className="card">
-      <div className="record-module__header">
-        <h2 className="card__title" style={{ margin: 0 }}>
-          {isEdit ? 'Depo qeydini redaktə et' : 'Yeni depo qeydi'}
-        </h2>
-        {isEdit && (
-          <div className="record-module__actions">
-            <button
-              type="button"
-              className="btn btn--secondary"
-              onClick={() => {
-                setError(null)
-                if (record) applyRow(record)
-                setEditing(false)
-              }}
-            >
-              Baxışa qayıt
-            </button>
-          </div>
-        )}
-      </div>
-      <form onSubmit={handleSubmit} noValidate>
-        {/* Sahələr alt-alta (bir sütun). Yeni qeyddə Məhsul 1 də bağlanıb-açılan çərçivədədir */}
-        <details
-          className={isEdit ? 'depo-item depo-item--plain' : 'depo-item'}
-          open={isEdit || mainOpen}
-          onToggle={(e) => {
-            if (isEdit) return
-            const open = e.currentTarget.open
-            if (open !== mainOpen) setMainOpen(open)
-          }}
-          style={{ maxWidth: 760 }}
-        >
-        <summary className="depo-item__title">
-          Məhsul 1: {extraItemName(form)}
-          {form.alis_qiymeti ? ` · ${form.alis_qiymeti} AZN` : ''}
-        </summary>
-        <div className="depo-stack depo-item__body">
-          <DepoKateqoriyaBlock
-            list={kateqoriyalar}
-            setList={setKateqoriyalar}
-            kateqoriya={form.kateqoriya || ''}
-            nov={form.nov || ''}
-            onChange={(patch) => setForm((prev) => ({ ...prev, ...patch }))}
-          />
-          {formColumns.filter((c) => c.key !== 'senedler' && c.key !== 'kommentler').map((col) => {
+  /** Bir sahəni (sütunu) formda göstərir — Haradan / Sistem blokları daxil */
+  const renderMainCol = (col) => {
             const isYeni = form.veziyyet_cihaz === 'teze'
             const isKohne = form.veziyyet_cihaz === 'kohne'
             const field = (
@@ -906,7 +864,63 @@ export default function DepoForm() {
               )
             }
             return field
-          })}
+  }
+
+  return (
+    <div className="card">
+      <div className="record-module__header">
+        <h2 className="card__title" style={{ margin: 0 }}>
+          {isEdit ? 'Depo qeydini redaktə et' : 'Yeni depo qeydi'}
+        </h2>
+        {isEdit && (
+          <div className="record-module__actions">
+            <button
+              type="button"
+              className="btn btn--secondary"
+              onClick={() => {
+                setError(null)
+                if (record) applyRow(record)
+                setEditing(false)
+              }}
+            >
+              Baxışa qayıt
+            </button>
+          </div>
+        )}
+      </div>
+      <form onSubmit={handleSubmit} noValidate>
+        {/* Yeni qeyd: Haradan və Ödəniş növü (Nağd / Nisyə) — bütün məhsullar üçün ortaq, yuxarıda */}
+        {!isEdit && (
+          <div className="depo-stack depo-top" style={{ marginBottom: 10 }}>
+            {formColumns.filter((c) => TOP_KEYS.has(c.key)).map(renderMainCol)}
+          </div>
+        )}
+        {/* Sahələr alt-alta (bir sütun). Yeni qeyddə Məhsul 1 də bağlanıb-açılan çərçivədədir */}
+        <details
+          className={isEdit ? 'depo-item depo-item--plain' : 'depo-item'}
+          open={isEdit || mainOpen}
+          onToggle={(e) => {
+            if (isEdit) return
+            const open = e.currentTarget.open
+            if (open !== mainOpen) setMainOpen(open)
+          }}
+          style={{ maxWidth: 760 }}
+        >
+        <summary className="depo-item__title">
+          Məhsul 1: {extraItemName(form)}
+          {form.alis_qiymeti ? ` · ${form.alis_qiymeti} AZN` : ''}
+        </summary>
+        <div className="depo-stack depo-item__body">
+          <DepoKateqoriyaBlock
+            list={kateqoriyalar}
+            setList={setKateqoriyalar}
+            kateqoriya={form.kateqoriya || ''}
+            nov={form.nov || ''}
+            onChange={(patch) => setForm((prev) => ({ ...prev, ...patch }))}
+          />
+          {formColumns
+            .filter((c) => c.key !== 'senedler' && c.key !== 'kommentler' && (isEdit || !TOP_KEYS.has(c.key)))
+            .map(renderMainCol)}
           {!isEdit && (
             <div>
               <button type="button" className="btn btn--secondary" onClick={() => setMainOpen(false)}>
@@ -928,18 +942,6 @@ export default function DepoForm() {
             />
           </div>
         )}
-        <div className="form-group" style={{ marginTop: 8, maxWidth: 760 }}>
-          <label>Komment</label>
-          <textarea
-            rows={3}
-            value={form.kommentler ?? ''}
-            onChange={(e) => {
-              const v = e.target.value
-              setForm((prev) => ({ ...prev, kommentler: v }))
-            }}
-            placeholder="Məhsul haqqında qeyd…"
-          />
-        </div>
         {!isEdit && (
           <div style={{ marginTop: 8, maxWidth: 760, display: 'grid', gap: 8 }}>
             {extraItems.map((it, idx) => (
@@ -1019,12 +1021,24 @@ export default function DepoForm() {
                 + Məhsul əlavə et (eyni satıcıdan)
               </button>
               <span className="depo-msg depo-msg--hint" style={{ marginLeft: 12 }}>
-                Satıcı, tarix və ödəniş növü Məhsul 1-dən götürülür; hər məhsul Depoda ayrıca sətir olur.
+                Satıcı (Haradan), ödəniş növü və tarix bütün məhsullara aiddir; hər məhsul Depoda ayrıca sətir olur.
               </span>
             </div>
           </div>
         )}
-        <div className="depo-box kredit-stack" style={{ marginTop: 8, maxWidth: 760 }}>
+        <div className="form-group" style={{ marginTop: 12, maxWidth: 760 }}>
+          <label>Komment</label>
+          <textarea
+            rows={3}
+            value={form.kommentler ?? ''}
+            onChange={(e) => {
+              const v = e.target.value
+              setForm((prev) => ({ ...prev, kommentler: v }))
+            }}
+            placeholder="Məhsul haqqında qeyd…"
+          />
+        </div>
+        <div className="depo-box kredit-stack" style={{ marginTop: 24, maxWidth: 760 }}>
           <div className="form-group">
             <label>Cihazın vəziyyəti və komplekti (alış müqaviləsi üçün)</label>
             <input
