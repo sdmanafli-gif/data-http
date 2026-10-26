@@ -340,3 +340,17 @@
   border-bottom: 2px solid var(--color-accent);
   padding-bottom: 4px;
 }
+
+/* Redaktədə Məhsul 1 çərçivəsi görünmür (adi forma) */
+.depo-item--plain {
+  border: none;
+  background: transparent;
+}
+
+.depo-item--plain > .depo-item__title {
+  display: none;
+}
+
+.depo-item--plain > .depo-item__body {
+  padding: 0;
+}
