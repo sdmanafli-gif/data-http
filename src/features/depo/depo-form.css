@@ -386,3 +386,48 @@
   flex-basis: 100%;
   margin: 0;
 }
+
+/* «Əlavə məhsul» pəncərəsi: kredit formasının "xana + sağda izah" qaydası buraya tətbiq olunmasın
+   (filtrlər sıxılıb oxunmaz olurdu); xanalar və cədvəl iri, oxunaqlı */
+.kredit-stack .add-picker .form-group:not(.searchable-select) {
+  display: block;
+}
+
+.add-picker .form-group > input,
+.add-picker .form-group > select {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 38px;
+  font-size: 15px;
+}
+
+.add-picker .form-group > label {
+  display: block;
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.add-picker__search {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.add-picker__search .form-group {
+  margin-bottom: 0;
+}
+
+.add-picker .data-table {
+  font-size: 15px;
+}
+
+.add-picker .data-table th {
+  font-size: 14px;
+  white-space: nowrap;
+}
+
+.add-picker .data-table td {
+  white-space: nowrap;
+}
