@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { toPng } from 'html-to-image'
 import { supabase } from '../../lib/supabase'
 import { MUSTERI_TABLE, formatMoney, formatDate } from './constants'
 import { ODENISLER_TABLE } from '../odenisler/constants'
@@ -17,16 +16,6 @@ import {
   validatePaymentSchedule,
 } from './paymentSchedule'
 
-function snapshotFileName(record) {
-  const raw = String(record?.ad_soyad || 'musteri')
-  const safe = raw
-    .trim()
-    .replace(/[<>:"/\\|?*]+/g, '')
-    .replace(/\s+/g, '-')
-    .slice(0, 60)
-  return `odenis-qrafiki-${safe || 'musteri'}.png`
-}
-
 /**
  * Credit payment schedule — auto-built, optionally editable with validation.
  */
@@ -35,7 +24,6 @@ export default function PaymentScheduleList({ record, onRecordUpdated }) {
   const [payments, setPayments] = useState([])
   const [loadingPay, setLoadingPay] = useState(Boolean(record?.id))
   const [error, setError] = useState(null)
-  const [snapping, setSnapping] = useState(false)
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState([])
   const [saving, setSaving] = useState(false)
@@ -186,27 +174,6 @@ export default function PaymentScheduleList({ record, onRecordUpdated }) {
     persistSchedule(normalized)
   }
 
-  async function saveAsPhoto() {
-    if (!snapRef.current || snapping) return
-    setSnapping(true)
-    setError(null)
-    try {
-      const dataUrl = await toPng(snapRef.current, {
-        cacheBust: true,
-        pixelRatio: 2,
-        backgroundColor: '#ffffff',
-      })
-      const link = document.createElement('a')
-      link.download = snapshotFileName(localRecord)
-      link.href = dataUrl
-      link.click()
-    } catch (err) {
-      setError(err?.message || 'Şəkil yaradıla bilmədi.')
-    } finally {
-      setSnapping(false)
-    }
-  }
-
   if (!canBuildSchedule(localRecord) && !(Array.isArray(localRecord?.odenis_qrafiki) && localRecord.odenis_qrafiki.length)) {
     return (
       <div className="musteri-schedule">
@@ -268,15 +235,6 @@ export default function PaymentScheduleList({ record, onRecordUpdated }) {
               </button>
             </>
           )}
-          <button
-            type="button"
-            className="btn btn--secondary"
-            onClick={saveAsPhoto}
-            disabled={snapping || loadingPay || displayRows.length === 0 || editing}
-            title="Cədvəlin şəklini yüklə"
-          >
-            {snapping ? 'Şəkil hazırlanır…' : 'Şəkil kimi saxla'}
-          </button>
         </div>
       </div>
 
