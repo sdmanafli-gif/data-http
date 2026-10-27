@@ -63,6 +63,7 @@ export default function DepoFilterFields({
   onClear,
   foundCount,
   showVeziyyet = true,
+  showDates = true,
   idPrefix = 'depo-filter',
 }) {
   const options = useMemo(() => {
@@ -78,14 +79,18 @@ export default function DepoFilterFields({
 
   return (
     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'flex-end' }}>
-      <div className="form-group" style={{ marginBottom: 0, width: 150 }}>
-        <label>Tarixdən</label>
-        <input type="date" value={filters.tarixDen} onChange={(e) => onChange('tarixDen', e.target.value)} />
-      </div>
-      <div className="form-group" style={{ marginBottom: 0, width: 150 }}>
-        <label>Tarixədək</label>
-        <input type="date" value={filters.tarixDek} onChange={(e) => onChange('tarixDek', e.target.value)} />
-      </div>
+      {showDates && (
+        <>
+          <div className="form-group" style={{ marginBottom: 0, width: 150 }}>
+            <label>Tarixdən</label>
+            <input type="date" value={filters.tarixDen} onChange={(e) => onChange('tarixDen', e.target.value)} />
+          </div>
+          <div className="form-group" style={{ marginBottom: 0, width: 150 }}>
+            <label>Tarixədək</label>
+            <input type="date" value={filters.tarixDek} onChange={(e) => onChange('tarixDek', e.target.value)} />
+          </div>
+        </>
+      )}
       <div className="form-group" style={{ marginBottom: 0, width: 170 }}>
         <label>Kateqoriya</label>
         <select value={filters.kateqoriya} onChange={(e) => onChange('kateqoriya', e.target.value)}>
