@@ -9,6 +9,7 @@ import {
   waPhone,
   qebzMessage,
 } from '../lib/qebz'
+import { drawKreditCixaris, kreditMessage } from '../lib/kreditQebz'
 import '../styles/shared.css'
 
 /**
@@ -35,12 +36,17 @@ export default function QebzButton({ buildData, label = 'Qəbz', className = 'bt
   )
 }
 
+/** Qəbzi səhifə-səhifə canvas-a çəkir */
+function renderPages(d, logo) {
+  return d.kind === 'kredit' ? drawKreditCixaris(d, logo) : [drawQebz(d, logo)]
+}
+
 function QebzModal({ buildData, onClose }) {
   const { profile } = useAuth()
   const [data, setData] = useState(null)
   const [error, setError] = useState(null)
   const [phone, setPhone] = useState('')
-  const [preview, setPreview] = useState('')
+  const [preview, setPreview] = useState([])
   const [busy, setBusy] = useState(false)
   const [note, setNote] = useState('')
 
@@ -70,8 +76,8 @@ function QebzModal({ buildData, onClose }) {
     let cancelled = false
     loadQebzLogo().then((logo) => {
       if (cancelled) return
-      const canvas = drawQebz({ ...data, telefon: phone }, logo)
-      setPreview(canvas.toDataURL('image/png'))
+      const pages = renderPages({ ...data, telefon: phone }, logo)
+      setPreview(pages.map((c) => c.toDataURL('image/png')))
     })
     return () => {
       cancelled = true
@@ -87,8 +93,8 @@ function QebzModal({ buildData, onClose }) {
   async function makePdf() {
     const logo = await loadQebzLogo()
     const full = { ...data, telefon: phone }
-    const canvas = drawQebz(full, logo)
-    return { blob: canvasToPdfBlob(canvas), name: qebzFileName(full), full }
+    const pages = renderPages(full, logo)
+    return { blob: canvasToPdfBlob(pages), name: qebzFileName(full), full }
   }
 
   async function onDownload() {
@@ -109,7 +115,7 @@ function QebzModal({ buildData, onClose }) {
     setNote('')
     try {
       const { blob, name, full } = await makePdf()
-      const text = qebzMessage(full)
+      const text = full.kind === 'kredit' ? kreditMessage(full) : qebzMessage(full)
       const file = new File([blob], name, { type: 'application/pdf' })
       // Telefonda (və bəzi kompüterlərdə) faylı birbaşa paylaşmaq olur → WhatsApp seçilir
       if (navigator.canShare?.({ files: [file] })) {
@@ -137,16 +143,18 @@ function QebzModal({ buildData, onClose }) {
     }
   }
 
+  const title = data?.kind === 'kredit' ? 'Kredit çıxarışı' : 'Ödəniş qəbzi'
+
   return (
     <div className="telefon-modal-overlay" onClick={onClose} role="presentation">
       <div
         className="card qebz-modal"
         onClick={(e) => e.stopPropagation()}
         role="dialog"
-        aria-label="Ödəniş qəbzi"
+        aria-label={title}
       >
         <div className="qebz-modal__head">
-          <h2 className="card__title" style={{ margin: 0 }}>Ödəniş qəbzi</h2>
+          <h2 className="card__title" style={{ margin: 0 }}>{title}</h2>
           <button type="button" className="btn btn--secondary" onClick={onClose}>
             Bağla
           </button>
@@ -176,7 +184,11 @@ function QebzModal({ buildData, onClose }) {
             </div>
             {note && <p className="qebz-modal__note">{note}</p>}
             <div className="qebz-modal__preview">
-              {preview ? <img src={preview} alt="Qəbzin önbaxışı" /> : <p className="empty-state">Hazırlanır…</p>}
+              {preview.length ? (
+                preview.map((src, i) => <img key={i} src={src} alt={`Səhifə ${i + 1}`} />)
+              ) : (
+                <p className="empty-state">Hazırlanır…</p>
+              )}
             </div>
           </>
         )}
