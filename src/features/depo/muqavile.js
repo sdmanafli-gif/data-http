@@ -190,7 +190,12 @@ function isTelefon(item, cihaz) {
 
 function malImeiText(p) {
   const imei = [p.imei1, p.imei2].filter(Boolean).join(', ')
-  return imei ? `${p.ad} markalı, İMEİ kodu: ${imei}` : `${p.ad} markalı`
+  if (imei) return `${p.ad} markalı, İMEİ kodu: ${imei}`
+  // IMEI-si olmayan məhsul (MacBook, AirPods…): seriya / model nömrəsi
+  const sn = [p.seriya ? `seriya nömrəsi: ${p.seriya}` : '', p.modelNo ? `model: ${p.modelNo}` : '']
+    .filter(Boolean)
+    .join(', ')
+  return sn ? `${p.ad} markalı, ${sn}` : `${p.ad} markalı`
 }
 
 /**
@@ -209,14 +214,24 @@ export function buildMuqavileData({ musteriForm, kontakt, basket, linePrices, li
   const products = (basket || []).map((item, i) => {
     const c = lineCihaz?.[item.id] || {}
     const satis = Number(linePrices?.[item.id]?.satis) || 0
+    const imei1 = String(c.imei_1 || item.imei_1 || '').trim()
+    const imei2 = String(c.imei_2 || item.imei_2 || '').trim()
+    const seriya = String(c.serial_no || item.serial_no || '').trim()
+    const modelNo = String(c.model_no || item.model_no || '').trim()
+    // Müqavilə cədvəlinin IMEI 1 / IMEI 2 xanaları: IMEI yoxdursa — Seriya və Model
+    const noImei = !imei1 && !imei2
     return {
       no: String(i + 1),
       ad: malAdi(c, item, false),
       adReng: malAdi(c, item, true),
       qiymet: pul(satis),
       satis,
-      imei1: String(c.imei_1 || item.imei_1 || '').trim(),
-      imei2: String(c.imei_2 || item.imei_2 || '').trim(),
+      imei1,
+      imei2,
+      seriya,
+      modelNo,
+      col1: noImei ? (seriya ? `Seriya: ${seriya}` : '') : imei1,
+      col2: noImei ? (modelNo ? `Model: ${modelNo}` : '') : imei2,
       telefon: isTelefon(item, c),
     }
   })
@@ -291,7 +306,7 @@ export function buildMuqavileData({ musteriForm, kontakt, basket, linePrices, li
       {
         marker: '{M_NO}',
         rows: products.map((p) => ({
-          M_NO: p.no, M_AD: p.ad, M_QIYMET: p.qiymet, M_MIQDAR: '1', M_MEBLEG: p.qiymet, M_IMEI1: p.imei1, M_IMEI2: p.imei2,
+          M_NO: p.no, M_AD: p.ad, M_QIYMET: p.qiymet, M_MIQDAR: '1', M_MEBLEG: p.qiymet, M_IMEI1: p.col1, M_IMEI2: p.col2,
         })),
       },
       {
@@ -403,7 +418,7 @@ export function buildElave1Xml(data) {
   const pw = [450, 2990, 1000, 850, 1050, 1900, 1900]
   x += elTable(pw, [
     { header: true, cells: ['No', 'Malın Adı', 'Qiyməti', 'Miqdarı', 'Məbləğ', 'İMEİ 1', 'İMEİ 2'].map(hd) },
-    ...products.map((p) => ({ cells: [p.no, p.ad, p.qiymet, '1', p.qiymet, p.imei1, p.imei2].map((t) => c(t)) })),
+    ...products.map((p) => ({ cells: [p.no, p.ad, p.qiymet, '1', p.qiymet, p.col1, p.col2].map((t) => c(t)) })),
   ])
 
   x += elPara(elRun('2. Nisyə alqı satqı müqaviləsinin ödəniş cədvəli:', { bold: true, sz }), { before: 200, after: 60, keepNext: true, sz })
