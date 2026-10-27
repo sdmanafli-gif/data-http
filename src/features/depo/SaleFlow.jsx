@@ -262,6 +262,40 @@ function buildCombinedKreditForm({
  * 1) Choose type Kredit / Nağd / Borc·Nisyə
  * 2) Müştəri + terms → creates Müştəri Bazası / Nağd / Borc ledger + updates Depo
  */
+/** «Əlavə məhsul» pəncərəsinin cədvəli: məhsulun bütün məlumatları (sağa sürüşür) */
+const EXTRA_PICKER_COLUMNS = [
+  { key: 'sira_no', label: '№' },
+  { key: 'kateqoriya', label: 'Kateqoriya' },
+  { key: 'nov', label: 'Növ' },
+  { key: 'model', label: 'Model' },
+  { key: 'yaddas', label: 'Yaddaş' },
+  { key: 'reng', label: 'Rəng' },
+  { key: 'veziyyet_cihaz', label: 'Status' },
+  { key: 'battery_faiz', label: 'Battery', num: true },
+  { key: 'imei_1', label: 'IMEI 1' },
+  { key: 'imei_2', label: 'IMEI 2' },
+  { key: 'serial_no', label: 'Seriya No' },
+  { key: 'model_no', label: 'Model No' },
+  { key: 'sim_type', label: 'SIM' },
+  { key: 'alis_tarixi', label: 'Tarix' },
+  { key: 'alis_qiymeti', label: 'Qiymət', num: true },
+  { key: 'odenis_novu', label: 'Ödəniş növü' },
+  { key: 'kimden_alinib', label: 'Kimdən' },
+  { key: 'nomre', label: 'Nömrə' },
+  { key: 'kommentler', label: 'Komment' },
+]
+
+function extraCell(item, key) {
+  const v = item?.[key]
+  if (v == null || v === '') return '—'
+  if (key === 'alis_tarixi') return String(v).slice(0, 10).split('-').reverse().join('.')
+  if (key === 'veziyyet_cihaz') return v === 'teze' ? 'Təzə' : v === 'kohne' ? 'Köhnə' : String(v)
+  if (key === 'odenis_novu') return v === 'nagd' ? 'Nağd' : v === 'nisye' ? 'Nisyə' : String(v)
+  if (key === 'sim_type') return v === 'sim' ? 'SIM' : v === 'esim' ? 'eSIM' : v === 'both' ? 'SIM + eSIM' : String(v)
+  if (key === 'battery_faiz') return `${v}%`
+  return String(v)
+}
+
 export default function SaleFlow() {
   const { id: routeId } = useParams()
   const location = useLocation()
@@ -1446,16 +1480,12 @@ export default function SaleFlow() {
                   <table className="data-table">
                     <thead>
                       <tr>
-                        <th>Kateqoriya</th>
-                        <th>Növ</th>
-                        <th>Model</th>
-                        <th>Rəng</th>
-                        <th>IMEI 1</th>
-                        <th>IMEI 2</th>
-                        <th>Seriya No</th>
-                        <th>Tarix</th>
-                        <th>Qiymət</th>
-                        <th></th>
+                        {EXTRA_PICKER_COLUMNS.map((c) => (
+                          <th key={c.key} className={c.num ? 'num' : undefined}>
+                            {c.label}
+                          </th>
+                        ))}
+                        <th className="add-picker__sticky"></th>
                       </tr>
                     </thead>
                     <tbody>
@@ -1474,16 +1504,12 @@ export default function SaleFlow() {
                         })
                         .map((item) => (
                         <tr key={item.id}>
-                          <td>{item.kateqoriya || '—'}</td>
-                          <td>{item.nov || '—'}</td>
-                          <td>{item.model || '—'}</td>
-                          <td>{item.reng || '—'}</td>
-                          <td>{item.imei_1 || '—'}</td>
-                          <td>{item.imei_2 || '—'}</td>
-                          <td>{item.serial_no || '—'}</td>
-                          <td>{item.alis_tarixi ? String(item.alis_tarixi).slice(0, 10).split('-').reverse().join('.') : '—'}</td>
-                          <td className="num">{formatMoney(item.alis_qiymeti)}</td>
-                          <td>
+                          {EXTRA_PICKER_COLUMNS.map((c) => (
+                            <td key={c.key} className={c.num ? 'num' : c.key === 'kommentler' ? 'add-picker__wrap' : undefined}>
+                              {c.key === 'alis_qiymeti' ? formatMoney(item.alis_qiymeti) : extraCell(item, c.key)}
+                            </td>
+                          ))}
+                          <td className="add-picker__sticky">
                             <button type="button" className="btn btn--primary" onClick={() => addToBasket(item)}>
                               Səbətə əlavə et
                             </button>
