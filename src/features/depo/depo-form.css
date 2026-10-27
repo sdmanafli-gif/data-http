@@ -354,3 +354,35 @@
 .depo-item--plain > .depo-item__body {
   padding: 0;
 }
+
+/* Depo → Haradan: Müştəri — solda Müştəri №, sağda ad axtarışı + siyahı */
+.depo-customer-search {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px;
+}
+
+.depo-customer-search__id {
+  flex: 0 0 110px;
+  margin-bottom: 0;
+}
+
+.depo-customer-search__id input {
+  width: 100%;
+}
+
+.depo-customer-search__name {
+  flex: 1 1 280px;
+  min-width: 0;
+  max-width: 520px;
+}
+
+.depo-customer-search__name .searchable-select {
+  margin-bottom: 0;
+}
+
+.depo-customer-search__msg {
+  flex-basis: 100%;
+  margin: 0;
+}
