@@ -1,6 +1,11 @@
 /**
  * Depo formu: "Haradan" (Təchizatçı / Müştəri) və "Sistem" (var / yox) blokları.
  */
+import { useEffect, useState } from 'react'
+import { supabase } from '../../lib/supabase'
+import SearchableSelect from '../../components/SearchableSelect'
+import { MUSTERI_TABLE } from '../musteri-bazasi/constants'
+import { normMusteriName } from '../../lib/musteriler'
 
 export const NEW_PICK = '__new__'
 
@@ -127,9 +132,14 @@ export function customerExtraFields(yeni) {
 /**
  * @param {{ src, setSrc, suppliers: {value,label,name}[], customers: {value,label,name}[], onPickName: (name)=>void, children?: any }} p
  */
-export function HaradanBlock({ src, setSrc, suppliers, customers, onPickName, children, title = 'Haradan' }) {
+export function HaradanBlock({ src, setSrc, suppliers, customers, onPickName, children, title = 'Haradan', customerSearch = title === 'Haradan' }) {
   const isSup = src.tip === 'techizatci'
   const list = isSup ? suppliers : customers
+  const choose = (pick) => {
+    setSrc((prev) => ({ ...prev, pick }))
+    if (pick === NEW_PICK) onPickName(src.yeni.ad_soyad || '')
+    else onPickName(list.find((o) => o.value === pick)?.name || '')
+  }
   const setYeni = (k, v) =>
     setSrc((prev) => {
       const next = { ...prev, yeni: { ...prev.yeni, [k]: v } }
@@ -155,19 +165,15 @@ export function HaradanBlock({ src, setSrc, suppliers, customers, onPickName, ch
         </select>
       </div>
 
-      {src.tip && (
+      {src.tip && !isSup && customerSearch && (
+        <CustomerSearchRow src={src} customers={customers} choose={choose} />
+      )}
+
+      {src.tip && (isSup || !customerSearch) && (
         <div className="form-group" style={{ marginBottom: 0 }}>
           <label>{isSup ? 'Təchizatçı' : 'Müştəri'}</label>
           <div className="depo-inline">
-            <select
-              value={src.pick}
-              onChange={(e) => {
-                const pick = e.target.value
-                setSrc((prev) => ({ ...prev, pick }))
-                if (pick === NEW_PICK) onPickName(src.yeni.ad_soyad || '')
-                else onPickName(list.find((o) => o.value === pick)?.name || '')
-              }}
-            >
+            <select value={src.pick} onChange={(e) => choose(e.target.value)}>
               <option value="">— Seçin —</option>
               <option value={NEW_PICK}>{isSup ? '+ Yeni Təchizatçı' : '+ Yeni Müştəri'}</option>
               {list.map((o) => (
@@ -204,6 +210,86 @@ export function HaradanBlock({ src, setSrc, suppliers, customers, onPickName, ch
 
       {/* Fayllar (Təchizatçı və ya Müştəri — fərq etmir) */}
       {children}
+    </div>
+  )
+}
+
+/**
+ * Müştəri seçimi: solda kiçik «Müştəri №» (yalnız nömrə ilə tapır),
+ * sağda Ad Soyad Ata adı yazıb axtarmaq + bütün müştərilərin siyahısı.
+ * Müştəri № = Müştəri Bazasındakı sıra nömrəsi (sira_no).
+ */
+function CustomerSearchRow({ src, customers, choose }) {
+  const [no, setNo] = useState('')
+  const [msg, setMsg] = useState('')
+
+  useEffect(() => {
+    const n = no.trim()
+    if (!/^\d{1,9}$/.test(n)) {
+      setMsg('')
+      return
+    }
+    let cancelled = false
+    setMsg('Axtarılır…')
+    const t = setTimeout(async () => {
+      const { data, error } = await supabase
+        .from(MUSTERI_TABLE)
+        .select('musteri_id, ad_soyad')
+        .eq('sira_no', Number(n))
+        .limit(1)
+      if (cancelled) return
+      const row = data?.[0]
+      if (error || !row) {
+        setMsg(`№ ${n} tapılmadı`)
+        return
+      }
+      let opt = row.musteri_id ? customers.find((o) => o.value === `m:${row.musteri_id}`) : null
+      if (!opt && row.ad_soyad) {
+        const k = normMusteriName(row.ad_soyad)
+        opt = customers.find((o) => normMusteriName(o.name) === k)
+      }
+      if (!opt) {
+        setMsg(`№ ${n}: ${row.ad_soyad || ''} — siyahıda tapılmadı`)
+        return
+      }
+      setMsg('')
+      choose(opt.value)
+    }, 400)
+    return () => {
+      cancelled = true
+      clearTimeout(t)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [no, customers])
+
+  const options = [{ value: NEW_PICK, label: '+ Yeni Müştəri' }, ...customers]
+
+  return (
+    <div className="depo-customer-search">
+      <div className="form-group depo-customer-search__id">
+        <label>Müştəri №</label>
+        <input
+          value={no}
+          onChange={(e) => setNo(e.target.value.replace(/\D/g, '').slice(0, 9))}
+          inputMode="numeric"
+          placeholder="məs. 123"
+          autoComplete="off"
+        />
+      </div>
+      <div className="depo-customer-search__name">
+        <SearchableSelect
+          label="Müştəri"
+          options={options}
+          value={src.pick}
+          onChange={(v) => {
+            setNo('')
+            choose(v || '')
+          }}
+          placeholder="Ad Soyad Ata adı yazın və ya siyahıdan seçin…"
+          noResultsText="Bu adla müştəri yoxdur. «+ Yeni Müştəri» seçin."
+        />
+      </div>
+      {msg ? <p className="depo-msg depo-msg--hint depo-customer-search__msg">{msg}</p> : null}
     </div>
   )
 }
