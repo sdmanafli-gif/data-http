@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import { confirmDelete } from '../../lib/confirmDelete'
+import QebzButton from '../../components/QebzButton'
+import { buildCreditQebz } from '../../lib/qebzData'
 import {
   ODENISLER_TABLE,
   tipLabel,
@@ -112,6 +114,7 @@ export default function ClientPaymentsPanel({ musteriId, manageable = false, onC
                   <th>Tip</th>
                   <th>Məbləğ</th>
                   <th>Qeyd</th>
+                  <th></th>
                   {manageable && <th></th>}
                 </tr>
               </thead>
@@ -126,6 +129,12 @@ export default function ClientPaymentsPanel({ musteriId, manageable = false, onC
                     <td>{tipLabel(r.tip)}</td>
                     <td style={{ fontWeight: 600 }}>{formatMoney(r.mebleg)}</td>
                     <td>{r.qeyd || '—'}</td>
+                    <td>
+                      <QebzButton
+                        style={{ padding: '4px 10px', fontSize: 12 }}
+                        buildData={() => buildCreditQebz(r.id)}
+                      />
+                    </td>
                     {manageable && (
                       <td>
                         <button
