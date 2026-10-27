@@ -20,6 +20,24 @@ export function cleanPhone(raw) {
   return m ? m[0].trim() : ''
 }
 
+/** Ödəniş üsulu qəbzdə: «Kart» yazılmır, əvəzinə «Hesab» */
+function usulText(usulu, fallback = '') {
+  if (usulu === 'kart') return 'Hesab'
+  if (usulu === 'nagd') return 'Nağd'
+  const l = usuluLabel(usulu)
+  if (!l || l === '—') return fallback
+  return /kart/i.test(l) ? 'Hesab' : l
+}
+
+/** Borc/Nisyə: aldıqda Mədaxil, verdikdə Məxaric */
+const LEDGER_DIRECTION = {
+  borc_aldim: 'Mədaxil',
+  nisye_aldim: 'Mədaxil',
+  nisye_odenis: 'Mədaxil',
+  borc_verdim: 'Məxaric',
+  nisye_verdim: 'Məxaric',
+}
+
 function sortByTime(a, b) {
   const at = a.tarix || ''
   const bt = b.tarix || ''
@@ -69,7 +87,7 @@ export async function buildCreditQebz(paymentId) {
     qarsiTeref: m?.ad_soyad || pay.ad_soyad,
     telefon: cleanPhone(m?.nomre_1),
     mebleg: Number(pay.mebleg) || 0,
-    odenisNovu: usuluLabel(pay.odenis_usulu) !== '—' ? usuluLabel(pay.odenis_usulu) : 'Nağd',
+    odenisNovu: usulText(pay.odenis_usulu, 'Nağd'),
     emeliyyat: `Mədaxil — ${odenisTipLabel(pay.tip)}`,
     mehsul: m?.model || '',
     yekunBorcText: formatQebzMoney(qalan),
@@ -119,8 +137,6 @@ export async function buildLedgerQebz(row) {
   if (net > 0) yekunBorcText = `${formatQebzMoney(net)} (sizin borcunuz)`
   else if (net < 0) yekunBorcText = `${formatQebzMoney(-net)} (bizim borcumuz)`
 
-  const mehsul = [row.mehsul, [row.imei_1, row.imei_2].filter(Boolean).join(' / ')].filter(Boolean).join(' · ')
-
   return {
     tarix: row.tarix,
     no: row.sira_no != null ? `BN-${row.sira_no}` : `BN-${String(row.id).slice(0, 6).toUpperCase()}`,
@@ -128,8 +144,7 @@ export async function buildLedgerQebz(row) {
     telefon,
     mebleg: Number(row.mebleg) || 0,
     odenisNovu: null,
-    emeliyyat: ledgerTipLabel(row.tip),
-    mehsul,
+    emeliyyat: LEDGER_DIRECTION[row.tip] || ledgerTipLabel(row.tip),
     yekunBorcText,
   }
 }
@@ -218,7 +233,7 @@ export async function buildKreditCixaris(musteriId) {
       tarix: p.tarix,
       tip: odenisTipLabel(p.tip),
       mebleg: Number(p.mebleg) || 0,
-      usul: usuluLabel(p.odenis_usulu) !== '—' ? usuluLabel(p.odenis_usulu) : '',
+      usul: usulText(p.odenis_usulu),
     })),
   }
 }
