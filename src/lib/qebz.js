@@ -189,12 +189,14 @@ function dataUrlToBytes(dataUrl) {
   return out
 }
 
-/** Bir JPEG şəkildən A4 PDF düzəldir */
-export function jpegToPdfBlob(jpegBytes, imgW, imgH) {
+/**
+ * JPEG şəkillərdən A4 PDF düzəldir — hər şəkil bir səhifə.
+ * pages: [{ bytes: Uint8Array, w: number, h: number }]
+ */
+export function jpegPagesToPdfBlob(pages) {
   const enc = new TextEncoder()
   const pageW = 595.28
   const pageH = 841.89
-  const content = `q\n${pageW} 0 0 ${pageH} 0 0 cm\n/Im0 Do\nQ\n`
   const parts = []
   const offsets = []
   let length = 0
@@ -210,30 +212,47 @@ export function jpegToPdfBlob(jpegBytes, imgW, imgH) {
     push('\nendobj\n')
   }
 
+  // 1 = Catalog, 2 = Pages, sonra hər səhifə üçün 3 obyekt: Page, Image, Contents
+  const n = pages.length
+  const pageObj = (i) => 3 + i * 3
   push('%PDF-1.4\n')
   obj(1, ['<< /Type /Catalog /Pages 2 0 R >>'])
-  obj(2, ['<< /Type /Pages /Kids [3 0 R] /Count 1 >>'])
-  obj(3, [
-    `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pageW} ${pageH}] /Resources << /XObject << /Im0 4 0 R >> >> /Contents 5 0 R >>`,
-  ])
-  obj(4, [
-    `<< /Type /XObject /Subtype /Image /Width ${imgW} /Height ${imgH} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${jpegBytes.length} >>\nstream\n`,
-    jpegBytes,
-    '\nendstream',
-  ])
-  obj(5, [`<< /Length ${enc.encode(content).length} >>\nstream\n${content}endstream`])
+  const kids = pages.map((_, i) => `${pageObj(i)} 0 R`).join(' ')
+  obj(2, [`<< /Type /Pages /Kids [${kids}] /Count ${n} >>`])
+  const content = `q\n${pageW} 0 0 ${pageH} 0 0 cm\n/Im0 Do\nQ\n`
+  pages.forEach((pg, i) => {
+    const po = pageObj(i)
+    obj(po, [
+      `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pageW} ${pageH}] /Resources << /XObject << /Im0 ${po + 1} 0 R >> >> /Contents ${po + 2} 0 R >>`,
+    ])
+    obj(po + 1, [
+      `<< /Type /XObject /Subtype /Image /Width ${pg.w} /Height ${pg.h} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${pg.bytes.length} >>\nstream\n`,
+      pg.bytes,
+      '\nendstream',
+    ])
+    obj(po + 2, [`<< /Length ${enc.encode(content).length} >>\nstream\n${content}endstream`])
+  })
 
+  const total = 3 + n * 3
   const xref = length
-  let x = `xref\n0 6\n0000000000 65535 f \n`
-  for (let n = 1; n <= 5; n++) x += `${String(offsets[n]).padStart(10, '0')} 00000 n \n`
+  let x = `xref\n0 ${total}\n0000000000 65535 f \n`
+  for (let k = 1; k < total; k++) x += `${String(offsets[k]).padStart(10, '0')} 00000 n \n`
   push(x)
-  push(`trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`)
+  push(`trailer\n<< /Size ${total} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`)
   return new Blob(parts, { type: 'application/pdf' })
 }
 
-export function canvasToPdfBlob(canvas) {
-  const bytes = dataUrlToBytes(canvas.toDataURL('image/jpeg', 0.9))
-  return jpegToPdfBlob(bytes, canvas.width, canvas.height)
+/** Köhnə ad: bir şəkil → bir səhifəlik PDF */
+export function jpegToPdfBlob(jpegBytes, imgW, imgH) {
+  return jpegPagesToPdfBlob([{ bytes: jpegBytes, w: imgW, h: imgH }])
+}
+
+/** Bir və ya bir neçə canvas → PDF (hər canvas bir səhifə) */
+export function canvasToPdfBlob(canvasOrList) {
+  const list = Array.isArray(canvasOrList) ? canvasOrList : [canvasOrList]
+  return jpegPagesToPdfBlob(
+    list.map((c) => ({ bytes: dataUrlToBytes(c.toDataURL('image/jpeg', 0.9)), w: c.width, h: c.height }))
+  )
 }
 
 export function qebzFileName(data) {
