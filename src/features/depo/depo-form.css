@@ -431,3 +431,23 @@
 .add-picker .data-table td {
   white-space: nowrap;
 }
+
+/* Əlavə məhsul cədvəli sağa sürüşür; «Səbətə əlavə et» sağda sabit qalır */
+.add-picker .table-wrap {
+  overflow-x: auto;
+  max-width: 100%;
+}
+
+.add-picker .add-picker__sticky {
+  position: sticky;
+  right: 0;
+  background: var(--color-surface, #fff);
+  box-shadow: -6px 0 8px -6px rgba(0, 0, 0, 0.25);
+  z-index: 1;
+}
+
+.add-picker .data-table td.add-picker__wrap {
+  white-space: normal;
+  min-width: 220px;
+  max-width: 360px;
+}
