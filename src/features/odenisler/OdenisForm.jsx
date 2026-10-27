@@ -1,3 +1,5 @@
+import QebzButton from '../../components/QebzButton'
+import { buildCreditQebz } from '../../lib/qebzData'
 import { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { supabase, fetchAllPages } from '../../lib/supabase'
@@ -301,7 +303,8 @@ export default function OdenisForm() {
         getRowValue={(row, col) => row?.[col.key]}
         actions={
           <>
-            <button type="button" className="btn btn--primary" onClick={() => setEditing(true)}>
+            <QebzButton className="btn btn--primary" buildData={() => buildCreditQebz(record.id)} />
+            <button type="button" className="btn btn--secondary" onClick={() => setEditing(true)}>
               Redaktə
             </button>
             <button
