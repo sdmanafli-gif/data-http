@@ -300,7 +300,8 @@ export default function SaleFlow() {
   const [ledgerMehsul, setLedgerMehsul] = useState([])
   const [availableExtras, setAvailableExtras] = useState([])
   const [showAddPicker, setShowAddPicker] = useState(false)
-  const [extraFilter, setExtraFilter] = useState('')
+  // «Əlavə məhsul» pəncərəsi: IMEI 1 / IMEI 2 / Seriya üzrə ayrıca axtarış
+  const [extraSearch, setExtraSearch] = useState({ imei1: '', imei2: '', seriya: '' })
   const [extraFilters, setExtraFilters] = useState(() => ({ ...EMPTY_DEPO_FILTERS }))
   // Borc / Nisyə satış: Kimə (Təchizatçı / Müştəri) — Depodakı "Haradan" kimi
   const [kimeSrc, setKimeSrc] = useState(() => emptySource())
@@ -1410,25 +1411,33 @@ export default function SaleFlow() {
                   onChange={(k, v) => setExtraFilters((prev) => nextFilters(prev, k, v))}
                   onClear={() => {
                     setExtraFilters({ ...EMPTY_DEPO_FILTERS })
-                    setExtraFilter('')
+                    setExtraSearch({ imei1: '', imei2: '', seriya: '' })
                   }}
                   showVeziyyet={false}
                   idPrefix="depo-extra-filters"
                 />
               </div>
-              <div className="form-group" style={{ marginBottom: 12 }}>
-                <label htmlFor="depo-extra-filter">Axtar</label>
-                <input
-                  id="depo-extra-filter"
-                  type="search"
-                  value={extraFilter}
-                  onChange={(e) => setExtraFilter(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') e.preventDefault()
-                  }}
-                  placeholder="Model, rəng, IMEI…"
-                  autoComplete="off"
-                />
+              <div className="add-picker__search">
+                {[
+                  { key: 'imei1', label: 'IMEI 1', ph: 'IMEI 1 yazın…' },
+                  { key: 'imei2', label: 'IMEI 2', ph: 'IMEI 2 yazın…' },
+                  { key: 'seriya', label: 'Seriya No', ph: 'Seriya nömrəsi…' },
+                ].map((f) => (
+                  <div key={f.key} className="form-group">
+                    <label htmlFor={`depo-extra-${f.key}`}>{f.label}</label>
+                    <input
+                      id={`depo-extra-${f.key}`}
+                      type="search"
+                      value={extraSearch[f.key]}
+                      onChange={(e) => setExtraSearch((prev) => ({ ...prev, [f.key]: e.target.value }))}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') e.preventDefault()
+                      }}
+                      placeholder={f.ph}
+                      autoComplete="off"
+                    />
+                  </div>
+                ))}
               </div>
               {availableExtras.length === 0 ? (
                 <p className="empty-state">Əlavə edilə biləcək məhsul yoxdur.</p>
@@ -1441,7 +1450,9 @@ export default function SaleFlow() {
                         <th>Növ</th>
                         <th>Model</th>
                         <th>Rəng</th>
-                        <th>IMEI</th>
+                        <th>IMEI 1</th>
+                        <th>IMEI 2</th>
+                        <th>Seriya No</th>
                         <th>Tarix</th>
                         <th>Qiymət</th>
                         <th></th>
@@ -1450,10 +1461,16 @@ export default function SaleFlow() {
                     <tbody>
                       {applyDepoFilters(availableExtras, extraFilters)
                         .filter((item) => {
-                          const q = extraFilter.trim().toLowerCase()
-                          if (!q) return true
-                          const hay = `${item.model || ''} ${item.reng || ''} ${item.imei_1 || ''} ${item.imei_2 || ''}`.toLowerCase()
-                          return hay.includes(q)
+                          const has = (field, q) => {
+                            const t = String(q || '').replace(/\s+/g, '').toLowerCase()
+                            if (!t) return true
+                            return String(field || '').replace(/\s+/g, '').toLowerCase().includes(t)
+                          }
+                          return (
+                            has(item.imei_1, extraSearch.imei1) &&
+                            has(item.imei_2, extraSearch.imei2) &&
+                            has(item.serial_no, extraSearch.seriya)
+                          )
                         })
                         .map((item) => (
                         <tr key={item.id}>
@@ -1462,6 +1479,8 @@ export default function SaleFlow() {
                           <td>{item.model || '—'}</td>
                           <td>{item.reng || '—'}</td>
                           <td>{item.imei_1 || '—'}</td>
+                          <td>{item.imei_2 || '—'}</td>
+                          <td>{item.serial_no || '—'}</td>
                           <td>{item.alis_tarixi ? String(item.alis_tarixi).slice(0, 10).split('-').reverse().join('.') : '—'}</td>
                           <td className="num">{formatMoney(item.alis_qiymeti)}</td>
                           <td>
