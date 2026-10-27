@@ -6,6 +6,13 @@ import { formatQebzMoney } from './qebz'
 import { normMusteriName } from './musteriler'
 import { ODENISLER_TABLE, MUSTERI_TABLE, tipLabel as odenisTipLabel, usuluLabel } from '../features/odenisler/constants'
 import { LEDGER_TABLE, tipLabel as ledgerTipLabel, computeBalances } from '../features/borc-nisye/constants'
+import {
+  resolvePaymentSchedule,
+  matchPaymentsToSchedule,
+  matchedScheduleTotals,
+  scheduleTotals,
+  statusLabel,
+} from '../features/musteri-bazasi/paymentSchedule'
 
 /** Xanada nömrədən başqa yazı da ola bilər (məs. «051 559 30 65 Ad Soyad») — yalnız nömrəni götürür */
 export function cleanPhone(raw) {
@@ -124,5 +131,94 @@ export async function buildLedgerQebz(row) {
     emeliyyat: ledgerTipLabel(row.tip),
     mehsul,
     yekunBorcText,
+  }
+}
+
+/** Bugünkü tarix yerli vaxtla (UTC ilə gecə saatlarında bir gün geri düşməsin) */
+function todayLocal() {
+  const d = new Date()
+  return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10)
+}
+
+/**
+ * Kredit çıxarışı — saytdakı «Ödəniş qrafiki» ilə eyni hesablama (paymentSchedule.js).
+ */
+export async function buildKreditCixaris(musteriId) {
+  const [{ data: m, error }, { data: pays, error: pErr }] = await Promise.all([
+    supabase.from(MUSTERI_TABLE).select('*').eq('id', musteriId).single(),
+    supabase
+      .from(ODENISLER_TABLE)
+      .select('id, tip, mebleg, tarix, odenis_usulu, created_at')
+      .eq('musteri_bazasi_id', musteriId),
+  ])
+  if (error) throw error
+  if (pErr) throw pErr
+
+  const payments = [...(pays || [])].sort(sortByTime)
+  const schedule = resolvePaymentSchedule(m)
+  const matched = matchPaymentsToSchedule(schedule, payments, { aylıq: Number(m.ayliq_odenis) || 0 })
+  const t = matchedScheduleTotals(matched, payments)
+  const st = scheduleTotals(schedule)
+
+  const round = (n) => Math.round((Number(n) || 0) * 100) / 100
+  const sale = Number(m.satis_qiymeti) || st.cemi
+  // Qrafik yoxdursa: ödənilib = ilkin + aylıq ödənişlər
+  const paid = schedule.length
+    ? round(t.paid)
+    : round(payments.filter((p) => p.tip !== 'faiz').reduce((a, p) => a + (Number(p.mebleg) || 0), 0))
+  const qalan = schedule.length ? round(t.remaining) : Math.max(0, round(sale - paid))
+  const faizPaid = round(t.penaltyPaid)
+  const faizQaliq = round(t.penaltyRemaining)
+
+  const ayliqLines = schedule.filter((s) => s.type === 'ayliq')
+  const months = Number(m.nece_ay) || ayliqLines.length
+  const ayliq = Number(m.ayliq_odenis) || Number(ayliqLines[0]?.mebleg) || 0
+  const ilkin = schedule.length ? st.ilkin : Math.max(0, sale - months * ayliq)
+  const ayStr = (n) => String(Math.round(n * 100) / 100).replace('.', ',')
+
+  const summary = [
+    { label: 'İlkin ödəniş', value: formatQebzMoney(ilkin) },
+    { label: `${months} ay × ${ayStr(ayliq)} AZN`, value: formatQebzMoney(months * ayliq) },
+    { label: 'Cəmi məbləğ', value: formatQebzMoney(sale), bold: true },
+    { label: 'Ödənilib', value: formatQebzMoney(paid) },
+    { label: 'Qalan borc', value: formatQebzMoney(qalan), bold: true },
+    { label: 'Gecikmə faizi', value: formatQebzMoney(t.penalty) },
+    { label: 'Ödənilən faiz', value: formatQebzMoney(faizPaid) },
+    { label: 'Qalan faiz borcu', value: formatQebzMoney(faizQaliq) },
+    { label: 'Cəmi qalan borc və faiz borcu', value: formatQebzMoney(qalan + faizQaliq), bold: true, accent: true },
+  ]
+
+  const ayliqMatched = matched.filter((l) => l.type === 'ayliq')
+  const paidMonths = ayliqMatched.filter((l) => (Number(l.remaining) || 0) <= 0).length
+
+  return {
+    kind: 'kredit',
+    tarix: todayLocal(),
+    no: `KC-${m.sira_no ?? '?'}`,
+    musteri: m.ad_soyad,
+    qarsiTeref: m.ad_soyad,
+    telefon: cleanPhone(m.nomre_1),
+    mehsul: [m.model, m.yaddas, m.reng].filter(Boolean).join(' '),
+    verilmeTarixi: m.verilme_tarixi,
+    summary,
+    totalMonths: ayliqMatched.length,
+    paidMonths,
+    leftMonths: ayliqMatched.length - paidMonths,
+    schedule: matched.map((l) => ({
+      no: l.type === 'ilkin' ? 'İlkin' : String(l.installment),
+      tarix: l.tarix,
+      mebleg: l.owed,
+      odenilib: l.paid,
+      qaliq: l.remaining,
+      gecikme: l.delayDays,
+      status: l.status,
+      statusLabel: statusLabel(l.status),
+    })),
+    payments: payments.map((p) => ({
+      tarix: p.tarix,
+      tip: odenisTipLabel(p.tip),
+      mebleg: Number(p.mebleg) || 0,
+      usul: usuluLabel(p.odenis_usulu) !== '—' ? usuluLabel(p.odenis_usulu) : '',
+    })),
   }
 }
