@@ -7,6 +7,12 @@ import { normMusteriName } from './musteriler'
 import { ODENISLER_TABLE, MUSTERI_TABLE, tipLabel as odenisTipLabel, usuluLabel } from '../features/odenisler/constants'
 import { LEDGER_TABLE, tipLabel as ledgerTipLabel, computeBalances } from '../features/borc-nisye/constants'
 
+/** Xanada nömrədən başqa yazı da ola bilər (məs. «051 559 30 65 Ad Soyad») — yalnız nömrəni götürür */
+export function cleanPhone(raw) {
+  const m = String(raw || '').match(/\+?\d[\d\s()-]{6,}\d/)
+  return m ? m[0].trim() : ''
+}
+
 function sortByTime(a, b) {
   const at = a.tarix || ''
   const bt = b.tarix || ''
@@ -54,7 +60,7 @@ export async function buildCreditQebz(paymentId) {
     tarix: pay.tarix,
     no: `K-${siraNo ?? '?'}/${idx + 1}`,
     qarsiTeref: m?.ad_soyad || pay.ad_soyad,
-    telefon: m?.nomre_1 || '',
+    telefon: cleanPhone(m?.nomre_1),
     mebleg: Number(pay.mebleg) || 0,
     odenisNovu: usuluLabel(pay.odenis_usulu) !== '—' ? usuluLabel(pay.odenis_usulu) : 'Nağd',
     emeliyyat: `Mədaxil — ${odenisTipLabel(pay.tip)}`,
@@ -72,7 +78,7 @@ async function phoneByName(name) {
     supabase.from('musteriler').select('ad_soyad, nomre_1').ilike('ad_soyad', name.trim()),
   ])
   const hit = [...(t || []), ...(m || [])].find((r) => normMusteriName(r.ad_soyad) === k && r.nomre_1)
-  return hit?.nomre_1 || ''
+  return cleanPhone(hit?.nomre_1)
 }
 
 /**
