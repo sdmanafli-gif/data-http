@@ -36,7 +36,7 @@ export default function QebzButton({ buildData, label = 'Qəbz', className = 'bt
 }
 
 function QebzModal({ buildData, onClose }) {
-  const { profile, user } = useAuth()
+  const { profile } = useAuth()
   const [data, setData] = useState(null)
   const [error, setError] = useState(null)
   const [phone, setPhone] = useState('')
@@ -44,7 +44,7 @@ function QebzModal({ buildData, onClose }) {
   const [busy, setBusy] = useState(false)
   const [note, setNote] = useState('')
 
-  const terdibEden = profile?.display_name || user?.email || 'Mobideal'
+  const terdibEden = profile?.display_name || 'Mobideal'
 
   useEffect(() => {
     let cancelled = false
