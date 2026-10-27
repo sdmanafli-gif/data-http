@@ -292,9 +292,10 @@
   overflow-x: auto;
 }
 
-/* Kredit formunda «Əlavə məhsul» açıq olanda çərçivə sağa genişlənsin — «Səbətə əlavə et» düymələri görünsün */
+/* Kredit formunda «Əlavə məhsul» açıq olanda çərçivə səhifənin sonuna qədər genişlənsin;
+   bağlananda (və ya məhsul seçiləndə) əvvəlki ölçüsünə qayıdır */
 .kredit-stack:has(.add-picker) {
-  max-width: min(1200px, 100%);
+  max-width: none;
 }
 
 .kredit-stack:has(.add-picker) .collapse-section__body.depo-stack {
