@@ -335,7 +335,7 @@ export default function SaleFlow() {
   const [availableExtras, setAvailableExtras] = useState([])
   const [showAddPicker, setShowAddPicker] = useState(false)
   // «Əlavə məhsul» pəncərəsi: IMEI 1 / IMEI 2 / Seriya üzrə ayrıca axtarış
-  const [extraSearch, setExtraSearch] = useState({ imei1: '', imei2: '', seriya: '' })
+  const [extraSearch, setExtraSearch] = useState({ ad: '', imei1: '', imei2: '', seriya: '' })
   const [extraFilters, setExtraFilters] = useState(() => ({ ...EMPTY_DEPO_FILTERS }))
   // Borc / Nisyə satış: Kimə (Təchizatçı / Müştəri) — Depodakı "Haradan" kimi
   const [kimeSrc, setKimeSrc] = useState(() => emptySource())
@@ -606,6 +606,8 @@ export default function SaleFlow() {
       setLedgerMehsul((prev) => uniqueSorted([...prev, item.model]))
     }
     setAvailableExtras((prev) => prev.filter((r) => r.id !== item.id))
+    // Kredit formasında məhsul seçiləndə pəncərə bağlanır, forma əvvəlki ölçüsünə qayıdır
+    if (step === 2) setShowAddPicker(false)
   }
 
   function removeFromBasket(itemId) {
@@ -1445,14 +1447,16 @@ export default function SaleFlow() {
                   onChange={(k, v) => setExtraFilters((prev) => nextFilters(prev, k, v))}
                   onClear={() => {
                     setExtraFilters({ ...EMPTY_DEPO_FILTERS })
-                    setExtraSearch({ imei1: '', imei2: '', seriya: '' })
+                    setExtraSearch({ ad: '', imei1: '', imei2: '', seriya: '' })
                   }}
                   showVeziyyet={false}
+                  showDates={false}
                   idPrefix="depo-extra-filters"
                 />
               </div>
               <div className="add-picker__search">
                 {[
+                  { key: 'ad', label: 'Məhsulun adı', ph: 'məs. iPhone 14 128' },
                   { key: 'imei1', label: 'IMEI 1', ph: 'IMEI 1 yazın…' },
                   { key: 'imei2', label: 'IMEI 2', ph: 'IMEI 2 yazın…' },
                   { key: 'seriya', label: 'Seriya No', ph: 'Seriya nömrəsi…' },
@@ -1496,6 +1500,16 @@ export default function SaleFlow() {
                             if (!t) return true
                             return String(field || '').replace(/\s+/g, '').toLowerCase().includes(t)
                           }
+                          // Məhsulun adı: yazılan hər söz növ / model / yaddaş / rəng / kateqoriyada olmalıdır
+                          const adHay = [item.kateqoriya, item.nov, item.model, item.yaddas, item.reng]
+                            .filter(Boolean)
+                            .join(' ')
+                            .toLocaleLowerCase('az')
+                          const adWords = String(extraSearch.ad || '')
+                            .toLocaleLowerCase('az')
+                            .split(/\s+/)
+                            .filter(Boolean)
+                          if (adWords.some((w) => !adHay.includes(w))) return false
                           return (
                             has(item.imei_1, extraSearch.imei1) &&
                             has(item.imei_2, extraSearch.imei2) &&
