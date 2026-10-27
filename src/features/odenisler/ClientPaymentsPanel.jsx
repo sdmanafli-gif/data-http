@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import { confirmDelete } from '../../lib/confirmDelete'
 import QebzButton from '../../components/QebzButton'
-import { buildCreditQebz } from '../../lib/qebzData'
+import { buildCreditQebz, buildKreditCixaris } from '../../lib/qebzData'
 import {
   ODENISLER_TABLE,
   tipLabel,
@@ -71,6 +71,8 @@ export default function ClientPaymentsPanel({ musteriId, manageable = false, onC
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
         {!manageable && <h3 className="card__title" style={{ margin: 0 }}>Ödənişlər</h3>}
         {manageable && <div />}
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        <QebzButton label="Kredit qəbzi" buildData={() => buildKreditCixaris(musteriId)} />
         <Link
           to={`/odenisler/yeni?musteri=${musteriId}`}
           className="btn btn--primary"
@@ -78,6 +80,7 @@ export default function ClientPaymentsPanel({ musteriId, manageable = false, onC
         >
           Ödəniş et
         </Link>
+        </div>
       </div>
 
       {error && <p style={{ color: 'var(--color-accent)' }}>{error}</p>}
