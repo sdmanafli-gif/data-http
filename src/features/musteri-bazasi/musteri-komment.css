@@ -1,0 +1,39 @@
+/* Müştəri kartı: Komment — tam en, 2 sətir; komment varsa qırmızı çərçivə */
+.musteri-komment {
+  width: 100%;
+  display: grid;
+  gap: 4px;
+}
+
+.musteri-komment label {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.musteri-komment__status {
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--color-text-muted);
+}
+
+.musteri-komment textarea {
+  width: 100%;
+  max-width: none;
+  box-sizing: border-box;
+  min-height: 3.6em;
+  resize: vertical;
+  line-height: 1.4;
+  font: inherit;
+}
+
+.musteri-komment--has textarea {
+  border: 2px solid var(--color-accent, #e30613);
+  background: #fdecea;
+  color: #222;
+}
+
+.musteri-komment--has label {
+  color: var(--color-accent, #e30613);
+  font-weight: 600;
+}
