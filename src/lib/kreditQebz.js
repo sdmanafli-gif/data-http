@@ -96,9 +96,9 @@ function createDoc() {
 }
 
 function sectionTitle(doc, text) {
-  doc.ensure(90)
+  doc.ensure(120)
   const ctx = doc.ctx
-  doc.y += 20
+  doc.y += 56
   ctx.fillStyle = RED
   ctx.textAlign = 'left'
   ctx.font = `bold 30px ${FONT}`
