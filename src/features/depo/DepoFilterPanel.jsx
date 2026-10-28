@@ -17,6 +17,20 @@ function uniqSorted(values) {
   return [...seen.values()].sort((a, b) => a.localeCompare(b, 'az'))
 }
 
+/**
+ * Model siyahısı seçilmiş Kateqoriya və Növə görə: Telefon / iPhone seçiləndə
+ * yalnız iPhone modelləri, Aksesuar / Adapter seçiləndə yalnız adapter modelləri.
+ */
+export function modelsFor(rows, kateqoriya, nov) {
+  const kat = lcAz(kateqoriya)
+  const n = lcAz(nov)
+  return uniqSorted(
+    (rows || [])
+      .filter((r) => (!kat || lcAz(r.kateqoriya) === kat) && (!n || lcAz(r.nov) === n))
+      .map((r) => r.model)
+  )
+}
+
 export function countActiveFilters(filters) {
   return Object.values(filters || {}).filter(Boolean).length
 }
@@ -71,9 +85,9 @@ export default function DepoFilterFields({
     return {
       kateqoriya: uniqSorted(rows.map((r) => r.kateqoriya)),
       nov: uniqSorted(rows.filter((r) => !kat || lcAz(r.kateqoriya) === kat).map((r) => r.nov)),
-      model: uniqSorted(rows.map((r) => r.model)),
+      model: modelsFor(rows, filters.kateqoriya, filters.nov),
     }
-  }, [rows, filters.kateqoriya])
+  }, [rows, filters.kateqoriya, filters.nov])
 
   const active = countActiveFilters(showVeziyyet ? filters : { ...filters, veziyyet: '' })
 
