@@ -208,9 +208,17 @@ function collectionSummary(yigimRows, payments, range, today) {
 
 /* ---------- Kiçik komponentlər ---------- */
 
-function Kpi({ label, value, hint, tone, delta }) {
+function Kpi({ label, value, hint, tone, delta, onOpen }) {
+  const clickable = Boolean(onOpen)
   return (
-    <div className={`an-kpi${tone ? ` an-kpi--${tone}` : ''}`}>
+    <div
+      className={`an-kpi${tone ? ` an-kpi--${tone}` : ''}${clickable ? ' an-kpi--click' : ''}`}
+      onClick={onOpen}
+      onKeyDown={clickable ? (e) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), onOpen()) : undefined}
+      role={clickable ? 'button' : undefined}
+      tabIndex={clickable ? 0 : undefined}
+      title={clickable ? 'Ətraflı bax' : undefined}
+    >
       <div className="an-kpi__label">{label}</div>
       <div className="an-kpi__value">{value}</div>
       {(hint || delta) && (
@@ -351,6 +359,338 @@ function TopList({ title, rows, empty = 'Məlumat yoxdur.' }) {
   )
 }
 
+/* ---------- Ətraflı (kartlara basanda) ---------- */
+
+const ODENIS_TIP = { ilkin: 'İlkin', ayliq: 'Aylıq', faiz: 'Cərimə faizi' }
+
+function buildDetail(kind, ctx) {
+  const { data, range, a, yigimRows, today } = ctx
+  const kreditById = new Map(data.kredit.map((m) => [m.id, m]))
+  const who = (m) => (m ? `${m.sira_no != null ? `#${m.sira_no} ` : ''}${m.ad_soyad || '—'}` : '—')
+
+  const saleRows = () => {
+    const rows = []
+    for (const r of data.nagd) {
+      if (!inRange(r.tarix, range)) continue
+      rows.push({
+        tarix: r.tarix,
+        nov: r.satis_novu === 'nisye' ? 'Nisyə' : 'Nağd',
+        kim: r.kime || '—',
+        model: r.model || '—',
+        satis: num(r.satis_qiymeti),
+        alis: num(r.alis_qiymeti),
+        faiz: num(r.satici_faizi),
+        menfeet: r2(nagdProfit(r)),
+      })
+    }
+    for (const m of data.kredit) {
+      if (!inRange(m.verilme_tarixi, range)) continue
+      rows.push({
+        tarix: m.verilme_tarixi,
+        nov: 'Kredit',
+        kim: who(m),
+        model: m.model || '—',
+        satis: num(m.satis_qiymeti),
+        alis: num(m.alis_qiymeti),
+        faiz: num(m.satici_faizi),
+        menfeet: r2(kreditProfit(m)),
+      })
+    }
+    return rows
+  }
+  const saleCols = [
+    { key: 'tarix', label: 'Tarix', date: true },
+    { key: 'nov', label: 'Növ' },
+    { key: 'kim', label: 'Kimə' },
+    { key: 'model', label: 'Model' },
+    { key: 'satis', label: 'Satış', money: true },
+    { key: 'alis', label: 'Alış', money: true },
+    { key: 'faiz', label: 'Satıcı faizi', money: true },
+    { key: 'menfeet', label: 'Mənfəət', money: true, tone: true },
+  ]
+  const byType = (rows, field) =>
+    ['Nağd', 'Nisyə', 'Kredit'].map((t) => ({
+      label: t,
+      value: azn(rows.filter((r) => r.nov === t).reduce((s, r) => s + r[field], 0)),
+    }))
+
+  if (kind === 'satis') {
+    const rows = saleRows()
+    return {
+      title: 'Satış dövriyyəsi',
+      summary: [...byType(rows, 'satis'), { label: 'Cəmi', value: azn(a.cur.satisCemi), bold: true }],
+      columns: saleCols,
+      rows,
+      sort: { key: 'tarix', dir: -1 },
+    }
+  }
+  if (kind === 'menfeet') {
+    const rows = saleRows()
+    for (const p of data.odenisler) {
+      if (p.tip !== 'faiz' || !inRange(p.tarix, range)) continue
+      rows.push({ tarix: p.tarix, nov: 'Cərimə faizi', kim: kreditById.has(p.musteri_bazasi_id) ? who(kreditById.get(p.musteri_bazasi_id)) : p.ad_soyad || '—', model: '—', satis: 0, alis: 0, faiz: 0, menfeet: num(p.mebleg) })
+    }
+    const nomreById = new Map(data.nomreler.map((n) => [n.id, n.nomre]))
+    for (const n of data.nomreler) {
+      if (!inRange(n.alis_tarixi, range) || !num(n.alis_qiymeti)) continue
+      rows.push({ tarix: n.alis_tarixi, nov: 'Nömrə alışı', kim: n.nomre || '—', model: '—', satis: 0, alis: 0, faiz: 0, menfeet: -num(n.alis_qiymeti) })
+    }
+    for (const b of data.nomreBalans) {
+      if (!inRange(b.tarix, range)) continue
+      rows.push({ tarix: b.tarix, nov: 'Nömrə balansı', kim: nomreById.get(b.nomre_id) || '—', model: '—', satis: 0, alis: 0, faiz: 0, menfeet: -num(b.mebleg) })
+    }
+    return {
+      title: 'Xalis mənfəət — haradan gəlir',
+      summary: [
+        ...byType(rows, 'menfeet').map((x) => ({ ...x, label: `${x.label} satışlar` })),
+        { label: '+ Cərimə faizi', value: azn(a.cur.faiz) },
+        { label: '− Nömrə xərcləri', value: azn(-a.cur.nomreXerc) },
+        { label: 'Xalis mənfəət', value: azn(a.cur.xalis), bold: true },
+      ],
+      columns: saleCols,
+      rows,
+      sort: { key: 'menfeet', dir: -1 },
+    }
+  }
+  if (kind === 'odenis') {
+    const rows = data.odenisler
+      .filter((p) => inRange(p.tarix, range))
+      .map((p) => ({
+        tarix: p.tarix,
+        kim: kreditById.has(p.musteri_bazasi_id) ? who(kreditById.get(p.musteri_bazasi_id)) : p.ad_soyad || '—',
+        model: kreditById.get(p.musteri_bazasi_id)?.model || '—',
+        tip: ODENIS_TIP[p.tip] || p.tip || '—',
+        mebleg: num(p.mebleg),
+      }))
+    const sumTip = (t) => azn(rows.filter((r) => r.tip === t).reduce((s, r) => s + r.mebleg, 0))
+    return {
+      title: 'Daxil olan ödənişlər',
+      summary: [
+        { label: 'İlkin', value: sumTip('İlkin') },
+        { label: 'Aylıq', value: sumTip('Aylıq') },
+        { label: 'Cərimə faizi', value: sumTip('Cərimə faizi') },
+        { label: 'Cəmi', value: azn(a.cur.odenis), bold: true },
+      ],
+      columns: [
+        { key: 'tarix', label: 'Tarix', date: true },
+        { key: 'kim', label: 'Müştəri' },
+        { key: 'model', label: 'Model' },
+        { key: 'tip', label: 'Növ' },
+        { key: 'mebleg', label: 'Məbləğ', money: true },
+      ],
+      rows,
+      sort: { key: 'tarix', dir: -1 },
+    }
+  }
+  if (kind === 'alis') {
+    const rows = data.depo
+      .filter((d) => inRange(d.alis_tarixi, range))
+      .map((d) => {
+        const q = Math.max(1, num(d.miqdar) || 1)
+        return { tarix: d.alis_tarixi, model: d.model || '—', kim: d.kimden_alinib || '—', say: q, qiymet: num(d.alis_qiymeti), cemi: num(d.alis_qiymeti) * q }
+      })
+    return {
+      title: 'Alışlar (Depoya daxil olan mal)',
+      summary: [{ label: 'Cəmi', value: azn(a.cur.alis), bold: true }, { label: 'Məhsul', value: String(rows.length) }],
+      columns: [
+        { key: 'tarix', label: 'Tarix', date: true },
+        { key: 'model', label: 'Model' },
+        { key: 'kim', label: 'Kimdən' },
+        { key: 'say', label: 'Say', num: true },
+        { key: 'qiymet', label: 'Qiymət', money: true },
+        { key: 'cemi', label: 'Cəmi', money: true },
+      ],
+      rows,
+      sort: { key: 'tarix', dir: -1 },
+    }
+  }
+  if (kind === 'yigim') {
+    const rows = yigimRows
+      .filter((r) => inRange(r.tarix, range) && r.tarix <= today)
+      .map((r) => ({
+        tarix: r.tarix,
+        kim: `${r.sira_no != null ? `#${r.sira_no} ` : ''}${r.ad_soyad}`,
+        model: r.model || '—',
+        tip: r.label,
+        owed: num(r.owed),
+        paid: num(r.paid),
+        qalan: num(r.remaining),
+      }))
+    return {
+      title: 'Yığım — qrafikə görə bu dövrdə gözlənilən',
+      summary: [
+        { label: 'Gözlənilən', value: azn(a.col.owed) },
+        { label: 'Bu dövrdə daxil olub', value: azn(a.col.paid) },
+        { label: 'Yığım faizi', value: pctText(a.col.rate), bold: true },
+      ],
+      columns: [
+        { key: 'tarix', label: 'Tarix', date: true },
+        { key: 'kim', label: 'Müştəri' },
+        { key: 'model', label: 'Model' },
+        { key: 'tip', label: 'Növ' },
+        { key: 'owed', label: 'Məbləğ', money: true },
+        { key: 'paid', label: 'Ödənilib', money: true },
+        { key: 'qalan', label: 'Qalan', money: true, tone: 'bad' },
+      ],
+      rows,
+      sort: { key: 'qalan', dir: -1 },
+    }
+  }
+  if (kind === 'gecikme') {
+    return {
+      title: 'Gecikmiş ödənişlər',
+      summary: [{ label: 'Müştəri', value: String(a.lateCount) }, { label: 'Cəmi', value: azn(a.lateSum), bold: true }],
+      columns: [
+        { key: 'kim', label: 'Müştəri' },
+        { key: 'days', label: 'Ən çox gecikmə (gün)', num: true },
+        { key: 'sum', label: 'Gecikmiş məbləğ', money: true, tone: 'bad' },
+      ],
+      rows: a.lateList.map((g) => ({ kim: `${g.sira != null ? `#${g.sira} ` : ''}${g.name}`, days: g.days, sum: g.sum })),
+      sort: { key: 'sum', dir: -1 },
+    }
+  }
+  if (kind === 'alacaq' || kind === 'borc') {
+    const rows = []
+    if (kind === 'alacaq') {
+      for (const m of data.kredit) {
+        const q = Math.max(0, num(m.qalan_borc))
+        if (q <= 0.009 || (m.veziyyet !== 'Qalıb' && m.veziyyet !== 'Məhkəmə')) continue
+        rows.push({ kim: who(m), nov: m.veziyyet === 'Məhkəmə' ? 'Məhkəmə' : 'Kredit', model: m.model || '—', mebleg: q })
+      }
+      for (const p of a.ledgerPeople) if (p.net > 0) rows.push({ kim: p.name, nov: 'Borc / Nisyə', model: '—', mebleg: p.net })
+    } else {
+      for (const p of a.ledgerPeople) if (p.net < 0) rows.push({ kim: p.name, nov: 'Borc / Nisyə', model: '—', mebleg: -p.net })
+    }
+    return {
+      title: kind === 'alacaq' ? 'Alacaq — kim bizə borcludur' : 'Borcunuz — kimə borclusunuz',
+      summary:
+        kind === 'alacaq'
+          ? [
+              { label: 'Kredit', value: azn(a.kreditQalan) },
+              { label: 'Borc / Nisyə', value: azn(a.ledgerAlacaq) },
+              { label: 'Məhkəmə', value: azn(a.mehkemeQalan) },
+            ]
+          : [{ label: 'Cəmi', value: azn(a.ledgerBorc), bold: true }],
+      columns: [
+        { key: 'kim', label: 'Kim' },
+        { key: 'nov', label: 'Növ' },
+        { key: 'model', label: 'Model' },
+        { key: 'mebleg', label: 'Qalıq', money: true },
+      ],
+      rows,
+      sort: { key: 'mebleg', dir: -1 },
+    }
+  }
+  return null
+}
+
+function DetailModal({ detail, onClose }) {
+  const [q, setQ] = useState('')
+  const [sort, setSort] = useState(detail.sort || { key: detail.columns[0].key, dir: -1 })
+  useEffect(() => {
+    const onKey = (e) => e.key === 'Escape' && onClose()
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose])
+  const rows = useMemo(() => {
+    const term = q.trim().toLocaleLowerCase('az')
+    const list = term
+      ? detail.rows.filter((r) => detail.columns.some((c) => String(r[c.key] ?? '').toLocaleLowerCase('az').includes(term)))
+      : [...detail.rows]
+    const col = detail.columns.find((c) => c.key === sort.key)
+    list.sort((x, y) => {
+      const a = x[sort.key]
+      const b = y[sort.key]
+      if (col?.money || col?.num) return (num(a) - num(b)) * sort.dir
+      return String(a ?? '').localeCompare(String(b ?? ''), 'az') * sort.dir
+    })
+    return list
+  }, [detail, q, sort])
+  const moneyTotals = detail.columns.filter((c) => c.money).map((c) => [c.key, rows.reduce((s, r) => s + num(r[c.key]), 0)])
+  const totals = Object.fromEntries(moneyTotals)
+  return (
+    <div className="an-modal-overlay" onClick={onClose} role="presentation">
+      <div className="an-modal" onClick={(e) => e.stopPropagation()} role="dialog" aria-label={detail.title}>
+        <div className="an-modal__head">
+          <h2>{detail.title}</h2>
+          <button type="button" className="btn btn--secondary" onClick={onClose}>
+            Bağla
+          </button>
+        </div>
+        <div className="an-modal__summary">
+          {detail.summary.map((s) => (
+            <div key={s.label} className={s.bold ? 'an-modal__sum an-modal__sum--bold' : 'an-modal__sum'}>
+              <span>{s.label}</span>
+              <b>{s.value}</b>
+            </div>
+          ))}
+        </div>
+        <input
+          className="an-modal__search"
+          type="search"
+          placeholder="Axtar: ad, model, növ…"
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+        />
+        <div className="table-wrap an-modal__table">
+          <table className="data-table">
+            <thead>
+              <tr>
+                {detail.columns.map((c) => (
+                  <th
+                    key={c.key}
+                    className={c.money || c.num ? 'num' : undefined}
+                    onClick={() => setSort((s) => ({ key: c.key, dir: s.key === c.key ? -s.dir : -1 }))}
+                    style={{ cursor: 'pointer', whiteSpace: 'nowrap' }}
+                    title="Sırala"
+                  >
+                    {c.label} {sort.key === c.key ? (sort.dir > 0 ? '↑' : '↓') : ''}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.length === 0 ? (
+                <tr>
+                  <td colSpan={detail.columns.length} className="empty-state">
+                    Qeyd yoxdur.
+                  </td>
+                </tr>
+              ) : (
+                rows.map((r, i) => (
+                  <tr key={i}>
+                    {detail.columns.map((c) => {
+                      const v = r[c.key]
+                      const toneCls =
+                        c.tone === true ? (num(v) < 0 ? 'an-tone--bad' : 'an-tone--good') : c.tone === 'bad' && num(v) > 0 ? 'an-tone--bad' : ''
+                      return (
+                        <td key={c.key} className={[c.money || c.num ? 'num' : '', toneCls].filter(Boolean).join(' ') || undefined}>
+                          {c.money ? azn(v) : c.date ? dmy(v) : v ?? '—'}
+                        </td>
+                      )
+                    })}
+                  </tr>
+                ))
+              )}
+            </tbody>
+            {moneyTotals.length > 0 && rows.length > 0 && (
+              <tfoot>
+                <tr>
+                  {detail.columns.map((c, i) => (
+                    <td key={c.key} className={c.money ? 'num' : undefined}>
+                      {i === 0 ? `Cəmi (${rows.length})` : c.money ? azn(totals[c.key]) : ''}
+                    </td>
+                  ))}
+                </tr>
+              </tfoot>
+            )}
+          </table>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 /* ---------- Səhifə ---------- */
 
 export default function AnalitikaPage() {
@@ -361,6 +701,7 @@ export default function AnalitikaPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [warn, setWarn] = useState(null)
+  const [detailKind, setDetailKind] = useState(null)
 
   async function load() {
     setLoading(true)
@@ -376,7 +717,7 @@ export default function AnalitikaPage() {
             )
             .order('id', { ascending: true })
         ),
-        fetchAllPages(() => supabase.from('odenisler').select('id, musteri_bazasi_id, tip, mebleg, tarix').order('id', { ascending: true })),
+        fetchAllPages(() => supabase.from('odenisler').select('id, musteri_bazasi_id, ad_soyad, tip, mebleg, tarix').order('id', { ascending: true })),
         fetchAllPages(() =>
           supabase
             .from('nagd_satish')
@@ -395,8 +736,8 @@ export default function AnalitikaPage() {
       if (err) throw err
       // Nömrə xərcləri — cədvəllər yoxdursa sadəcə 0 sayılır
       const [nm, nb] = await Promise.all([
-        fetchAllPages(() => supabase.from('nomreler').select('id, alis_tarixi, alis_qiymeti').order('id', { ascending: true })),
-        fetchAllPages(() => supabase.from('nomre_balanslar').select('id, tarix, mebleg').order('id', { ascending: true })),
+        fetchAllPages(() => supabase.from('nomreler').select('id, nomre, alis_tarixi, alis_qiymeti').order('id', { ascending: true })),
+        fetchAllPages(() => supabase.from('nomre_balanslar').select('id, nomre_id, tarix, mebleg').order('id', { ascending: true })),
       ])
       if (nm.error || nb.error) setWarn('Nömrə xərcləri yüklənmədi — hesablamaya daxil edilmədi.')
       // Yazı səhvi ola biləcək çox böyük məbləğlər ayrıca göstərilir, cəmlərə qatılmır
@@ -567,7 +908,8 @@ export default function AnalitikaPage() {
       .filter((m) => m.veziyyet === 'Qalıb' && num(m.qalan_borc) > 0)
       .sort((x, y) => num(y.qalan_borc) - num(x.qalan_borc))
       .slice(0, 6)
-    const topLate = [...lateByCustomer.values()].sort((x, y) => y.sum - x.sum).slice(0, 6)
+    const lateList = [...lateByCustomer.values()].sort((x, y) => y.sum - x.sum)
+    const topLate = lateList.slice(0, 6)
 
     // Depoda mal neçə ayın satışına bəs edir (son 3 ayın orta alış dəyəri ilə)
     const last3 = months.slice(-3)
@@ -596,6 +938,7 @@ export default function AnalitikaPage() {
       topSuppliers,
       topDebtors,
       topLate,
+      lateList,
       stockMonths: avgCostSold > 0 ? Math.round((depoDeyer / avgCostSold) * 10) / 10 : null,
     }
   }, [data, yigimRows, range, prevRange, today])
@@ -732,6 +1075,7 @@ export default function AnalitikaPage() {
               value={azn(a.cur.satisCemi)}
               delta={a.prev && <Delta cur={a.cur.satisCemi} prev={a.prev.satisCemi} />}
               hint={`${a.cur.satisCount} satış`}
+              onOpen={() => setDetailKind('satis')}
             />
             <Kpi
               label="Xalis mənfəət"
@@ -739,24 +1083,35 @@ export default function AnalitikaPage() {
               tone={a.cur.xalis >= 0 ? 'good' : 'bad'}
               delta={a.prev && <Delta cur={a.cur.xalis} prev={a.prev.xalis} />}
               hint={`marja ${pctText(pct(a.cur.xalis, a.cur.satisCemi))}`}
+              onOpen={() => setDetailKind('menfeet')}
             />
             <Kpi
               label="Daxil olan ödənişlər"
               value={azn(a.cur.odenis)}
               delta={a.prev && <Delta cur={a.cur.odenis} prev={a.prev.odenis} />}
               hint="kredit ilkin + aylıq + faiz"
+              onOpen={() => setDetailKind('odenis')}
             />
-            <Kpi label="Alışlar (Depoya)" value={azn(a.cur.alis)} hint={`${a.cur.alisCount} məhsul`} />
+            <Kpi label="Alışlar (Depoya)" value={azn(a.cur.alis)} hint={`${a.cur.alisCount} məhsul`} onOpen={() => setDetailKind('alis')} />
             <Kpi
               label="Yığım faizi"
               value={pctText(a.col.rate)}
               tone={a.col.rate == null ? undefined : a.col.rate >= 85 ? 'good' : a.col.rate >= 70 ? 'warn' : 'bad'}
               hint={`daxil olub ${azn(a.col.paid)} / gözlənilən ${azn(a.col.owed)}`}
+              onOpen={() => setDetailKind('yigim')}
             />
-            <Kpi label="Gecikmiş ödənişlər" value={azn(a.lateSum)} tone={a.lateSum > 0 ? 'bad' : 'good'} hint={`${a.lateCount} müştəri`} />
-            <Kpi label="Alacaq (bizə borclu)" value={azn(a.alacaq)} hint={`kredit ${azn(a.kreditQalan)} · borc/nisyə ${azn(a.ledgerAlacaq)}`} />
-            <Kpi label="Borcunuz" value={azn(a.ledgerBorc)} tone={a.ledgerBorc > 0 ? 'warn' : undefined} hint="Borc / Nisyə üzrə" />
+            <Kpi label="Gecikmiş ödənişlər" value={azn(a.lateSum)} tone={a.lateSum > 0 ? 'bad' : 'good'} hint={`${a.lateCount} müştəri`} onOpen={() => setDetailKind('gecikme')} />
+            <Kpi label="Alacaq (bizə borclu)" value={azn(a.alacaq)} hint={`kredit ${azn(a.kreditQalan)} · borc/nisyə ${azn(a.ledgerAlacaq)}`} onOpen={() => setDetailKind('alacaq')} />
+            <Kpi label="Borcunuz" value={azn(a.ledgerBorc)} tone={a.ledgerBorc > 0 ? 'warn' : undefined} hint="Borc / Nisyə üzrə" onOpen={() => setDetailKind('borc')} />
           </div>
+
+          {detailKind && (
+            <DetailModal
+              key={`${detailKind}-${range.from}-${range.to}`}
+              detail={buildDetail(detailKind, { data, range, a, yigimRows, today })}
+              onClose={() => setDetailKind(null)}
+            />
+          )}
 
           {/* Məsləhətlər */}
           <div className="card an-card">
