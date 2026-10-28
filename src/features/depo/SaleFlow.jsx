@@ -65,6 +65,7 @@ import KreditSaleFields, {
 } from './KreditSaleFields'
 import MuqavileYarat from './MuqavileYarat'
 import { buildMuqavileData, createMuqavileDocx, createAlisDocx } from './muqavile'
+import HediyyeBlock, { emptyHediyyeler, hediyyeTotal, hediyyeExtra } from './HediyyeBlock'
 import BarterAlis, { EMPTY_BARTER, barterAmount, barterMissing } from './BarterAlis'
 import { parseSenedler, uploadSenedlerFiles } from '../../lib/senedler'
 
@@ -201,6 +202,7 @@ function buildCombinedKreditForm({
   lineCihaz,
   musteriForm,
   paidTotal,
+  hediyyeler = [],
 }) {
   const joined = {}
   for (const key of KREDIT_JOIN_TEXT_KEYS) {
@@ -220,7 +222,9 @@ function buildCombinedKreditForm({
     alis += Number(lp.alis) || 0
     satis += Number(lp.satis) || 0
   }
-  alis = Math.round(alis * 100) / 100
+  // Hədiyyələrin dəyəri gəlirdən çıxılsın deyə alış qiymətinə əlavə olunur
+  const hediyyeDeyeri = hediyyeTotal(hediyyeler)
+  alis = Math.round((alis + hediyyeDeyeri) * 100) / 100
   satis = Math.round(satis * 100) / 100
   const paid = Math.round((Number(paidTotal) || 0) * 100) / 100
 
@@ -252,6 +256,9 @@ function buildCombinedKreditForm({
       line_alis: joinSlash(basket.map((item) => linePrices[item.id]?.alis ?? '')),
       line_satis: joinSlash(basket.map((item) => linePrices[item.id]?.satis ?? '')),
       line_battery_faiz: batteryJoined,
+      ...(hediyyeDeyeri > 0 || hediyyeExtra(hediyyeler).length
+        ? { hediyyeler: hediyyeExtra(hediyyeler), hediyye_deyeri: hediyyeDeyeri }
+        : {}),
     },
   }
 }
@@ -369,6 +376,8 @@ export default function SaleFlow() {
   const [muqavileSig, setMuqavileSig] = useState('')
   /** Kredit: barter — müştərinin verdiyi cihaz (ilkin ödənişə sayılır, satışdan sonra Depoya düşür) */
   const [barter, setBarter] = useState(() => ({ ...EMPTY_BARTER }))
+  /** Kredit satışı: Hədiyyələr (5 sətir) */
+  const [hediyyeler, setHediyyeler] = useState(() => emptyHediyyeler())
   const [alisFile, setAlisFile] = useState(null)
   const [alisSig, setAlisSig] = useState('')
   const [ilkinManual, setIlkinManual] = useState(false)
@@ -606,6 +615,8 @@ export default function SaleFlow() {
       setLedgerMehsul((prev) => uniqueSorted([...prev, item.model]))
     }
     setAvailableExtras((prev) => prev.filter((r) => r.id !== item.id))
+    // Eyni məhsul hədiyyə kimi seçilibsə — hədiyyədən çıxır (həm satış, həm hədiyyə ola bilməz)
+    setHediyyeler((prev) => prev.map((h) => (h.depoItem?.id === item.id ? { ad: '', qiymet: '', depoItem: null } : h)))
     // Kredit formasında məhsul seçiləndə pəncərə bağlanır, forma əvvəlki ölçüsünə qayıdır
     if (step === 2) setShowAddPicker(false)
   }
@@ -1301,6 +1312,7 @@ export default function SaleFlow() {
         lineCihaz,
         musteriForm,
         paidTotal,
+        hediyyeler,
       })
 
       const payload = {
@@ -1374,6 +1386,10 @@ export default function SaleFlow() {
 
       for (const item of basket) {
         await markDepoSold(item)
+      }
+      // Depodan seçilmiş hədiyyələr də «Satılıb» olur
+      for (const h of hediyyeler) {
+        if (h.depoItem?.id) await markDepoSold(h.depoItem)
       }
 
       // Müqavilə yaradılıbsa: təsdiqlənmiş qrafiklə yenidən hazırlayıb müştərinin sənədlərinə yüklə
@@ -1559,13 +1575,15 @@ export default function SaleFlow() {
     gozlenilen_gelir: formatMoney(
       (Number(musteriForm.satis_qiymeti) || totals.satis || 0) -
         (Number(musteriForm.alis_qiymeti) || totals.alis || 0) -
-        (Number(musteriForm.satici_faizi) || 0)
+        (Number(musteriForm.satici_faizi) || 0) -
+        hediyyeTotal(hediyyeler)
     ),
     faktiki_gelir: formatMoney(
       (Number(ilkinOdenisVerilib) || 0) +
         (Number(musteriForm.faiz) || 0) -
         (Number(musteriForm.alis_qiymeti) || totals.alis || 0) -
-        (Number(musteriForm.satici_faizi) || 0)
+        (Number(musteriForm.satici_faizi) || 0) -
+        hediyyeTotal(hediyyeler)
     ),
     qalan_borc: formatMoney(
       (Number(musteriForm.satis_qiymeti) || totals.satis || 0) - (Number(ilkinOdenisVerilib) || 0)
@@ -1854,6 +1872,13 @@ export default function SaleFlow() {
               kontakt={kreditKontakt}
               addPicker={addPickerPanel}
               barterAmount={barterAmount(barter)}
+              hediyyeSlot={
+                <HediyyeBlock
+                  value={hediyyeler}
+                  onChange={setHediyyeler}
+                  excludeIds={basket.map((b) => b.id)}
+                />
+              }
               barterSlot={
                 <BarterAlis
                   value={barter}
