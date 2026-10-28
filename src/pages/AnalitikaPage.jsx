@@ -165,10 +165,12 @@ function salesSummary(data, range) {
   let nomreXerc = 0
   for (const n of data.nomreler) if (inRange(n.alis_tarixi, range)) nomreXerc += num(n.alis_qiymeti)
   for (const b of data.nomreBalans) if (inRange(b.tarix, range)) nomreXerc += num(b.mebleg)
+  let xerc = 0
+  for (const x of data.xercler) if (inRange(x.tarix, range)) xerc += num(x.mebleg)
 
   const satisCemi = nagd.satis + nisye.satis + kredit.satis
   const satisMenfeet = nagd.menfeet + nisye.menfeet + kredit.menfeet
-  const xalis = satisMenfeet + faiz - nomreXerc
+  const xalis = satisMenfeet + faiz - nomreXerc - xerc
   return {
     nagd,
     nisye,
@@ -178,6 +180,7 @@ function salesSummary(data, range) {
     alis: r2(alis),
     alisCount,
     nomreXerc: r2(nomreXerc),
+    xerc: r2(xerc),
     satisCemi: r2(satisCemi),
     satisCount: nagd.count + nisye.count + kredit.count,
     satisMenfeet: r2(satisMenfeet),
@@ -439,12 +442,17 @@ function buildDetail(kind, ctx) {
       if (!inRange(b.tarix, range)) continue
       rows.push({ tarix: b.tarix, nov: 'Nömrə balansı', kim: nomreById.get(b.nomre_id) || '—', model: '—', satis: 0, alis: 0, faiz: 0, menfeet: -num(b.mebleg) })
     }
+    for (const x of data.xercler) {
+      if (!inRange(x.tarix, range)) continue
+      rows.push({ tarix: x.tarix, nov: 'Xərc', kim: x.kateqoriya || '—', model: x.qeyd || '—', satis: 0, alis: 0, faiz: 0, menfeet: -num(x.mebleg) })
+    }
     return {
       title: 'Xalis mənfəət — haradan gəlir',
       summary: [
         ...byType(rows, 'menfeet').map((x) => ({ ...x, label: `${x.label} satışlar` })),
         { label: '+ Cərimə faizi', value: azn(a.cur.faiz) },
         { label: '− Nömrə xərcləri', value: azn(-a.cur.nomreXerc) },
+        { label: '− Xərclər', value: azn(-a.cur.xerc) },
         { label: 'Xalis mənfəət', value: azn(a.cur.xalis), bold: true },
       ],
       columns: saleCols,
@@ -740,6 +748,8 @@ export default function AnalitikaPage() {
         fetchAllPages(() => supabase.from('nomre_balanslar').select('id, nomre_id, tarix, mebleg').order('id', { ascending: true })),
       ])
       if (nm.error || nb.error) setWarn('Nömrə xərcləri yüklənmədi — hesablamaya daxil edilmədi.')
+      // Xərclər (icarə, maaş…) — cədvəl yoxdursa 0 sayılır
+      const xr = await fetchAllPages(() => supabase.from('xercler').select('id, tarix, kateqoriya, mebleg, qeyd').order('id', { ascending: true }))
       // Yazı səhvi ola biləcək çox böyük məbləğlər ayrıca göstərilir, cəmlərə qatılmır
       const suspicious = []
       const big = (v) => num(v) > SUSPICIOUS_LIMIT
@@ -767,6 +777,7 @@ export default function AnalitikaPage() {
         depo,
         nomreler: nm.error ? [] : nm.data || [],
         nomreBalans: nb.error ? [] : nb.data || [],
+        xercler: xr.error ? [] : xr.data || [],
       })
     } catch (e) {
       setError(e.message || String(e))
@@ -868,6 +879,7 @@ export default function AnalitikaPage() {
     for (const p of data.odenisler) if (p.tip === 'faiz') add(monthKey(p.tarix), 'menfeet', num(p.mebleg))
     for (const nmr of data.nomreler) add(monthKey(nmr.alis_tarixi), 'menfeet', -num(nmr.alis_qiymeti))
     for (const b of data.nomreBalans) add(monthKey(b.tarix), 'menfeet', -num(b.mebleg))
+    for (const x of data.xercler) add(monthKey(x.tarix), 'menfeet', -num(x.mebleg))
     for (const r of yigimRows) {
       if (r.tarix > today) continue
       add(monthKey(r.tarix), 'owed', num(r.owed))
@@ -997,6 +1009,9 @@ export default function AnalitikaPage() {
     if (a.mehkemeQalan > 0) {
       t.push({ tone: 'info', text: `Məhkəmədə olan müştərilərin qalığı: ${azn(a.mehkemeQalan)} — xalis vəziyyətə daxildir, amma yığılması gecikə bilər.` })
     }
+    if (!(a.cur.xerc > 0)) {
+      t.push({ tone: 'info', text: 'Bu dövrdə Xərclər səhifəsində xərc yazılmayıb — icarə, maaş və s. yazsanız, xalis mənfəət tam dəqiq olar.' })
+    }
     if (!t.length) t.push({ tone: 'good', text: 'Hər şey qaydasındadır — ciddi problem görünmür.' })
     return t
   }, [a, data])
@@ -1056,7 +1071,8 @@ export default function AnalitikaPage() {
             <div className="an-verdict__text">
               {periodLabel}: {a.cur.satisCount} satış, dövriyyə {azn(a.cur.satisCemi)}. Satış mənfəəti {azn(a.cur.satisMenfeet)}
               {a.cur.faiz > 0 ? ` + cərimə faizi ${azn(a.cur.faiz)}` : ''}
-              {a.cur.nomreXerc > 0 ? ` − nömrə xərcləri ${azn(a.cur.nomreXerc)}` : ''}.
+              {a.cur.nomreXerc > 0 ? ` − nömrə xərcləri ${azn(a.cur.nomreXerc)}` : ''}
+              {a.cur.xerc > 0 ? ` − xərclər ${azn(a.cur.xerc)}` : ''}.
               {a.prev && Math.abs(a.prev.xalis) > 0.009 && (
                 <> Əvvəlki dövr: {azn(a.prev.xalis, { sign: true })}.</>
               )}
@@ -1302,7 +1318,7 @@ export default function AnalitikaPage() {
 
           <p className="an-note">
             Hesablama: Nağd / Nisyə mənfəəti = satış − alış − satıcı faizi; Kredit mənfəəti = satış − alış (hədiyyələr daxil) − satıcı
-            faizi, satış günündə sayılır. Xalis mənfəətə yığılan cərimə faizi əlavə, nömrə alışı və balans xərcləri çıxılır. Yığım
+            faizi, satış günündə sayılır. Xalis mənfəətə yığılan cərimə faizi əlavə, nömrə alışı / balans xərcləri və Xərclər səhifəsindəki rasxodlar çıxılır. Yığım
             faizi = dövrdə daxil olan ilkin + aylıq ödənişlər ÷ qrafikə görə həmin dövrdə tarixi çatmış taksitlər. 50 000 ₼-dan böyük
             tək məbləğlər yazı səhvi sayılır və cəmlərə qatılmır.
           </p>
