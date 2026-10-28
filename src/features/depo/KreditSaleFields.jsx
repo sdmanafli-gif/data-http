@@ -141,6 +141,7 @@ export default function KreditSaleFields({
   onRemoveItem,
   barterSlot = null,
   barterAmount = 0,
+  hediyyeSlot = null,
   children,
 }) {
   const bitme = computeBitmeTarixi(musteriForm.birinci_ayliq_odenis_tarixi, musteriForm.nece_ay)
@@ -148,6 +149,8 @@ export default function KreditSaleFields({
 
   return (
     <div className="depo-stack kredit-stack">
+      <div className="kredit-top">
+      <div className="kredit-top__main">
       <Field label="Müştəri ID" hint="Avtomatik (növbəti nömrə)">
         <input readOnly value={v('sira_no') || '—'} />
       </Field>
@@ -175,6 +178,9 @@ export default function KreditSaleFields({
           onChange={(e) => setMusteriField('satici_faizi', e.target.value)}
         />
       </Field>
+      </div>
+      {hediyyeSlot && <div className="kredit-top__side">{hediyyeSlot}</div>}
+      </div>
 
       <Section title="Satış Məlumatları">
         {basket.length === 1 ? (
