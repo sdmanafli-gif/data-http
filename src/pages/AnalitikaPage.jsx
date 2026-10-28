@@ -166,7 +166,7 @@ function salesSummary(data, range) {
   for (const n of data.nomreler) if (inRange(n.alis_tarixi, range)) nomreXerc += num(n.alis_qiymeti)
   for (const b of data.nomreBalans) if (inRange(b.tarix, range)) nomreXerc += num(b.mebleg)
   let xerc = 0
-  for (const x of data.xercler) if (inRange(x.tarix, range)) xerc += num(x.mebleg)
+  for (const x of data.xercler) if (inRange(x.tarix, range)) xerc += num(x.mebleg) // yalnız İş xərcləri (yükləmədə süzülür)
 
   const satisCemi = nagd.satis + nisye.satis + kredit.satis
   const satisMenfeet = nagd.menfeet + nisye.menfeet + kredit.menfeet
@@ -452,7 +452,7 @@ function buildDetail(kind, ctx) {
         ...byType(rows, 'menfeet').map((x) => ({ ...x, label: `${x.label} satışlar` })),
         { label: '+ Cərimə faizi', value: azn(a.cur.faiz) },
         { label: '− Nömrə xərcləri', value: azn(-a.cur.nomreXerc) },
-        { label: '− Xərclər', value: azn(-a.cur.xerc) },
+        { label: '− İş xərcləri', value: azn(-a.cur.xerc) },
         { label: 'Xalis mənfəət', value: azn(a.cur.xalis), bold: true },
       ],
       columns: saleCols,
@@ -749,7 +749,7 @@ export default function AnalitikaPage() {
       ])
       if (nm.error || nb.error) setWarn('Nömrə xərcləri yüklənmədi — hesablamaya daxil edilmədi.')
       // Xərclər (icarə, maaş…) — cədvəl yoxdursa 0 sayılır
-      const xr = await fetchAllPages(() => supabase.from('xercler').select('id, tarix, kateqoriya, mebleg, qeyd').order('id', { ascending: true }))
+      const xr = await fetchAllPages(() => supabase.from('xercler').select('*').order('id', { ascending: true }))
       // Yazı səhvi ola biləcək çox böyük məbləğlər ayrıca göstərilir, cəmlərə qatılmır
       const suspicious = []
       const big = (v) => num(v) > SUSPICIOUS_LIMIT
@@ -777,7 +777,8 @@ export default function AnalitikaPage() {
         depo,
         nomreler: nm.error ? [] : nm.data || [],
         nomreBalans: nb.error ? [] : nb.data || [],
-        xercler: xr.error ? [] : xr.data || [],
+        // Şəxsi xərclər iş mənfəətinə qatılmır
+        xercler: xr.error ? [] : (xr.data || []).filter((x) => x.qrup !== 'sexsi'),
       })
     } catch (e) {
       setError(e.message || String(e))
@@ -1072,7 +1073,7 @@ export default function AnalitikaPage() {
               {periodLabel}: {a.cur.satisCount} satış, dövriyyə {azn(a.cur.satisCemi)}. Satış mənfəəti {azn(a.cur.satisMenfeet)}
               {a.cur.faiz > 0 ? ` + cərimə faizi ${azn(a.cur.faiz)}` : ''}
               {a.cur.nomreXerc > 0 ? ` − nömrə xərcləri ${azn(a.cur.nomreXerc)}` : ''}
-              {a.cur.xerc > 0 ? ` − xərclər ${azn(a.cur.xerc)}` : ''}.
+              {a.cur.xerc > 0 ? ` − iş xərcləri ${azn(a.cur.xerc)}` : ''}.
               {a.prev && Math.abs(a.prev.xalis) > 0.009 && (
                 <> Əvvəlki dövr: {azn(a.prev.xalis, { sign: true })}.</>
               )}
