@@ -222,7 +222,7 @@ export default function KreditSaleFields({
             barterAmount > 0
               ? `Barter ${formatMoney(barterAmount)}: ilkinə ${formatMoney(barterIlkin)}${
                   barterQaytar > 0 ? ` · müştəriyə nağd qaytarılır ${formatMoney(barterQaytar)}` : ''
-                } · ilkinə cəmi ${formatMoney((Number(ilkinOdenisVerilib) || 0) + barterIlkin)}`
+                } · ilkinə cəmi ${formatMoney(Math.min(Number(ilkinOdenis) || 0, (Number(ilkinOdenisVerilib) || 0) + barterIlkin))}`
               : 'Satışdan sonra Ödənişlər tabına əlavə olunur.'
           }
         >
