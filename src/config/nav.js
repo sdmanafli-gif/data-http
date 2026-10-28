@@ -11,6 +11,7 @@ export const navSections = [
       { path: '/musteri-bazasi', label: 'Müştəri Bazası' },
       { path: '/nagd-satish', label: 'Nağd satış' },
       { path: '/kontaktlar', label: 'Kontaktlar' },
+      { path: '/nomreler', label: 'Nömrələr' },
     ],
   },
   {
