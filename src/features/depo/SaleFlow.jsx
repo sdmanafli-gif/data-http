@@ -23,7 +23,12 @@ import {
   isMusteriFormColumnActive,
 } from '../musteri-bazasi/constants'
 import { fetchNextMusteriNumbers, fetchNextIcloudNumber, formatIcloudEmail, formatItunesEmail, parseIcloudNumber, isAutoItunesEmail } from '../musteri-bazasi/nextRecordNumbers'
-import { computeIlkinOdenis, buildSaleScheduleWithIlkin, canBuildSchedule } from '../musteri-bazasi/paymentSchedule'
+import {
+  computeIlkinOdenis,
+  buildSaleScheduleWithIlkin,
+  canBuildSchedule,
+  normalizeScheduleLines,
+} from '../musteri-bazasi/paymentSchedule'
 import { ODENISLER_TABLE, syncMusteriPaymentTotals } from '../odenisler/constants'
 import SaleSchedulePreview from './SaleSchedulePreview'
 import { DEPO_TABLE, SALE_TYPES } from './constants'
@@ -40,6 +45,29 @@ import {
 } from '../borc-nisye/constants'
 import '../../styles/shared.css'
 import '../../components/record-module.css'
+import DepoFilterFields, { EMPTY_DEPO_FILTERS, applyDepoFilters, nextFilters } from './DepoFilterPanel'
+import {
+  NEW_PICK,
+  emptySource,
+  emptySystem,
+  validateSourceAndSystem,
+  customerExtraFields,
+  HaradanBlock,
+} from './DepoSourceFields'
+import { loadTechizatcilar, findOrCreateTechizatci } from '../../lib/techizatcilar'
+import { normMusteriName } from '../../lib/musteriler'
+import './depo-form.css'
+import KreditSaleFields, {
+  KREDIT_KONTAKT_NEW_KEYS,
+  emptyKreditKontakt,
+  kreditKontaktFromCustomer,
+  computeBitmeTarixi,
+} from './KreditSaleFields'
+import MuqavileYarat from './MuqavileYarat'
+import { buildMuqavileData, createMuqavileDocx, createAlisDocx } from './muqavile'
+import HediyyeBlock, { emptyHediyyeler, hediyyeTotal, hediyyeExtra } from './HediyyeBlock'
+import BarterAlis, { EMPTY_BARTER, barterAmount, barterMissing } from './BarterAlis'
+import { parseSenedler, uploadSenedlerFiles } from '../../lib/senedler'
 
 /** Prefill from Depo — shown read-only on kredit form */
 const DEPO_READONLY_KEYS = new Set([
@@ -118,6 +146,12 @@ const CIHAZ_LINE_FIELDS = [
   { key: 'itunes_bagli_nomre', label: 'iTunes bağlı nömrə', editable: true, musteriKey: 'itunes_bagli_nomre' },
 ]
 
+/** Bu günün tarixi (yerli vaxtla). toISOString UTC verir — gecə 00:00–04:00 arası dünənki gün çıxırdı. */
+function localTodayYmd() {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
 function uniqueSorted(values) {
   return [...new Set(values.map((v) => String(v).trim()).filter(Boolean))].sort((a, b) =>
     a.localeCompare(b, 'az')
@@ -168,6 +202,7 @@ function buildCombinedKreditForm({
   lineCihaz,
   musteriForm,
   paidTotal,
+  hediyyeler = [],
 }) {
   const joined = {}
   for (const key of KREDIT_JOIN_TEXT_KEYS) {
@@ -187,7 +222,9 @@ function buildCombinedKreditForm({
     alis += Number(lp.alis) || 0
     satis += Number(lp.satis) || 0
   }
-  alis = Math.round(alis * 100) / 100
+  // Hədiyyələrin dəyəri gəlirdən çıxılsın deyə alış qiymətinə əlavə olunur
+  const hediyyeDeyeri = hediyyeTotal(hediyyeler)
+  alis = Math.round((alis + hediyyeDeyeri) * 100) / 100
   satis = Math.round(satis * 100) / 100
   const paid = Math.round((Number(paidTotal) || 0) * 100) / 100
 
@@ -219,6 +256,9 @@ function buildCombinedKreditForm({
       line_alis: joinSlash(basket.map((item) => linePrices[item.id]?.alis ?? '')),
       line_satis: joinSlash(basket.map((item) => linePrices[item.id]?.satis ?? '')),
       line_battery_faiz: batteryJoined,
+      ...(hediyyeDeyeri > 0 || hediyyeExtra(hediyyeler).length
+        ? { hediyyeler: hediyyeExtra(hediyyeler), hediyye_deyeri: hediyyeDeyeri }
+        : {}),
     },
   }
 }
@@ -229,6 +269,40 @@ function buildCombinedKreditForm({
  * 1) Choose type Kredit / Nağd / Borc·Nisyə
  * 2) Müştəri + terms → creates Müştəri Bazası / Nağd / Borc ledger + updates Depo
  */
+/** «Əlavə məhsul» pəncərəsinin cədvəli: məhsulun bütün məlumatları (sağa sürüşür) */
+const EXTRA_PICKER_COLUMNS = [
+  { key: 'sira_no', label: '№' },
+  { key: 'kateqoriya', label: 'Kateqoriya' },
+  { key: 'nov', label: 'Növ' },
+  { key: 'model', label: 'Model' },
+  { key: 'yaddas', label: 'Yaddaş' },
+  { key: 'reng', label: 'Rəng' },
+  { key: 'veziyyet_cihaz', label: 'Status' },
+  { key: 'battery_faiz', label: 'Battery', num: true },
+  { key: 'imei_1', label: 'IMEI 1' },
+  { key: 'imei_2', label: 'IMEI 2' },
+  { key: 'serial_no', label: 'Seriya No' },
+  { key: 'model_no', label: 'Model No' },
+  { key: 'sim_type', label: 'SIM' },
+  { key: 'alis_tarixi', label: 'Tarix' },
+  { key: 'alis_qiymeti', label: 'Qiymət', num: true },
+  { key: 'odenis_novu', label: 'Ödəniş növü' },
+  { key: 'kimden_alinib', label: 'Kimdən' },
+  { key: 'nomre', label: 'Nömrə' },
+  { key: 'kommentler', label: 'Komment' },
+]
+
+function extraCell(item, key) {
+  const v = item?.[key]
+  if (v == null || v === '') return '—'
+  if (key === 'alis_tarixi') return String(v).slice(0, 10).split('-').reverse().join('.')
+  if (key === 'veziyyet_cihaz') return v === 'teze' ? 'Təzə' : v === 'kohne' ? 'Köhnə' : String(v)
+  if (key === 'odenis_novu') return v === 'nagd' ? 'Nağd' : v === 'nisye' ? 'Nisyə' : String(v)
+  if (key === 'sim_type') return v === 'sim' ? 'SIM' : v === 'esim' ? 'eSIM' : v === 'both' ? 'SIM + eSIM' : String(v)
+  if (key === 'battery_faiz') return `${v}%`
+  return String(v)
+}
+
 export default function SaleFlow() {
   const { id: routeId } = useParams()
   const location = useLocation()
@@ -267,7 +341,13 @@ export default function SaleFlow() {
   const [ledgerMehsul, setLedgerMehsul] = useState([])
   const [availableExtras, setAvailableExtras] = useState([])
   const [showAddPicker, setShowAddPicker] = useState(false)
-  const [extraFilter, setExtraFilter] = useState('')
+  // «Əlavə məhsul» pəncərəsi: IMEI 1 / IMEI 2 / Seriya üzrə ayrıca axtarış
+  const [extraSearch, setExtraSearch] = useState({ ad: '', imei1: '', imei2: '', seriya: '' })
+  const [extraFilters, setExtraFilters] = useState(() => ({ ...EMPTY_DEPO_FILTERS }))
+  // Borc / Nisyə satış: Kimə (Təchizatçı / Müştəri) — Depodakı "Haradan" kimi
+  const [kimeSrc, setKimeSrc] = useState(() => emptySource())
+  const [kimeTechizatcilar, setKimeTechizatcilar] = useState([])
+  const [kimeDepoNames, setKimeDepoNames] = useState([])
   const [step, setStep] = useState(0) // 0 basket, 1 type, 2 form, 3 schedule preview
   const [saleType, setSaleType] = useState('')
   /** Kredit: draft ödəniş qrafikləri before final save */
@@ -291,14 +371,25 @@ export default function SaleFlow() {
   const [ilkinOdenis, setIlkinOdenis] = useState('')
   const [ilkinOdenisVerilib, setIlkinOdenisVerilib] = useState('0')
   const [ilkinQaliqTarixi, setIlkinQaliqTarixi] = useState('')
+  /** Kredit: «YARAT» ilə hazırlanan müqavilə (Word) + yaradılan andakı məlumatın izi */
+  const [muqavileFile, setMuqavileFile] = useState(null)
+  const [muqavileSig, setMuqavileSig] = useState('')
+  /** Kredit: barter — müştərinin verdiyi cihaz (ilkin ödənişə sayılır, satışdan sonra Depoya düşür) */
+  const [barter, setBarter] = useState(() => ({ ...EMPTY_BARTER }))
+  /** Kredit satışı: Hədiyyələr (5 sətir) */
+  const [hediyyeler, setHediyyeler] = useState(() => emptyHediyyeler())
+  const [alisFile, setAlisFile] = useState(null)
+  const [alisSig, setAlisSig] = useState('')
   const [ilkinManual, setIlkinManual] = useState(false)
+  /** Kredit: müştərinin vəsiqə / ünvan / "kimdir" sahələri (Kontaktlara yazılır) */
+  const [kreditKontakt, setKreditKontakt] = useState(() => emptyKreditKontakt())
   const [form, setForm] = useState({
     verilib: '0',
     nece_ay: '',
     ayliq_odenis: '',
     odenis_gunu: '',
     birinci_ayliq_odenis_tarixi: '',
-    verilme_tarixi: new Date().toISOString().slice(0, 10),
+    verilme_tarixi: localTodayYmd(),
     bitme_tarixi: '',
     veziyyet: 'Qalıb',
     veziyyet_manual: false,
@@ -320,7 +411,7 @@ export default function SaleFlow() {
         ...base,
         ...prev,
         extra: { ...base.extra, ...(prev.extra || {}) },
-        verilme_tarixi: prev.verilme_tarixi || new Date().toISOString().slice(0, 10),
+        verilme_tarixi: prev.verilme_tarixi || localTodayYmd(),
         veziyyet: prev.veziyyet || 'Qalıb',
         senedler: Array.isArray(prev.senedler) ? prev.senedler : [],
       }
@@ -403,6 +494,89 @@ export default function SaleFlow() {
     }
   }, [initialIds])
 
+  useEffect(() => {
+    if (saleType !== 'borc_nisye' && saleType !== 'nagd') return
+    let cancelled = false
+    ;(async () => {
+      const [tRes, dRes] = await Promise.all([
+        loadTechizatcilar(),
+        fetchAllPages(() => supabase.from(DEPO_TABLE).select('kimden_alinib')),
+      ])
+      if (cancelled) return
+      setKimeTechizatcilar(tRes.data || [])
+      setKimeDepoNames(uniqueSorted((dRes.data || []).map((r) => r.kimden_alinib)))
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [saleType])
+
+  const kimeSupplierOptions = useMemo(() => {
+    const seen = new Set()
+    const out = []
+    for (const t of kimeTechizatcilar) {
+      seen.add(normMusteriName(t.ad_soyad))
+      out.push({ value: `t:${t.id}`, name: t.ad_soyad, label: t.tukan ? `${t.ad_soyad} (${t.tukan})` : t.ad_soyad })
+    }
+    for (const n of kimeDepoNames) {
+      const k = normMusteriName(n)
+      if (!k || seen.has(k)) continue
+      seen.add(k)
+      out.push({ value: `n:${n}`, name: n, label: n })
+    }
+    return out.sort((x, y) => x.label.localeCompare(y.label, 'az'))
+  }, [kimeTechizatcilar, kimeDepoNames])
+
+  const kimeCustomerOptions = useMemo(
+    () =>
+      (customers || []).map((m) => ({
+        value: `m:${m.id}`,
+        name: m.ad_soyad,
+        label: m.nomre_1 ? `${m.ad_soyad} · ${m.nomre_1}` : m.ad_soyad,
+      })),
+    [customers]
+  )
+
+  /**
+   * "Kimə" blokundan (Təchizatçı / Müştəri) ad və müştəri id-ni çıxarır.
+   * Yeni Təchizatçı / Yeni Müştəri seçilibsə Kontaktlara əlavə edir.
+   * @returns {Promise<{ kime: string, musteriId: string|null }>}
+   */
+  async function resolveKimeParty() {
+    const isNew = kimeSrc.pick === NEW_PICK
+    const kime = String(isNew ? kimeSrc.yeni.ad_soyad : person.ad_soyad || '').trim()
+    if (kimeSrc.tip === 'techizatci') {
+      if (isNew) await findOrCreateTechizatci(kimeSrc.yeni)
+      return { kime, musteriId: null }
+    }
+    if (kimeSrc.tip === 'musteri') {
+      if (!isNew) {
+        const mid = kimeSrc.pick.startsWith('m:') ? kimeSrc.pick.slice(2) : null
+        return { kime, musteriId: mid }
+      }
+      const mid = await findOrCreateMusteri({
+        ad_soyad: kime,
+        nomre_1: kimeSrc.yeni.nomre_1.trim() || null,
+        nomre_2: kimeSrc.yeni.nomre_2.trim() || null,
+        updated_at: new Date().toISOString(),
+      })
+      const extra = customerExtraFields(kimeSrc.yeni)
+      if (Object.keys(extra).length) {
+        const { data: cur } = await supabase.from('musteriler').select('*').eq('id', mid).single()
+        const patch = {}
+        for (const [k, v] of Object.entries(extra)) {
+          if (cur && !String(cur[k] ?? '').trim()) patch[k] = v
+        }
+        if (Object.keys(patch).length) {
+          const { error: mErr } = await supabase.from('musteriler').update(patch).eq('id', mid)
+          if (mErr) throw mErr
+        }
+      }
+      return { kime, musteriId: mid }
+    }
+    return { kime, musteriId: null }
+  }
+
   async function loadExtras() {
     const inBasket = new Set(basket.map((b) => b.id))
     const { data, error: e } = await fetchAllPages(() =>
@@ -441,6 +615,10 @@ export default function SaleFlow() {
       setLedgerMehsul((prev) => uniqueSorted([...prev, item.model]))
     }
     setAvailableExtras((prev) => prev.filter((r) => r.id !== item.id))
+    // Eyni məhsul hədiyyə kimi seçilibsə — hədiyyədən çıxır (həm satış, həm hədiyyə ola bilməz)
+    setHediyyeler((prev) => prev.map((h) => (h.depoItem?.id === item.id ? { ad: '', qiymet: '', depoItem: null } : h)))
+    // Kredit formasında məhsul seçiləndə pəncərə bağlanır, forma əvvəlki ölçüsünə qayıdır
+    if (step === 2) setShowAddPicker(false)
   }
 
   function removeFromBasket(itemId) {
@@ -490,14 +668,14 @@ export default function SaleFlow() {
       alis += Number(lp.alis) || 0
       satis += Number(lp.satis) || 0
     }
-    const verilib = saleType === 'nagd' ? (Number(form.verilib) || satis) : Number(ilkinOdenisVerilib) || 0
+    const verilib = saleType === 'nagd' ? (Number(form.verilib) || satis) : (Number(ilkinOdenisVerilib) || 0) + barterAmount(barter)
     return {
       alis,
       satis,
       gozlenilen: satis - alis,
       qalan: satis - verilib,
     }
-  }, [basket, linePrices, form.verilib, saleType, ilkinOdenisVerilib])
+  }, [basket, linePrices, form.verilib, saleType, ilkinOdenisVerilib, barter])
 
   const computedIlkin = useMemo(() => {
     const satis =
@@ -522,11 +700,25 @@ export default function SaleFlow() {
     setIlkinOdenis(String(Math.round(computedIlkin * 100) / 100))
   }, [computedIlkin, ilkinManual])
 
+  // Kredit: Bitmə tarixi = birinci aylıq ödəniş tarixi + (neçə ay − 1)
+  useEffect(() => {
+    if (saleType !== 'kredit') return
+    const bitme = computeBitmeTarixi(musteriForm.birinci_ayliq_odenis_tarixi, musteriForm.nece_ay)
+    setMusteriForm((prev) => (prev.bitme_tarixi === bitme ? prev : { ...prev, bitme_tarixi: bitme }))
+  }, [saleType, musteriForm.birinci_ayliq_odenis_tarixi, musteriForm.nece_ay])
+
+  // Kredit: səbətə məhsul əlavə / çıxarılanda ümumi satış qiyməti yenilənsin
+  useEffect(() => {
+    if (saleType !== 'kredit') return
+    const s = totals.satis ? String(Math.round(totals.satis * 100) / 100) : ''
+    setMusteriForm((prev) => (String(prev.satis_qiymeti ?? '') === s ? prev : { ...prev, satis_qiymeti: s }))
+  }, [saleType, totals.satis])
+
   const ilkinRemaining = useMemo(() => {
     const due = Number(ilkinOdenis) || 0
-    const paid = Number(ilkinOdenisVerilib) || 0
+    const paid = (Number(ilkinOdenisVerilib) || 0) + barterAmount(barter)
     return Math.max(0, Math.round((due - paid) * 100) / 100)
-  }, [ilkinOdenis, ilkinOdenisVerilib])
+  }, [ilkinOdenis, ilkinOdenisVerilib, barter])
 
   function selectType(type) {
     setSaleType(type)
@@ -580,7 +772,7 @@ export default function SaleFlow() {
           satis_qiymeti: totalSatis,
           verilib: '0',
           faiz: '0',
-          verilme_tarixi: prev.verilme_tarixi || new Date().toISOString().slice(0, 10),
+          verilme_tarixi: prev.verilme_tarixi || localTodayYmd(),
           veziyyet: prev.veziyyet || 'Qalıb',
           veziyyet_manual: false,
           senedler: Array.isArray(prev.senedler) ? prev.senedler : [],
@@ -629,6 +821,7 @@ export default function SaleFlow() {
     const merged = mergePersonPrefill(customer, latest)
     setPerson(merged)
     setMusteriForm((prev) => ({ ...prev, ...merged }))
+    setKreditKontakt(kreditKontaktFromCustomer(customer))
   }
 
   function handleSelectNew() {
@@ -636,6 +829,40 @@ export default function SaleFlow() {
     const emptyPerson = personFieldsFromMusteri(null)
     setPerson(emptyPerson)
     setMusteriForm((prev) => ({ ...prev, ...emptyPerson }))
+    setKreditKontakt(emptyKreditKontakt())
+  }
+
+  /** Kredit formunda bir sahəni dəyiş (ad / nömrələr person-a da yazılır) */
+  function setMusteriField(key, value) {
+    setMusteriForm((prev) => setFormField(prev, { key, custom: false }, value))
+    if (['ad_soyad', 'nomre_1', 'nomre_2', 'nomre_3', 'nomre_4', 'nomre_5', 'zamin'].includes(key)) {
+      setPerson((p) => ({ ...p, [key]: value }))
+    }
+  }
+
+  function onKreditSatisChange(itemId, value) {
+    setLinePrices((prev) => ({ ...prev, [itemId]: { ...prev[itemId], satis: value } }))
+    if (basket.length === 1) {
+      setMusteriForm((f) => setFormField(f, { key: 'satis_qiymeti', custom: false }, value))
+    }
+  }
+
+  /** Vəsiqə / ünvan / "kimdir" sahələrini Kontaktlardakı müştəri kartına yazır */
+  async function saveKreditKontakt(musteriId) {
+    const patch = {}
+    for (const [k, val] of Object.entries(kreditKontakt)) {
+      const t = String(val ?? '').trim()
+      if (t) patch[k] = t
+    }
+    if (!musteriId || !Object.keys(patch).length) return
+    let { error: e1 } = await supabase.from(MUSTERILER_TABLE).update(patch).eq('id', musteriId)
+    if (e1 && /column|schema cache/i.test(e1.message || '')) {
+      // Baza hələ yenilənməyibsə (SQL 39) yeni sütunlar olmadan yaz
+      const safe = Object.fromEntries(Object.entries(patch).filter(([k]) => !KREDIT_KONTAKT_NEW_KEYS.has(k)))
+      if (!Object.keys(safe).length) return
+      ;({ error: e1 } = await supabase.from(MUSTERILER_TABLE).update(safe).eq('id', musteriId))
+    }
+    if (e1) throw e1
   }
 
   async function ensureMusteriId() {
@@ -644,11 +871,13 @@ export default function SaleFlow() {
     if (!payload.ad_soyad) throw new Error('Ad Soyad Ata adı doldurulmalıdır.')
     if (mode === 'existing' && source.musteri_id) {
       await supabase.from(MUSTERILER_TABLE).update(payload).eq('id', source.musteri_id)
+      if (saleType === 'kredit') await saveKreditKontakt(source.musteri_id)
       return source.musteri_id
     }
     // Eyni adlı müştəri varsa yenisini yaratma — satışı mövcud müştəriyə bağla
     const newId = await findOrCreateMusteri(payload)
     if (saleType === 'kredit') {
+      await saveKreditKontakt(newId)
       setMusteriForm((prev) => ({ ...prev, musteri_id: newId }))
     } else {
       setPerson((prev) => ({ ...prev, musteri_id: newId }))
@@ -672,6 +901,163 @@ export default function SaleFlow() {
     if (depoErr) throw depoErr
   }
 
+  /** Kredit qrafikinin əsas parametrləri + sətirləri (Ödəniş qrafiki addımı və müqavilə üçün eyni) */
+  function kreditSchedulePlan() {
+    const totalSatis = totals.satis
+    const itemIlkin = Number(ilkinOdenis) || 0
+    const paidForItem = (Number(ilkinOdenisVerilib) || 0) + barterAmount(barter)
+    const remainingForItem = Math.max(0, Math.round((itemIlkin - paidForItem) * 100) / 100)
+    const verilme = musteriForm.verilme_tarixi || localTodayYmd()
+    const ilkinDueDate = remainingForItem > 0.009 ? ilkinQaliqTarixi || verilme : verilme
+
+    const scheduleRow = {
+      satis_qiymeti: Number(totalSatis) || 0,
+      ayliq_odenis: Number(musteriForm.ayliq_odenis) || 0,
+      nece_ay: Number(musteriForm.nece_ay) || 0,
+      verilme_tarixi: verilme,
+      birinci_ayliq_odenis_tarixi: musteriForm.birinci_ayliq_odenis_tarixi,
+      odenis_gunu: musteriForm.odenis_gunu,
+    }
+
+    const buildLines = () => {
+      if (!canBuildSchedule(scheduleRow)) return []
+      // İlkin hissə-hissə: bu gün verilən (satış tarixi) + qalığı ayrıca sətir (seçilən tarixdə),
+      // sonra aylıq ödənişlər. Məs.: ilkin 1500, verilib 1300 → 1300 / 200 / 10 × 300.
+      if (remainingForItem > 0.009 && paidForItem > 0.009) {
+        const base =
+          buildSaleScheduleWithIlkin(scheduleRow, {
+            ilkinMebleg: paidForItem,
+            ilkinTarix: verilme,
+          }) || []
+        const idx = base.findIndex((l) => l.type === 'ilkin')
+        const qaliq = {
+          type: 'ilkin',
+          installment: 0,
+          tarix: String(ilkinDueDate).slice(0, 10),
+          mebleg: remainingForItem,
+        }
+        const lines = idx >= 0 ? [...base.slice(0, idx + 1), qaliq, ...base.slice(idx + 1)] : [qaliq, ...base]
+        return normalizeScheduleLines(lines, scheduleRow)
+      }
+      return (
+        buildSaleScheduleWithIlkin(scheduleRow, {
+          ilkinMebleg: itemIlkin,
+          ilkinTarix: ilkinDueDate,
+        }) || []
+      )
+    }
+
+    return { scheduleRow, itemIlkin, paidForItem, remainingForItem, verilme, ilkinDueDate, buildLines }
+  }
+
+  /** Müqavilə (Word) üçün məlumat — formdakı cari dəyərlərdən */
+  function muqavileDataFrom(lines) {
+    return buildMuqavileData({
+      musteriForm: { ...musteriForm, verilme_tarixi: musteriForm.verilme_tarixi || localTodayYmd() },
+      kontakt: kreditKontakt,
+      basket,
+      linePrices,
+      lineCihaz,
+      paidNow: (Number(ilkinOdenisVerilib) || 0) + barterAmount(barter),
+      scheduleLines: lines,
+    })
+  }
+
+  function muqavileMissing() {
+    if (!String(musteriForm.ad_soyad || '').trim()) return 'Əvvəlcə müştərinin adını yazın.'
+    if (basket.some((item) => !(Number(linePrices[item.id]?.satis) > 0))) return 'Satış qiymətini yazın.'
+    if (!musteriForm.ayliq_odenis || !musteriForm.nece_ay || !musteriForm.birinci_ayliq_odenis_tarixi) {
+      return 'Aylıq ödəniş, neçə ay və birinci aylıq tarixi doldurun.'
+    }
+    return ''
+  }
+
+  /** Alış (barter) müqaviləsi üçün məlumat — satıcı yuxarıdakı müştəri məlumatlarından */
+  function alisDataFrom() {
+    const kr = muqavileDataFrom([]).values
+    const now = new Date()
+    const b = barter
+    return {
+      nomre: kr.NOMRE ? `${kr.NOMRE}-A` : '',
+      krNomre: kr.NOMRE,
+      tarix: kr.TARIX,
+      saat: `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`,
+      satici: {
+        ad: kr.AD,
+        seriya: kr.SERIYA,
+        fin: kr.FIN,
+        dogum: kr.DOGUM,
+        tel: kr.TEL,
+        qeyd: kr.QEYD_UNVAN,
+        yasayis: kr.YASAYIS_UNVAN,
+      },
+      mal: {
+        model: [b.nov, b.model].map((t) => String(t || '').trim()).filter(Boolean).join(' '),
+        reng: b.reng,
+        yaddas: b.yaddas,
+        imei1: b.imei_1,
+        imei2: b.imei_2,
+        seriya: b.serial_no,
+        veziyyet: b.veziyyet,
+        qiymet: barterAmount(b),
+      },
+    }
+  }
+
+  const alisSigOf = (d) => JSON.stringify({ ...d, saat: '' })
+
+  /** Satışdan sonra: barter cihazını Depoya yaz, alış müqaviləsini Depoya və müştərinin sənədlərinə yüklə */
+  async function saveBarterToDepo({ musteriId, satisRow }) {
+    const b = barter
+    const verilme = musteriForm.verilme_tarixi || localTodayYmd()
+    const depoPayload = {
+      status: 'available',
+      miqdar: 1,
+      kateqoriya: b.kateqoriya || null,
+      nov: String(b.nov || '').trim() || null,
+      model: String(b.model || '').trim(),
+      reng: String(b.reng || '').trim() || null,
+      yaddas: b.yaddas || null,
+      imei_1: String(b.imei_1 || '').trim() || null,
+      imei_2: String(b.imei_2 || '').trim() || null,
+      serial_no: String(b.serial_no || '').trim() || null,
+      alis_qiymeti: barterAmount(b),
+      alis_tarixi: verilme,
+      odenis_novu: 'nagd',
+      veziyyet_cihaz: 'kohne',
+      kimden_alinib: String(musteriForm.ad_soyad || '').trim() || null,
+      haradan_tip: 'musteri',
+      musteri_id: musteriId || null,
+      kommentler: `Barter — kredit satış № ${satisRow?.sira_no ?? ''}${b.veziyyet ? ` · ${b.veziyyet}` : ''}`,
+      updated_at: new Date().toISOString(),
+    }
+    const { data: depoRow, error: depoErr } = await supabase.from(DEPO_TABLE).insert(depoPayload).select('id, senedler').single()
+    if (depoErr) throw depoErr
+
+    const fresh = await createAlisDocx(alisDataFrom())
+    const { files: upDepo, error: upErr } = await uploadSenedlerFiles('depo', depoRow.id, [fresh])
+    if (upErr) throw new Error(upErr)
+    if (upDepo[0]) {
+      const { error: sErr } = await supabase
+        .from(DEPO_TABLE)
+        .update({ senedler: [...parseSenedler(depoRow.senedler), { ...upDepo[0], slot: 1 }] })
+        .eq('id', depoRow.id)
+      if (sErr) throw sErr
+    }
+    if (satisRow?.id) {
+      const { files: upM, error: upMErr } = await uploadSenedlerFiles('musteri_bazasi', satisRow.id, [fresh])
+      if (upMErr) throw new Error(upMErr)
+      if (upM.length) {
+        const { data: cur } = await supabase.from(MUSTERI_TABLE).select('senedler').eq('id', satisRow.id).single()
+        const { error: mErr } = await supabase
+          .from(MUSTERI_TABLE)
+          .update({ senedler: [...parseSenedler(cur?.senedler), ...upM] })
+          .eq('id', satisRow.id)
+        if (mErr) throw mErr
+      }
+    }
+  }
+
   async function handleSubmit(e) {
     e.preventDefault()
     setError(null)
@@ -685,9 +1071,18 @@ export default function SaleFlow() {
 
     // —— Borc / Nisyə ledger sale ——
     if (saleType === 'borc_nisye') {
-      const kime = String(person.ad_soyad || '').trim()
+      const kimeErr = !kimeSrc.tip
+        ? 'Kimə: Təchizatçı və ya Müştəri seçin.'
+        : validateSourceAndSystem(kimeSrc, emptySystem())
+      if (kimeErr) {
+        setError(kimeErr)
+        return
+      }
+      const kime = String(
+        kimeSrc.tip && kimeSrc.pick === NEW_PICK ? kimeSrc.yeni.ad_soyad : person.ad_soyad || ''
+      ).trim()
       if (!kime) {
-        setError('Kontragent (Kimə) doldurulmalıdır.')
+        setError('Kimə: Təchizatçı və ya Müştəri seçin.')
         return
       }
       if (!form.qaytarma_tarixi) {
@@ -703,6 +1098,8 @@ export default function SaleFlow() {
       }
       setSaving(true)
       try {
+        // Yeni Təchizatçı / Yeni Müştəri seçilibsə — Kontaktlara əlavə et
+        await resolveKimeParty()
         const tip = form.ledger_tip || 'nisye_verdim'
         for (const item of basket) {
           const lp = linePrices[item.id]
@@ -746,6 +1143,45 @@ export default function SaleFlow() {
       return
     }
 
+    // —— Nağd satış: Kimə (Təchizatçı / Müştəri) ——
+    if (saleType === 'nagd') {
+      const kimeErr = !kimeSrc.tip
+        ? 'Kimə: Təchizatçı və ya Müştəri seçin.'
+        : validateSourceAndSystem(kimeSrc, emptySystem())
+      if (kimeErr) {
+        setError(kimeErr)
+        return
+      }
+      setSaving(true)
+      try {
+        const { kime, musteriId } = await resolveKimeParty()
+        if (!kime) throw new Error('Kimə: Təchizatçı və ya Müştəri seçin.')
+        for (const item of basket) {
+          const lp = linePrices[item.id]
+          const payload = depoItemToNagdPayload(item, {
+            kime,
+            musteriId,
+            tarix: form.verilme_tarixi,
+            alis: lp.alis,
+            satis: lp.satis,
+            satici: form.satici,
+            saticiFaizi: form.satici_faizi,
+            kommentler: form.kommentler,
+            satisNovu: 'nagd',
+          })
+          const { error: nagdErr } = await supabase.from(NAGD_TABLE).insert(payload)
+          if (nagdErr) throw nagdErr
+          await markDepoSold(item)
+        }
+        navigate('/nagd-satish')
+      } catch (err) {
+        setError(err.message)
+      } finally {
+        setSaving(false)
+      }
+      return
+    }
+
     if (mode === 'pick') {
       setError('Müştəri seçin və ya yeni yaradın.')
       return
@@ -767,7 +1203,12 @@ export default function SaleFlow() {
         setError('Kredit üçün «Aylıq ödəniş» doldurulmalıdır.')
         return
       }
-      const paidNow = Number(ilkinOdenisVerilib) || 0
+      const barterErr = barterMissing(barter)
+      if (barterErr) {
+        setError(barterErr)
+        return
+      }
+      const paidNow = (Number(ilkinOdenisVerilib) || 0) + barterAmount(barter)
       const ilkinDue = Number(ilkinOdenis) || 0
       if (paidNow < 0) {
         setError('İlkin ödəniş verilib mənfi ola bilməz.')
@@ -778,7 +1219,7 @@ export default function SaleFlow() {
         return
       }
       if (paidNow - ilkinDue > 0.009) {
-        setError('İlkin ödəniş verilib, ilkin ödənişdən çox ola bilməz.')
+        setError('İlkin ödəniş verilib (barter daxil), ilkin ödənişdən çox ola bilməz.')
         return
       }
       if (ilkinDue - paidNow > 0.009 && !ilkinQaliqTarixi) {
@@ -787,24 +1228,7 @@ export default function SaleFlow() {
       }
 
       // One combined ödəniş qrafiki for the whole basket (single müştəri row)
-      const totalSatis = totals.satis
-      const itemIlkin = Number(ilkinOdenis) || 0
-      const paidForItem = Number(ilkinOdenisVerilib) || 0
-      const remainingForItem = Math.max(0, Math.round((itemIlkin - paidForItem) * 100) / 100)
-      const verilme =
-        musteriForm.verilme_tarixi || new Date().toISOString().slice(0, 10)
-      const ilkinDueDate =
-        remainingForItem > 0.009 ? ilkinQaliqTarixi || verilme : verilme
-
-      const scheduleRow = {
-        satis_qiymeti: Number(totalSatis) || 0,
-        ayliq_odenis: Number(musteriForm.ayliq_odenis) || 0,
-        nece_ay: Number(musteriForm.nece_ay) || 0,
-        verilme_tarixi: verilme,
-        birinci_ayliq_odenis_tarixi: musteriForm.birinci_ayliq_odenis_tarixi,
-        odenis_gunu: musteriForm.odenis_gunu,
-      }
-
+      const plan = kreditSchedulePlan()
       const label = basket
         .map((item) => `${item.model || 'Məhsul'} · ${item.reng || '—'} · ${item.imei_1 || '—'}`)
         .join(' / ')
@@ -814,20 +1238,12 @@ export default function SaleFlow() {
           itemId: 'combined',
           basketIds: basket.map((item) => item.id),
           label,
-          scheduleRow,
-          itemIlkin,
-          ilkinDueDate,
-          paidForItem,
+          scheduleRow: plan.scheduleRow,
+          itemIlkin: plan.itemIlkin,
+          ilkinDueDate: plan.ilkinDueDate,
+          paidForItem: plan.paidForItem,
           lines: [],
-          buildLines: () => {
-            if (!canBuildSchedule(scheduleRow)) return []
-            return (
-              buildSaleScheduleWithIlkin(scheduleRow, {
-                ilkinMebleg: itemIlkin,
-                ilkinTarix: ilkinDueDate,
-              }) || []
-            )
-          },
+          buildLines: plan.buildLines,
         },
       ]
       setScheduleDrafts(drafts)
@@ -888,7 +1304,7 @@ export default function SaleFlow() {
         draft?.itemIlkin != null ? draft.itemIlkin : Number(ilkinOdenis) || 0
 
       const verilme =
-        musteriForm.verilme_tarixi || new Date().toISOString().slice(0, 10)
+        musteriForm.verilme_tarixi || localTodayYmd()
 
       const saleForm = buildCombinedKreditForm({
         basket,
@@ -896,6 +1312,7 @@ export default function SaleFlow() {
         lineCihaz,
         musteriForm,
         paidTotal,
+        hediyyeler,
       })
 
       const payload = {
@@ -941,7 +1358,7 @@ export default function SaleFlow() {
       const { data: inserted, error: saleErr } = await supabase
         .from(MUSTERI_TABLE)
         .insert(payload)
-        .select('id, sira_no, ad_soyad')
+        .select('id, sira_no, ad_soyad, senedler')
         .single()
       if (saleErr) throw saleErr
 
@@ -954,9 +1371,12 @@ export default function SaleFlow() {
           mebleg: paidTotal,
           tarix: verilme,
           qeyd:
-            basket.length > 1
+            (basket.length > 1
               ? `Kredit satış (${basket.length} məhsul) — ilkin ödəniş verilib`
-              : 'Kredit satış — ilkin ödəniş verilib',
+              : 'Kredit satış — ilkin ödəniş verilib') +
+            (barterAmount(barter) > 0
+              ? ` (nağd ${Number(ilkinOdenisVerilib) || 0} + barter ${barterAmount(barter)}: ${[barter.nov, barter.model].filter(Boolean).join(' ')})`
+              : ''),
           updated_at: new Date().toISOString(),
         })
         if (payErr) throw payErr
@@ -966,6 +1386,42 @@ export default function SaleFlow() {
 
       for (const item of basket) {
         await markDepoSold(item)
+      }
+      // Depodan seçilmiş hədiyyələr də «Satılıb» olur
+      for (const h of hediyyeler) {
+        if (h.depoItem?.id) await markDepoSold(h.depoItem)
+      }
+
+      // Müqavilə yaradılıbsa: təsdiqlənmiş qrafiklə yenidən hazırlayıb müştərinin sənədlərinə yüklə
+      if (muqavileFile && inserted?.id) {
+        try {
+          const finalLines = approvedLines?.length ? approvedLines : payload.odenis_qrafiki || []
+          const fresh = await createMuqavileDocx(
+            muqavileDataFrom(finalLines)
+          )
+          const { files: up, error: upErr } = await uploadSenedlerFiles('musteri_bazasi', inserted.id, [fresh])
+          if (upErr) throw new Error(upErr)
+          if (up.length) {
+            const { error: docErr } = await supabase
+              .from(MUSTERI_TABLE)
+              .update({ senedler: [...parseSenedler(inserted.senedler), ...up] })
+              .eq('id', inserted.id)
+            if (docErr) throw docErr
+          }
+        } catch (docError) {
+          window.alert(`Satış saxlandı, amma müqavilə faylı sənədlərə yüklənmədi: ${docError.message || docError}`)
+        }
+      }
+
+      // Barter cihazı → Depo (+ alış müqaviləsi)
+      if (barter.aktiv && barterAmount(barter) > 0) {
+        try {
+          await saveBarterToDepo({ musteriId, satisRow: inserted })
+        } catch (bErr) {
+          window.alert(
+            `Satış saxlandı, amma barter cihazı Depoya yazılmadı: ${bErr.message || bErr}\nCihazı Depoya əl ilə əlavə edin.`
+          )
+        }
       }
 
       navigate('/musteri-bazasi')
@@ -991,17 +1447,143 @@ export default function SaleFlow() {
       ? NEW_MUSTERI_VALUE
       : (saleType === 'kredit' ? musteriForm.musteri_id : person.musteri_id) || ''
 
+  /** «Əlavə məhsul» seçim pəncərəsi — səbətdə və kredit formunda eyni */
+  const addPickerPanel = showAddPicker ? (
+            <div className="add-picker" style={{ border: '1px solid var(--color-border)', borderRadius: 8, padding: 12 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginBottom: 8, flexWrap: 'wrap' }}>
+                <h3 className="card__title" style={{ margin: 0 }}>Mövcud məhsullardan seçin</h3>
+                <button type="button" className="btn btn--secondary" onClick={() => setShowAddPicker(false)}>
+                  Bağla
+                </button>
+              </div>
+              <div style={{ marginBottom: 12 }}>
+                <DepoFilterFields
+                  rows={availableExtras}
+                  filters={extraFilters}
+                  onChange={(k, v) => setExtraFilters((prev) => nextFilters(prev, k, v))}
+                  onClear={() => {
+                    setExtraFilters({ ...EMPTY_DEPO_FILTERS })
+                    setExtraSearch({ ad: '', imei1: '', imei2: '', seriya: '' })
+                  }}
+                  showVeziyyet={false}
+                  showDates={false}
+                  idPrefix="depo-extra-filters"
+                />
+              </div>
+              <div className="add-picker__search">
+                {[
+                  { key: 'ad', label: 'Məhsulun adı', ph: 'məs. iPhone 14 128' },
+                  { key: 'imei1', label: 'IMEI 1', ph: 'IMEI 1 yazın…' },
+                  { key: 'imei2', label: 'IMEI 2', ph: 'IMEI 2 yazın…' },
+                  { key: 'seriya', label: 'Seriya No', ph: 'Seriya nömrəsi…' },
+                ].map((f) => (
+                  <div key={f.key} className="form-group">
+                    <label htmlFor={`depo-extra-${f.key}`}>{f.label}</label>
+                    <input
+                      id={`depo-extra-${f.key}`}
+                      type="search"
+                      value={extraSearch[f.key]}
+                      onChange={(e) => setExtraSearch((prev) => ({ ...prev, [f.key]: e.target.value }))}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') e.preventDefault()
+                      }}
+                      placeholder={f.ph}
+                      autoComplete="off"
+                    />
+                  </div>
+                ))}
+              </div>
+              {availableExtras.length === 0 ? (
+                <p className="empty-state">Əlavə edilə biləcək məhsul yoxdur.</p>
+              ) : (
+                <div className="table-wrap">
+                  <table className="data-table">
+                    <thead>
+                      <tr>
+                        {EXTRA_PICKER_COLUMNS.map((c) => (
+                          <th key={c.key} className={c.num ? 'num' : undefined}>
+                            {c.label}
+                          </th>
+                        ))}
+                        <th className="add-picker__sticky"></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {applyDepoFilters(availableExtras, extraFilters)
+                        .filter((item) => {
+                          const has = (field, q) => {
+                            const t = String(q || '').replace(/\s+/g, '').toLowerCase()
+                            if (!t) return true
+                            return String(field || '').replace(/\s+/g, '').toLowerCase().includes(t)
+                          }
+                          // Məhsulun adı: yazılan hər söz növ / model / yaddaş / rəng / kateqoriyada olmalıdır
+                          const adHay = [item.kateqoriya, item.nov, item.model, item.yaddas, item.reng]
+                            .filter(Boolean)
+                            .join(' ')
+                            .toLocaleLowerCase('az')
+                          const adWords = String(extraSearch.ad || '')
+                            .toLocaleLowerCase('az')
+                            .split(/\s+/)
+                            .filter(Boolean)
+                          if (adWords.some((w) => !adHay.includes(w))) return false
+                          return (
+                            has(item.imei_1, extraSearch.imei1) &&
+                            has(item.imei_2, extraSearch.imei2) &&
+                            has(item.serial_no, extraSearch.seriya)
+                          )
+                        })
+                        .map((item) => (
+                        <tr key={item.id}>
+                          {EXTRA_PICKER_COLUMNS.map((c) => (
+                            <td key={c.key} className={c.num ? 'num' : c.key === 'kommentler' ? 'add-picker__wrap' : undefined}>
+                              {c.key === 'alis_qiymeti' ? formatMoney(item.alis_qiymeti) : extraCell(item, c.key)}
+                            </td>
+                          ))}
+                          <td className="add-picker__sticky">
+                            <button type="button" className="btn btn--primary" onClick={() => addToBasket(item)}>
+                              Səbətə əlavə et
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+  ) : null
+
+  let currentAlisSig = ''
+  if (saleType === 'kredit' && step === 2 && alisFile) {
+    try {
+      currentAlisSig = alisSigOf(alisDataFrom())
+    } catch (_) {
+      currentAlisSig = ''
+    }
+  }
+
+  let currentMuqavileSig = ''
+  if (saleType === 'kredit' && step === 2 && muqavileFile) {
+    try {
+      currentMuqavileSig = JSON.stringify(muqavileDataFrom(kreditSchedulePlan().buildLines()))
+    } catch (_) {
+      currentMuqavileSig = ''
+    }
+  }
+
   const kreditPreview = {
     gozlenilen_gelir: formatMoney(
       (Number(musteriForm.satis_qiymeti) || totals.satis || 0) -
         (Number(musteriForm.alis_qiymeti) || totals.alis || 0) -
-        (Number(musteriForm.satici_faizi) || 0)
+        (Number(musteriForm.satici_faizi) || 0) -
+        hediyyeTotal(hediyyeler)
     ),
     faktiki_gelir: formatMoney(
       (Number(ilkinOdenisVerilib) || 0) +
         (Number(musteriForm.faiz) || 0) -
         (Number(musteriForm.alis_qiymeti) || totals.alis || 0) -
-        (Number(musteriForm.satici_faizi) || 0)
+        (Number(musteriForm.satici_faizi) || 0) -
+        hediyyeTotal(hediyyeler)
     ),
     qalan_borc: formatMoney(
       (Number(musteriForm.satis_qiymeti) || totals.satis || 0) - (Number(ilkinOdenisVerilib) || 0)
@@ -1013,15 +1595,15 @@ export default function SaleFlow() {
     <div className="card">
       <div className="page-header" style={{ marginBottom: 16 }}>
         <h2 className="card__title" style={{ margin: 0 }}>
-          Satış səbəti ({basket.length})
+          {step === 0 ? `Satış səbəti (${basket.length})` : `Satış (${basket.length} məhsul)`}
         </h2>
         <Link to="/depo" className="btn btn--secondary">Geri</Link>
       </div>
 
       {error && <p style={{ color: 'var(--color-accent)', marginBottom: 12 }}>{error}</p>}
 
-      {/* Basket always visible as summary when past step 0 */}
-      {step > 0 && (
+      {/* Səbət xülasəsi yalnız satış növü seçiləndə; formda məhsullar aşağıda göstərilir */}
+      {step === 1 && (
         <div style={{ marginBottom: 16, padding: 12, background: 'var(--color-bg)', borderRadius: 6, fontSize: 13 }}>
           {basket.map((item) => (
             <div key={item.id}>
@@ -1090,66 +1672,7 @@ export default function SaleFlow() {
             </button>
           </div>
 
-          {showAddPicker && (
-            <div style={{ border: '1px solid var(--color-border)', borderRadius: 8, padding: 12 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginBottom: 8, flexWrap: 'wrap' }}>
-                <h3 className="card__title" style={{ margin: 0 }}>Mövcud məhsullardan seçin</h3>
-                <button type="button" className="btn btn--secondary" onClick={() => setShowAddPicker(false)}>
-                  Bağla
-                </button>
-              </div>
-              <div className="form-group" style={{ marginBottom: 12 }}>
-                <label htmlFor="depo-extra-filter">Axtar</label>
-                <input
-                  id="depo-extra-filter"
-                  type="search"
-                  value={extraFilter}
-                  onChange={(e) => setExtraFilter(e.target.value)}
-                  placeholder="Model, rəng, IMEI…"
-                  autoComplete="off"
-                />
-              </div>
-              {availableExtras.length === 0 ? (
-                <p className="empty-state">Əlavə edilə biləcək məhsul yoxdur.</p>
-              ) : (
-                <div className="table-wrap">
-                  <table className="data-table">
-                    <thead>
-                      <tr>
-                        <th>Model</th>
-                        <th>Rəng</th>
-                        <th>IMEI</th>
-                        <th>Qiymət</th>
-                        <th></th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {availableExtras
-                        .filter((item) => {
-                          const q = extraFilter.trim().toLowerCase()
-                          if (!q) return true
-                          const hay = `${item.model || ''} ${item.reng || ''} ${item.imei_1 || ''} ${item.imei_2 || ''}`.toLowerCase()
-                          return hay.includes(q)
-                        })
-                        .map((item) => (
-                        <tr key={item.id}>
-                          <td>{item.model || '—'}</td>
-                          <td>{item.reng || '—'}</td>
-                          <td>{item.imei_1 || '—'}</td>
-                          <td className="num">{formatMoney(item.alis_qiymeti)}</td>
-                          <td>
-                            <button type="button" className="btn btn--primary" onClick={() => addToBasket(item)}>
-                              Səbətə əlavə et
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
-          )}
+          {addPickerPanel}
         </>
       )}
 
@@ -1186,14 +1709,15 @@ export default function SaleFlow() {
 
           {saleType === 'borc_nisye' ? (
             <>
-              <SuggestInput
-                id="sale-borc-kime"
-                label="Kontragent (Kimə)"
-                value={person.ad_soyad}
-                onChange={(v) => setPerson((p) => ({ ...p, ad_soyad: v }))}
-                options={ledgerNames}
-                placeholder="Mövcuddan seçin və ya yeni yazın…"
-                required
+              {/* Sahələr alt-alta (Depo formu kimi) */}
+              <div className="depo-stack">
+              <HaradanBlock
+                title="Kimə"
+                src={kimeSrc}
+                setSrc={setKimeSrc}
+                suppliers={kimeSupplierOptions}
+                customers={kimeCustomerOptions}
+                onPickName={(name) => setPerson((p) => ({ ...p, ad_soyad: name }))}
               />
 
               <div className="form-group">
@@ -1217,46 +1741,48 @@ export default function SaleFlow() {
 
               <div className="form-group">
                 <label>Tarix</label>
-                <input
-                  type="date"
-                  value={form.verilme_tarixi}
-                  onChange={(e) => setForm((f) => ({ ...f, verilme_tarixi: e.target.value }))}
-                />
+                <div className="depo-inline">
+                  <input
+                    type="date"
+                    value={form.verilme_tarixi}
+                    onChange={(e) => setForm((f) => ({ ...f, verilme_tarixi: e.target.value }))}
+                  />
+                </div>
               </div>
 
               <div className="form-group">
                 <label>Qaytarma / ödəniş tarixi *</label>
-                <input
-                  type="date"
-                  value={form.qaytarma_tarixi || ''}
-                  onChange={(e) => setForm((f) => ({ ...f, qaytarma_tarixi: e.target.value }))}
-                  required
-                />
-                <p style={{ margin: '4px 0 0', fontSize: 11, color: 'var(--color-text-muted)' }}>
-                  Nə vaxt məbləğ alınmalı / ödənilməlidir (kalendarda görünəcək)
-                </p>
+                <div className="depo-inline">
+                  <input
+                    type="date"
+                    value={form.qaytarma_tarixi || ''}
+                    onChange={(e) => setForm((f) => ({ ...f, qaytarma_tarixi: e.target.value }))}
+                    required
+                  />
+                  <p className="depo-msg depo-msg--hint">
+                    Nə vaxt məbləğ alınmalı / ödənilməlidir (kalendarda görünəcək)
+                  </p>
+                </div>
               </div>
 
-              <h3 className="card__title">Məhsul qiymətləri</h3>
+              <h3 className="card__title" style={{ margin: '4px 0 0' }}>Məhsul qiymətləri</h3>
               {basket.map((item) => (
-                <div key={item.id} style={{ marginBottom: 16 }}>
-                  <p style={{ margin: '0 0 8px', fontSize: 13, color: 'var(--color-text-muted)' }}>
+                <div key={item.id} className="depo-box">
+                  <p style={{ margin: 0, fontSize: 13, color: 'var(--color-text-muted)' }}>
                     Depo: {item.model || '—'} · {item.reng || '—'} · {item.imei_1 || '—'}
                   </p>
-                  <div className="form-row" style={{ alignItems: 'flex-end' }}>
-                    <div style={{ flex: '2 1 200px' }}>
-                      <SuggestInput
-                        id={`sale-borc-mehsul-${item.id}`}
-                        label="Məhsul"
-                        value={lineMehsul[item.id] ?? ''}
-                        onChange={(v) => setLineMehsul((prev) => ({ ...prev, [item.id]: v }))}
-                        options={ledgerMehsul}
-                        placeholder="Mövcuddan seçin və ya yeni yazın…"
-                        required
-                      />
-                    </div>
-                    <div className="form-group">
-                      <label>Alış</label>
+                  <SuggestInput
+                    id={`sale-borc-mehsul-${item.id}`}
+                    label="Məhsul"
+                    value={lineMehsul[item.id] ?? ''}
+                    onChange={(v) => setLineMehsul((prev) => ({ ...prev, [item.id]: v }))}
+                    options={ledgerMehsul}
+                    placeholder="Mövcuddan seçin və ya yeni yazın…"
+                    required
+                  />
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label>Alış</label>
+                    <div className="depo-inline">
                       <input
                         type="number"
                         step="0.01"
@@ -1269,8 +1795,10 @@ export default function SaleFlow() {
                         }
                       />
                     </div>
-                    <div className="form-group">
-                      <label>Satış (məbləğ) *</label>
+                  </div>
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label>Satış (məbləğ) *</label>
+                    <div className="depo-inline">
                       <input
                         type="number"
                         step="0.01"
@@ -1296,6 +1824,7 @@ export default function SaleFlow() {
                   onChange={(e) => setForm((f) => ({ ...f, kommentler: e.target.value }))}
                 />
               </div>
+              </div>
 
               {error && <p style={{ color: 'var(--color-accent)' }}>{error}</p>}
 
@@ -1310,340 +1839,201 @@ export default function SaleFlow() {
             </>
           ) : (
             <>
-          <MusteriSelect
-            customers={customers}
-            value={selectValue}
-            onSelectExisting={handleSelectExisting}
-            onSelectNew={handleSelectNew}
-          />
 
-          {(mode === 'new' || mode === 'existing') && saleType === 'kredit' && (
-            <>
-              <h3 className="card__title">Məhsul qiymətləri</h3>
-              {basket.map((item) => (
-                <div key={item.id} className="form-row" style={{ alignItems: 'flex-end' }}>
-                  <div className="form-group" style={{ flex: '2 1 200px' }}>
-                    <label>Məhsul</label>
-                    <input
-                      readOnly
-                      value={`${item.model || '—'} · ${item.reng || '—'} · ${item.imei_1 || '—'}`}
-                    />
-                  </div>
-                  <div className="form-group">
-                    <label>Alış</label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      value={linePrices[item.id]?.alis ?? ''}
-                      onChange={(e) => {
-                        const v = e.target.value
-                        setLinePrices((prev) => ({
-                          ...prev,
-                          [item.id]: { ...prev[item.id], alis: v },
-                        }))
-                        if (basket.length === 1) {
-                          setMusteriForm((f) =>
-                            setFormField(f, { key: 'alis_qiymeti', custom: false }, v)
-                          )
-                        }
-                      }}
-                    />
-                  </div>
-                  <div className="form-group">
-                    <label>Satış *</label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      required
-                      value={linePrices[item.id]?.satis ?? ''}
-                      onChange={(e) => {
-                        const v = e.target.value
-                        setLinePrices((prev) => ({
-                          ...prev,
-                          [item.id]: { ...prev[item.id], satis: v },
-                        }))
-                        if (basket.length === 1) {
-                          setMusteriForm((f) =>
-                            setFormField(f, { key: 'satis_qiymeti', custom: false }, v)
-                          )
-                        }
-                      }}
-                    />
-                  </div>
-                </div>
-              ))}
-
-              <div className="form-row" style={{ marginBottom: 12 }}>
-                <div className="form-group">
-                  <label>İlkin ödəniş</label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    value={ilkinOdenis}
-                    onChange={(e) => {
-                      setIlkinManual(true)
-                      setIlkinOdenis(e.target.value)
-                    }}
-                  />
-                  <p style={{ margin: '4px 0 0', fontSize: 11, color: 'var(--color-text-muted)' }}>
-                    Avtomatik: satış − (aylıq × neçə ay). Əl ilə dəyişə bilərsiniz.
-                  </p>
-                </div>
-                <div className="form-group">
-                  <label>İlkin ödəniş verilib</label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    value={ilkinOdenisVerilib}
-                    onChange={(e) => setIlkinOdenisVerilib(e.target.value)}
-                  />
-                  <p style={{ margin: '4px 0 0', fontSize: 11, color: 'var(--color-text-muted)' }}>
-                    Satışdan sonra Ödənişlər tabına əlavə olunur.
-                  </p>
-                </div>
-                <div className="form-group">
-                  <label>Ümumi gözlənilən gəlir</label>
-                  <input readOnly value={formatMoney(totals.gozlenilen)} />
-                </div>
-                <div className="form-group">
-                  <label>Ümumi satış</label>
-                  <input readOnly value={formatMoney(totals.satis)} />
-                </div>
-              </div>
-
-              {ilkinRemaining > 0.009 && (
-                <div className="form-row" style={{ marginBottom: 12 }}>
-                  <div className="form-group">
-                    <label>Qalan ilkin ödəniş</label>
-                    <input readOnly value={formatMoney(ilkinRemaining)} />
-                  </div>
-                  <div className="form-group">
-                    <label>Qalan ilkin ödəniş tarixi *</label>
-                    <input
-                      type="date"
-                      required
-                      value={ilkinQaliqTarixi}
-                      onChange={(e) => setIlkinQaliqTarixi(e.target.value)}
-                    />
-                    <p style={{ margin: '4px 0 0', fontSize: 11, color: 'var(--color-text-muted)' }}>
-                      Bu məbləğ Yığım tabında bu tarixlə görünəcək.
-                    </p>
-                  </div>
-                </div>
-              )}
-
-              {visibleCihazFields.length > 0 && (
-                <>
-              <h3 className="card__title">Cihaz məlumatları</h3>
-              <p style={{ margin: '0 0 12px', fontSize: 13, color: 'var(--color-text-muted)' }}>
-                Hər səbət məhsulu üçün ayrıca saxlanılır. Sütunlar Müştəri Bazası ayarları ilə eynidir.
-              </p>
-              {basket.map((item, idx) => {
-                const cihaz = lineCihaz[item.id] || emptyLineCihaz(item)
-                return (
-                  <details key={item.id} className="collapse-section" defaultOpen>
-                    <summary className="collapse-section__title">
-                      Cihaz {idx + 1}: {item.model || '—'} · {item.reng || '—'} · {item.imei_1 || '—'}
-                    </summary>
-                    <div className="form-row" style={{ paddingTop: 8 }}>
-                      {visibleCihazFields.map((field) => (
-                        <div className="form-group" key={field.key}>
-                          <label>
-                            {field.label}
-                            {!field.editable ? ' (depodan)' : ''}
-                          </label>
-                          {field.editable ? (
-                            <input
-                              value={cihaz[field.key] ?? ''}
-                              onChange={(e) => updateLineCihaz(item.id, field.key, e.target.value)}
-                            />
-                          ) : (
-                            <input readOnly value={cihaz[field.key] || '—'} />
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  </details>
-                )
-              })}
-                </>
-              )}
-
-              <MusteriSectionedFields
-                columns={columns}
-                form={musteriForm}
-                onFieldChange={(col, v) => {
-                  setMusteriForm((prev) => setFormField(prev, col, v))
-                  if (
-                    ['ad_soyad', 'nomre_1', 'nomre_2', 'nomre_3', 'nomre_4', 'nomre_5', 'zamin'].includes(
-                      col.key
-                    )
-                  ) {
-                    setPerson((p) => ({ ...p, [col.key]: v }))
-                  }
-                }}
-                suggestions={suggestions}
-                computedDisplay={kreditPreview}
-                readonlyKeys={DEPO_READONLY_KEYS}
-                skipKeys={KREDIT_SKIP_KEYS}
-                forceOpenIds={KREDIT_OPEN_SECTIONS}
-                requiredKeys={new Set(['ad_soyad', 'nece_ay', 'birinci_ayliq_odenis_tarixi'])}
-              />
-
-              <MusteriNotesAndFiles
-                columns={columns}
-                form={musteriForm}
-                onKommentChange={(v) =>
-                  setMusteriForm((prev) => setFormField(prev, { key: 'kommentler' }, v))
-                }
-                senedlerProps={{
-                  folder: 'musteri_bazasi',
-                  recordId: null,
-                  value: musteriForm.senedler,
-                  onChange: (files) => setMusteriForm((prev) => ({ ...prev, senedler: files })),
-                }}
-              />
-            </>
+          {saleType === 'kredit' && (
+            <KreditSaleFields
+              basket={basket}
+              linePrices={linePrices}
+              onSatisChange={onKreditSatisChange}
+              lineCihaz={lineCihaz}
+              cihazFields={visibleCihazFields}
+              emptyCihaz={emptyLineCihaz}
+              onCihazChange={updateLineCihaz}
+              musteriForm={musteriForm}
+              setMusteriField={setMusteriField}
+              saticiOptions={suggestions.satici || []}
+              ilkinOdenis={ilkinOdenis}
+              onIlkinChange={(val) => {
+                setIlkinManual(true)
+                setIlkinOdenis(val)
+              }}
+              ilkinOdenisVerilib={ilkinOdenisVerilib}
+              setIlkinOdenisVerilib={setIlkinOdenisVerilib}
+              ilkinRemaining={ilkinRemaining}
+              ilkinQaliqTarixi={ilkinQaliqTarixi}
+              setIlkinQaliqTarixi={setIlkinQaliqTarixi}
+              totalSatis={totals.satis}
+              formatMoney={formatMoney}
+              customers={customers}
+              selectValue={selectValue}
+              onSelectExisting={handleSelectExisting}
+              onSelectNew={handleSelectNew}
+              mode={mode}
+              kontakt={kreditKontakt}
+              addPicker={addPickerPanel}
+              barterAmount={barterAmount(barter)}
+              hediyyeSlot={
+                <HediyyeBlock
+                  value={hediyyeler}
+                  onChange={setHediyyeler}
+                  excludeIds={basket.map((b) => b.id)}
+                />
+              }
+              barterSlot={
+                <BarterAlis
+                  value={barter}
+                  onChange={setBarter}
+                  satici={{
+                    ad: String(musteriForm.ad_soyad || '').trim(),
+                    seriya: kreditKontakt.sv_seriya,
+                    fin: kreditKontakt.fin_kod,
+                    tel: musteriForm.nomre_1,
+                  }}
+                  file={alisFile}
+                  onFile={setAlisFile}
+                  stale={Boolean(alisFile) && alisSig !== currentAlisSig}
+                  onCreate={async () => {
+                    const d = alisDataFrom()
+                    const f = await createAlisDocx(d)
+                    setAlisSig(alisSigOf(d))
+                    return f
+                  }}
+                />
+              }
+              onOpenAdd={openAddPicker}
+              onRemoveItem={removeFromBasket}
+              setKontaktField={(k, val) => setKreditKontakt((prev) => ({ ...prev, [k]: val }))}
+            >
+            <MusteriNotesAndFiles
+              columns={columns}
+              form={musteriForm}
+              showSenedler={false}
+              onKommentChange={(v) =>
+                setMusteriForm((prev) => setFormField(prev, { key: 'kommentler' }, v))
+              }
+            />
+            <MuqavileYarat
+              title="Kredit Müqaviləsi"
+              file={muqavileFile}
+              stale={Boolean(muqavileFile) && muqavileSig !== currentMuqavileSig}
+              disabledReason={muqavileMissing()}
+              onCreate={async () => {
+                const data = muqavileDataFrom(kreditSchedulePlan().buildLines())
+                const f = await createMuqavileDocx(data)
+                setMuqavileSig(JSON.stringify(data))
+                return f
+              }}
+              onChange={setMuqavileFile}
+            />
+            </KreditSaleFields>
           )}
 
-          {(mode === 'new' || mode === 'existing') && saleType === 'nagd' && (
-            <>
-              <div className="form-row">
-                <div className="form-group">
-                  <label>Ad Soyad Ata adı *</label>
-                  <input
-                    value={person.ad_soyad}
-                    onChange={(e) => setPerson((p) => ({ ...p, ad_soyad: e.target.value }))}
-                    required
-                  />
-                </div>
-                {['nomre_1', 'nomre_2', 'nomre_3'].map((k, i) => (
-                  <div className="form-group" key={k}>
-                    <label>Nömrə {i + 1}</label>
-                    <input
-                      value={person[k]}
-                      onChange={(e) => setPerson((p) => ({ ...p, [k]: e.target.value }))}
-                    />
-                  </div>
-                ))}
-                <div className="form-group">
-                  <label>Zamin</label>
-                  <input
-                    value={person.zamin}
-                    onChange={(e) => setPerson((p) => ({ ...p, zamin: e.target.value }))}
-                  />
-                </div>
-              </div>
+          {saleType === 'nagd' && (
+            <div className="depo-stack">
+              <HaradanBlock
+                title="Kimə"
+                src={kimeSrc}
+                setSrc={setKimeSrc}
+                suppliers={kimeSupplierOptions}
+                customers={kimeCustomerOptions}
+                onPickName={(name) => setPerson((p) => ({ ...p, ad_soyad: name }))}
+              />
 
-              <hr style={{ border: 0, borderTop: '1px solid var(--color-border)', margin: '20px 0' }} />
-
-              <h3 className="card__title">Məhsul qiymətləri</h3>
+              {/* Alış qiyməti Depodan avtomatik götürülür (formda göstərilmir) */}
+              <h3 className="card__title" style={{ margin: '4px 0 0' }}>Məhsul qiymətləri</h3>
               {basket.map((item) => (
-                <div key={item.id} className="form-row" style={{ alignItems: 'flex-end' }}>
-                  <div className="form-group" style={{ flex: '2 1 200px' }}>
+                <div key={item.id} className="depo-box">
+                  <div className="form-group" style={{ marginBottom: 0 }}>
                     <label>Məhsul</label>
-                    <input
-                      readOnly
-                      value={`${item.model || '—'} · ${item.reng || '—'} · ${item.imei_1 || '—'}`}
-                    />
+                    <div className="depo-inline">
+                      <input
+                        readOnly
+                        value={`${item.model || '—'} · ${item.reng || '—'} · ${item.imei_1 || '—'}`}
+                      />
+                    </div>
                   </div>
-                  <div className="form-group">
-                    <label>Alış</label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      value={linePrices[item.id]?.alis ?? ''}
-                      onChange={(e) =>
-                        setLinePrices((prev) => ({
-                          ...prev,
-                          [item.id]: { ...prev[item.id], alis: e.target.value },
-                        }))
-                      }
-                    />
-                  </div>
-                  <div className="form-group">
+                  <div className="form-group" style={{ marginBottom: 0 }}>
                     <label>Satış *</label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      required
-                      value={linePrices[item.id]?.satis ?? ''}
-                      onChange={(e) => {
-                        const v = e.target.value
-                        setLinePrices((prev) => ({
-                          ...prev,
-                          [item.id]: { ...prev[item.id], satis: v },
-                        }))
-                        if (basket.length === 1) {
-                          setForm((f) => ({ ...f, verilib: v }))
-                        }
-                      }}
-                    />
+                    <div className="depo-inline">
+                      <input
+                        type="number"
+                        step="0.01"
+                        required
+                        value={linePrices[item.id]?.satis ?? ''}
+                        onChange={(e) => {
+                          const v = e.target.value
+                          setLinePrices((prev) => ({
+                            ...prev,
+                            [item.id]: { ...prev[item.id], satis: v },
+                          }))
+                          if (basket.length === 1) {
+                            setForm((f) => ({ ...f, verilib: v }))
+                          }
+                        }}
+                      />
+                    </div>
                   </div>
                 </div>
               ))}
 
-              <div className="form-row">
-                <div className="form-group">
-                  <label>Ümumi xeyir (satış − alış)</label>
-                  <input readOnly value={formatMoney(totals.gozlenilen)} />
-                </div>
                 <div className="form-group">
                   <label>Ümumi satış</label>
-                  <input readOnly value={formatMoney(totals.satis)} />
+                  <div className="depo-inline">
+                    <input readOnly value={formatMoney(totals.satis)} />
+                  </div>
                 </div>
-              </div>
 
-              <div className="form-row">
                 <div className="form-group">
                   <label>Satış tarixi</label>
-                  <input
-                    type="date"
-                    value={form.verilme_tarixi}
-                    onChange={(e) => setForm((f) => ({ ...f, verilme_tarixi: e.target.value }))}
-                  />
+                  <div className="depo-inline">
+                    <input
+                      type="date"
+                      value={form.verilme_tarixi}
+                      onChange={(e) => setForm((f) => ({ ...f, verilme_tarixi: e.target.value }))}
+                    />
+                  </div>
                 </div>
+
                 <div className="form-group">
                   <label>Satıcı</label>
-                  <input
-                    value={form.satici}
-                    onChange={(e) => setForm((f) => ({ ...f, satici: e.target.value }))}
-                  />
+                  <div className="depo-inline">
+                    <input
+                      value={form.satici}
+                      onChange={(e) => setForm((f) => ({ ...f, satici: e.target.value }))}
+                    />
+                  </div>
                 </div>
+
                 <div className="form-group">
                   <label>Satıcı Faizi</label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    value={form.satici_faizi}
-                    onChange={(e) => setForm((f) => ({ ...f, satici_faizi: e.target.value }))}
-                  />
+                  <div className="depo-inline">
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={form.satici_faizi}
+                      onChange={(e) => setForm((f) => ({ ...f, satici_faizi: e.target.value }))}
+                    />
+                  </div>
                 </div>
-                <div className="form-group">
-                  <label>Xeyir (Faizlə)</label>
-                  <input
-                    readOnly
-                    value={formatNagdMoney(
-                      computeXeyirFaizle(totals.alis, totals.satis, form.satici_faizi)
-                    )}
-                  />
-                </div>
-              </div>
 
-              <div className="form-group">
-                <label>Kommentlər</label>
-                <input
-                  value={form.kommentler}
-                  onChange={(e) => setForm((f) => ({ ...f, kommentler: e.target.value }))}
-                />
-              </div>
-            </>
+                <div className="form-group">
+                  <label>Kommentlər</label>
+                  <div className="depo-inline">
+                    <input
+                      value={form.kommentler}
+                      onChange={(e) => setForm((f) => ({ ...f, kommentler: e.target.value }))}
+                    />
+                  </div>
+                </div>
+            </div>
           )}
 
           <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
-            <button type="submit" className="btn btn--primary" disabled={saving || mode === 'pick'}>
+            <button
+              type="submit"
+              className="btn btn--primary"
+              disabled={saving || (mode === 'pick' && saleType !== 'nagd')}
+            >
               {saving
                 ? 'Saxlanılır…'
                 : saleType === 'kredit'

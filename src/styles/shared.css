@@ -702,3 +702,50 @@ details[open] .collapse-section__title::before {
 .attachment-list a:hover {
   text-decoration: underline;
 }
+
+/* Ödəniş qəbzi pəncərəsi */
+.qebz-modal {
+  width: min(720px, 96vw);
+  max-height: 94vh;
+  overflow: auto;
+  margin: 0;
+  display: grid;
+  gap: 12px;
+}
+
+.qebz-modal__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.qebz-modal__controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.qebz-modal__note {
+  margin: 0;
+  font-size: 13px;
+  color: var(--color-text-muted);
+}
+
+.qebz-modal__preview {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: #fff;
+  overflow: hidden;
+}
+
+.qebz-modal__preview img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.qebz-modal__preview img + img {
+  border-top: 6px solid var(--color-border);
+}

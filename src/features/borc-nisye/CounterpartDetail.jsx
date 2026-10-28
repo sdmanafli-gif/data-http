@@ -3,6 +3,8 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 import { supabase, fetchAllPages } from '../../lib/supabase'
 import { confirmDelete } from '../../lib/confirmDelete'
 import SuggestInput from '../musteri-bazasi/SuggestInput'
+import QebzButton from '../../components/QebzButton'
+import { buildLedgerQebz } from '../../lib/qebzData'
 import {
   LEDGER_TABLE,
   ENTRY_TYPES,
@@ -344,7 +346,7 @@ export default function CounterpartDetail() {
                   <th>Məhsul</th>
                   <th>IMEI</th>
                   <th>Qeyd</th>
-                  <th style={{ width: 160 }}>Əməliyyat</th>
+                  <th style={{ width: 220 }}>Əməliyyat</th>
                 </tr>
               </thead>
               <tbody>
@@ -359,6 +361,12 @@ export default function CounterpartDetail() {
                     <td>{row.qeyd || '—'}</td>
                     <td>
                       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                        {row.tip !== 'qeyd' && (
+                          <QebzButton
+                            style={{ padding: '4px 10px', fontSize: 12 }}
+                            buildData={() => buildLedgerQebz(row)}
+                          />
+                        )}
                         <button
                           type="button"
                           className="btn btn--secondary"
