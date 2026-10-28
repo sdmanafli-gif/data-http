@@ -286,3 +286,22 @@
 .xerc-total b {
   color: var(--color-text);
 }
+
+.xerc-sec--faiz .xerc-sec__head {
+  border-left: 5px solid var(--color-warning);
+}
+
+.xerc-months__bar--faiz {
+  background: #f0d48a;
+}
+
+.xerc-months__col--on .xerc-months__bar--faiz,
+.xerc-months__col:hover .xerc-months__bar--faiz {
+  background: var(--color-warning);
+}
+
+.xerc-note {
+  font-size: 12px;
+  color: var(--color-text-muted);
+  margin: 0 0 12px;
+}
