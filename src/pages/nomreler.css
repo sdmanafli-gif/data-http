@@ -1,0 +1,115 @@
+/* Nömrələr səhifəsi */
+.nomre-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.nomre-chip {
+  padding: 4px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--color-border);
+  font-size: 13px;
+  font-weight: 600;
+  background: var(--color-surface, #fff);
+}
+
+.nomre-chip--late {
+  border-color: #e30613;
+  color: #b00010;
+  background: #fdecea;
+}
+
+.nomre-chip--soon {
+  border-color: #d9a400;
+  color: #8a6400;
+  background: #fff8e1;
+}
+
+.nomre-form {
+  margin-bottom: 16px;
+}
+
+.nomre-form__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+.nomre-form__grid .form-group {
+  margin-bottom: 0;
+}
+
+.nomre-form__grid input {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.nomre-form__wide {
+  grid-column: 1 / -1;
+}
+
+.nomre-table {
+  font-size: 14px;
+}
+
+.nomre-table__no {
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.nomre-table__next {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.nomre-table__qeyd {
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+
+.nomre-row--late td {
+  background: #fdecea;
+}
+
+.nomre-row--soon td {
+  background: #fff8e1;
+}
+
+.nomre-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  background: #eef2ee;
+}
+
+.nomre-badge--late {
+  background: #e30613;
+  color: #fff;
+}
+
+.nomre-badge--soon {
+  background: #f5c400;
+  color: #222;
+}
+
+.nomre-badge--ok {
+  background: #e3f3e6;
+  color: #1f6b2e;
+}
+
+.nomre-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.nomre-actions .btn {
+  padding: 4px 10px;
+  font-size: 12px;
+  white-space: nowrap;
+}
