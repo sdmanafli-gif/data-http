@@ -73,11 +73,11 @@ const monthKeyOf = (y, m) => `${y}-${String(m + 1).padStart(2, '0')}`
 function loadOpen() {
   try {
     const v = JSON.parse(localStorage.getItem(OPEN_KEY) || 'null')
-    if (v && typeof v === 'object') return { is: v.is !== false, sexsi: v.sexsi !== false }
+    if (v && typeof v === 'object') return { is: v.is !== false, sexsi: v.sexsi !== false, faiz: v.faiz !== false }
   } catch {
     /* brauzer yaddaşı əlçatan deyil */
   }
-  return { is: true, sexsi: true }
+  return { is: true, sexsi: true, faiz: true }
 }
 
 /** Bir qrupun bloku (İş və ya Şəxsi) */
@@ -458,6 +458,192 @@ function XercSection({ qrup, open, onToggle, rows, year, month, onPickMonth, kat
   )
 }
 
+/**
+ * İşçilər faizi — satışlarda seçilən satıcı və yazılan bonus (satıcı faizi) avtomatik yığılır.
+ * Mənbə: Nağd / Nisyə satış (nagd_satish) və Kredit satış (musteri_bazasi). Yalnız oxuyur.
+ * Bu məbləğ satış mənfəətində artıq çıxılıb — Analitikada ikinci dəfə çıxılmır.
+ */
+function IscilerFaizSection({ open, onToggle, sales, year, month, onPickMonth }) {
+  const mk = monthKeyOf(year, month)
+  const [who, setWho] = useState('')
+
+  useEffect(() => {
+    setWho('')
+  }, [mk])
+
+  const monthRows = useMemo(() => sales.filter((r) => String(r.tarix || '').slice(0, 7) === mk), [sales, mk])
+  const shownRows = (who ? monthRows.filter((r) => r.satici === who) : monthRows)
+    .slice()
+    .sort((a, b) => String(b.tarix).localeCompare(String(a.tarix)))
+  const monthTotal = r2(monthRows.reduce((s, r) => s + r.bonus, 0))
+
+  const bySeller = useMemo(() => {
+    const m = new Map()
+    for (const r of monthRows) {
+      const g = m.get(r.satici) || { name: r.satici, count: 0, bonus: 0, satis: 0, nagd: 0, nisye: 0, kredit: 0 }
+      g.count += 1
+      g.bonus += r.bonus
+      g.satis += r.satis
+      if (r.nov === 'Kredit') g.kredit += 1
+      else if (r.nov === 'Nisyə') g.nisye += 1
+      else g.nagd += 1
+      m.set(r.satici, g)
+    }
+    return [...m.values()].sort((a, b) => b.bonus - a.bonus || b.count - a.count)
+  }, [monthRows])
+
+  const last12 = useMemo(() => {
+    const out = []
+    for (let i = 11; i >= 0; i -= 1) {
+      const d = new Date(year, month - i, 1)
+      const key = monthKeyOf(d.getFullYear(), d.getMonth())
+      const sum = sales.filter((r) => String(r.tarix || '').slice(0, 7) === key).reduce((s, r) => s + r.bonus, 0)
+      out.push({ key, label: MONTHS[d.getMonth()], full: `${MONTHS_FULL[d.getMonth()]} ${d.getFullYear()}`, sum: r2(sum) })
+    }
+    return out
+  }, [sales, year, month])
+  const prevTotal = last12[10]?.sum || 0
+  const yearTotal = r2(sales.filter((r) => String(r.tarix || '').slice(0, 4) === String(year)).reduce((s, r) => s + r.bonus, 0))
+  const maxBar = Math.max(1, ...last12.map((m) => m.sum))
+  const maxSeller = Math.max(1, ...bySeller.map((g) => g.bonus))
+
+  return (
+    <div className="card an-card xerc-sec xerc-sec--faiz">
+      <button type="button" className="xerc-sec__head" onClick={onToggle} aria-expanded={open}>
+        <span className="xerc-sec__arrow">{open ? '▾' : '▸'}</span>
+        <span className="xerc-sec__title">İşçilər faizi</span>
+        <span className="xerc-sec__hint">Satışlarda seçilən satıcı və bonus — avtomatik yığılır</span>
+        <b className="xerc-sec__sum">{azn(monthTotal)}</b>
+      </button>
+
+      {open && (
+        <div className="xerc-sec__body">
+          <div className="an-kpis" style={{ margin: '12px 0' }}>
+            <div className="an-kpi">
+              <div className="an-kpi__label">{MONTHS_FULL[month]}</div>
+              <div className="an-kpi__value">{azn(monthTotal)}</div>
+              <div className="an-kpi__hint">
+                {monthRows.length} satış · {bySeller.length} işçi
+              </div>
+            </div>
+            <div className="an-kpi">
+              <div className="an-kpi__label">Keçən ay</div>
+              <div className="an-kpi__value">{azn(prevTotal)}</div>
+            </div>
+            <div className="an-kpi">
+              <div className="an-kpi__label">{year} ili</div>
+              <div className="an-kpi__value">{azn(yearTotal)}</div>
+            </div>
+          </div>
+          <p className="xerc-note">
+            Bu məbləğ satış mənfəətində artıq çıxılıb (satış − alış − satıcı faizi), ona görə Analitikada ikinci dəfə çıxılmır.
+          </p>
+
+          <div className="an-grid2">
+            <div>
+              <h3 className="an-h3">Kim nə qədər — {MONTHS_FULL[month]}</h3>
+              {bySeller.length === 0 ? (
+                <p className="empty-state" style={{ margin: 0 }}>Bu ay satıcı seçilmiş satış yoxdur.</p>
+              ) : (
+                <ul className="xerc-kats">
+                  {bySeller.map((g, i) => (
+                    <li key={g.name}>
+                      <button
+                        type="button"
+                        className={`xerc-kats__row${who === g.name ? ' xerc-kats__row--on' : ''}`}
+                        onClick={() => setWho(who === g.name ? '' : g.name)}
+                        title={`Nağd ${g.nagd} · Nisyə ${g.nisye} · Kredit ${g.kredit}`}
+                      >
+                        <span className="xerc-kats__name">
+                          <i style={{ background: COLORS[i % COLORS.length] }} />
+                          {g.name} <small>({g.count})</small>
+                        </span>
+                        <span className="xerc-kats__bar">
+                          <span style={{ width: `${(g.bonus / maxSeller) * 100}%`, background: COLORS[i % COLORS.length] }} />
+                        </span>
+                        <b>{azn(g.bonus)}</b>
+                        <small>{Math.round((g.bonus / (monthTotal || 1)) * 100)}%</small>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+            <div>
+              <h3 className="an-h3">Son 12 ay</h3>
+              <div className="xerc-months">
+                {last12.map((m) => (
+                  <button
+                    key={m.key}
+                    type="button"
+                    className={`xerc-months__col${m.key === mk ? ' xerc-months__col--on' : ''}`}
+                    onClick={() => onPickMonth(m.key)}
+                    title={`${m.full}: ${azn(m.sum)}`}
+                  >
+                    <span className="xerc-months__val">{m.sum > 0 ? Math.round(m.sum) : ''}</span>
+                    <span className="xerc-months__bar xerc-months__bar--faiz" style={{ height: `${(m.sum / maxBar) * 140}px` }} />
+                    <span className="xerc-months__lbl">{m.label}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginTop: 14 }}>
+            <h3 className="an-h3" style={{ margin: 0 }}>
+              {MONTHS_FULL[month]} {year} — satışlar{who ? ` · ${who}` : ''}
+            </h3>
+            {who && (
+              <button type="button" className="btn btn--secondary" onClick={() => setWho('')}>
+                Hamısını göstər
+              </button>
+            )}
+          </div>
+          {shownRows.length === 0 ? (
+            <p className="empty-state">Satış yoxdur.</p>
+          ) : (
+            <div className="table-wrap" style={{ marginTop: 10 }}>
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Tarix</th>
+                    <th>Satıcı</th>
+                    <th>Növ</th>
+                    <th>Müştəri</th>
+                    <th>Model</th>
+                    <th className="num">Satış</th>
+                    <th className="num">Bonus</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {shownRows.map((r) => (
+                    <tr key={r.key}>
+                      <td>{dmy(r.tarix)}</td>
+                      <td>{r.satici}</td>
+                      <td>{r.nov}</td>
+                      <td>{r.kim || '—'}</td>
+                      <td>{r.model || '—'}</td>
+                      <td className="num">{azn(r.satis)}</td>
+                      <td className={`num${r.bonus > 0 ? '' : ' an-muted'}`}>{azn(r.bonus)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr>
+                    <td colSpan={5}>Cəmi ({shownRows.length})</td>
+                    <td className="num">{azn(shownRows.reduce((s, r) => s + r.satis, 0))}</td>
+                    <td className="num">{azn(shownRows.reduce((s, r) => s + r.bonus, 0))}</td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function XerclerPage() {
   const { access } = useAuth()
   const canEdit = access.isAdmin || access.canEdit('xercler')
@@ -469,6 +655,7 @@ export default function XerclerPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [open, setOpen] = useState(loadOpen)
+  const [sales, setSales] = useState([])
 
   useEffect(() => {
     try {
@@ -488,6 +675,53 @@ export default function XerclerPage() {
     if (e) setError(e.message)
     else setRows(data || [])
     if (!e2) setCustomKats(k || [])
+    // İşçilər faizi: satıcı seçilən və ya bonus yazılan satışlar
+    const [{ data: ns }, { data: ks }] = await Promise.all([
+      fetchAllPages(() =>
+        supabase
+          .from('nagd_satish')
+          .select('id, tarix, satis_novu, kime, model, satis_qiymeti, satici, satici_faizi')
+          .order('id', { ascending: true })
+      ),
+      fetchAllPages(() =>
+        supabase
+          .from('musteri_bazasi')
+          .select('id, sira_no, ad_soyad, verilme_tarixi, model, satis_qiymeti, satici, satici_faizi')
+          .order('id', { ascending: true })
+      ),
+    ])
+    const list = []
+    const push = (r) => {
+      const satici = String(r.satici || '').trim()
+      const bonus = r2(num(r.bonus))
+      if (!satici && !(bonus > 0)) return
+      list.push({ ...r, satici: satici || '— (satıcı seçilməyib)', bonus })
+    }
+    for (const r of ns || []) {
+      push({
+        key: `n-${r.id}`,
+        tarix: r.tarix,
+        nov: r.satis_novu === 'nisye' ? 'Nisyə' : 'Nağd',
+        kim: r.kime,
+        model: r.model,
+        satis: num(r.satis_qiymeti),
+        satici: r.satici,
+        bonus: r.satici_faizi,
+      })
+    }
+    for (const r of ks || []) {
+      push({
+        key: `k-${r.id}`,
+        tarix: r.verilme_tarixi,
+        nov: 'Kredit',
+        kim: `${r.sira_no != null ? `#${r.sira_no} ` : ''}${r.ad_soyad || ''}`,
+        model: r.model,
+        satis: num(r.satis_qiymeti),
+        satici: r.satici,
+        bonus: r.satici_faizi,
+      })
+    }
+    setSales(list)
     setLoading(false)
   }
 
@@ -542,6 +776,7 @@ export default function XerclerPage() {
   const monthSum = (qrup) => r2(rowsByQrup[qrup].filter((r) => String(r.tarix || '').slice(0, 7) === mk).reduce((s, r) => s + num(r.mebleg), 0))
   const isSum = monthSum('is')
   const sexsiSum = monthSum('sexsi')
+  const faizSum = r2(sales.filter((r) => String(r.tarix || '').slice(0, 7) === mk).reduce((s, r) => s + r.bonus, 0))
 
   return (
     <div className="an-page">
@@ -577,7 +812,7 @@ export default function XerclerPage() {
         </button>
         {!loading && (
           <span className="xerc-total">
-            {MONTHS_FULL[month]}: İş <b>{azn(isSum)}</b> · Şəxsi <b>{azn(sexsiSum)}</b> · Cəmi <b>{azn(isSum + sexsiSum)}</b>
+            {MONTHS_FULL[month]}: İş <b>{azn(isSum)}</b> · Şəxsi <b>{azn(sexsiSum)}</b> · İşçilər faizi <b>{azn(faizSum)}</b> · Cəmi <b>{azn(isSum + sexsiSum + faizSum)}</b>
           </span>
         )}
       </div>
@@ -611,6 +846,16 @@ export default function XerclerPage() {
             onDeleted={(id) => setRows((prev) => prev.filter((x) => x.id !== id))}
           />
         ))
+      )}
+      {!loading && (
+        <IscilerFaizSection
+          open={open.faiz}
+          onToggle={() => setOpen((o) => ({ ...o, faiz: !o.faiz }))}
+          sales={sales}
+          year={year}
+          month={month}
+          onPickMonth={pickMonthKey}
+        />
       )}
     </div>
   )
