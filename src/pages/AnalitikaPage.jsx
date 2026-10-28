@@ -26,6 +26,9 @@ const PERIODS = [
   { value: 'custom', label: 'Özəl' },
 ]
 
+/** Bir məhsul / satış üçün bundan böyük məbləğ yazı səhvi sayılır (məs. 1 000 000) — hesablamaya qatılmır */
+const SUSPICIOUS_LIMIT = 50000
+
 const r2 = (n) => Math.round((Number(n) || 0) * 100) / 100
 const num = (v) => {
   const n = Number(v)
@@ -182,18 +185,25 @@ function salesSummary(data, range) {
   }
 }
 
-function collectionSummary(yigimRows, range, today) {
+/**
+ * Yığım: bu dövrdə ödəniş qrafikinə görə gözlənilən (tarixi bu günə qədər çatmış taksitlər)
+ * və bu dövrdə faktiki daxil olan ilkin + aylıq ödənişlər (köhnə borcların ödənişi də daxil).
+ */
+function collectionSummary(yigimRows, payments, range, today) {
   let owed = 0
-  let paid = 0
   let lines = 0
   for (const r of yigimRows) {
     if (!inRange(r.tarix, range)) continue
     if (r.tarix > today) continue // gələcək taksitlər yığım faizini korlamasın
     owed += num(r.owed)
-    paid += num(r.paid)
     lines += 1
   }
-  return { owed: r2(owed), paid: r2(paid), remaining: r2(owed - paid), lines, rate: pct(paid, owed) }
+  let paid = 0
+  for (const p of payments) {
+    if (p.tip !== 'ilkin' && p.tip !== 'ayliq') continue
+    if (inRange(p.tarix, range)) paid += num(p.mebleg)
+  }
+  return { owed: r2(owed), paid: r2(paid), remaining: r2(Math.max(0, owed - paid)), lines, rate: pct(paid, owed) }
 }
 
 /* ---------- Kiçik komponentlər ---------- */
@@ -389,12 +399,31 @@ export default function AnalitikaPage() {
         fetchAllPages(() => supabase.from('nomre_balanslar').select('id, tarix, mebleg').order('id', { ascending: true })),
       ])
       if (nm.error || nb.error) setWarn('Nömrə xərcləri yüklənmədi — hesablamaya daxil edilmədi.')
+      // Yazı səhvi ola biləcək çox böyük məbləğlər ayrıca göstərilir, cəmlərə qatılmır
+      const suspicious = []
+      const big = (v) => num(v) > SUSPICIOUS_LIMIT
+      const depo = (d.data || []).filter((x) => {
+        if (!big(x.alis_qiymeti)) return true
+        suspicious.push(`Depo: ${x.model || '—'} — alış qiyməti ${azn(x.alis_qiymeti)}`)
+        return false
+      })
+      const nagd = (n.data || []).filter((x) => {
+        if (!big(x.alis_qiymeti) && !big(x.satis_qiymeti)) return true
+        suspicious.push(`Nağd satış: ${x.model || '—'} (${dmy(x.tarix)}) — alış ${azn(x.alis_qiymeti)}, satış ${azn(x.satis_qiymeti)}`)
+        return false
+      })
+      const kredit = (k.data || []).filter((x) => {
+        if (!big(x.alis_qiymeti) && !big(x.satis_qiymeti)) return true
+        suspicious.push(`Kredit #${x.sira_no ?? '—'} ${x.ad_soyad || ''} — alış ${azn(x.alis_qiymeti)}, satış ${azn(x.satis_qiymeti)}`)
+        return false
+      })
       setData({
-        kredit: k.data || [],
+        suspicious,
+        kredit,
         odenisler: o.data || [],
-        nagd: n.data || [],
+        nagd,
         ledger: l.data || [],
-        depo: d.data || [],
+        depo,
         nomreler: nm.error ? [] : nm.data || [],
         nomreBalans: nb.error ? [] : nb.data || [],
       })
@@ -424,8 +453,8 @@ export default function AnalitikaPage() {
     if (!data) return null
     const cur = salesSummary(data, range)
     const prev = prevRange ? salesSummary(data, prevRange) : null
-    const col = collectionSummary(yigimRows, range, today)
-    const prevCol = prevRange ? collectionSummary(yigimRows, prevRange, today) : null
+    const col = collectionSummary(yigimRows, data.odenisler, range, today)
+    const prevCol = prevRange ? collectionSummary(yigimRows, data.odenisler, prevRange, today) : null
 
     // Gecikmiş (bu günə qədər, aktiv müştərilər)
     const lateByCustomer = new Map()
@@ -499,7 +528,9 @@ export default function AnalitikaPage() {
     for (const r of yigimRows) {
       if (r.tarix > today) continue
       add(monthKey(r.tarix), 'owed', num(r.owed))
-      add(monthKey(r.tarix), 'paid', num(r.paid))
+    }
+    for (const p of data.odenisler) {
+      if (p.tip === 'ilkin' || p.tip === 'ayliq') add(monthKey(p.tarix), 'paid', num(p.mebleg))
     }
     for (const d of data.depo) add(monthKey(d.alis_tarixi), 'alis', num(d.alis_qiymeti) * Math.max(1, num(d.miqdar) || 1))
 
@@ -571,13 +602,16 @@ export default function AnalitikaPage() {
     if (!a) return []
     const t = []
     const { cur, prev, col } = a
+    for (const x of data?.suspicious || []) {
+      t.push({ tone: 'bad', text: `Şübhəli məbləğ (yazı səhvi ola bilər, hesablamaya qatılmadı): ${x}. Düzəldin.` })
+    }
     if (cur.xalis < 0) {
       t.push({ tone: 'bad', text: `Bu dövrdə xalis nəticə mənfidir (${azn(cur.xalis)}). Alış qiymətlərinə və satıcı faizlərinə baxın.` })
     }
     if (col.rate != null && col.rate < 85 && col.owed > 0) {
       t.push({
         tone: col.rate < 70 ? 'bad' : 'warn',
-        text: `Yığım faizi ${pctText(col.rate)}: gözlənilən ${azn(col.owed)}-dən ${azn(col.remaining)} yığılmayıb. Yığım səhifəsində «Gecikmiş» filtri ilə zəngləri planlayın.`,
+        text: `Yığım faizi ${pctText(col.rate)}: qrafikə görə ${azn(col.owed)} gözlənilirdi, ${azn(col.paid)} daxil olub. Yığım səhifəsində «Gecikmiş» filtri ilə zəngləri planlayın.`,
       })
     } else if (col.rate != null && col.owed > 0) {
       t.push({ tone: 'good', text: `Yığım yaxşıdır: ${pctText(col.rate)} yığılıb.` })
@@ -619,7 +653,7 @@ export default function AnalitikaPage() {
     }
     if (!t.length) t.push({ tone: 'good', text: 'Hər şey qaydasındadır — ciddi problem görünmür.' })
     return t
-  }, [a])
+  }, [a, data])
 
   const periodLabel =
     period === 'custom'
@@ -713,7 +747,7 @@ export default function AnalitikaPage() {
               label="Yığım faizi"
               value={pctText(a.col.rate)}
               tone={a.col.rate == null ? undefined : a.col.rate >= 85 ? 'good' : a.col.rate >= 70 ? 'warn' : 'bad'}
-              hint={`${azn(a.col.paid)} / ${azn(a.col.owed)}`}
+              hint={`daxil olub ${azn(a.col.paid)} / gözlənilən ${azn(a.col.owed)}`}
             />
             <Kpi label="Gecikmiş ödənişlər" value={azn(a.lateSum)} tone={a.lateSum > 0 ? 'bad' : 'good'} hint={`${a.lateCount} müştəri`} />
             <Kpi label="Alacaq (bizə borclu)" value={azn(a.alacaq)} hint={`kredit ${azn(a.kreditQalan)} · borc/nisyə ${azn(a.ledgerAlacaq)}`} />
@@ -803,12 +837,12 @@ export default function AnalitikaPage() {
               />
             </div>
             <div className="card an-card">
-              <h3 className="an-h3">Son 12 ay — yığım (gözlənilən / yığılan)</h3>
+              <h3 className="an-h3">Son 12 ay — yığım (qrafikə görə gözlənilən / daxil olan)</h3>
               <BarChart
                 data={a.months}
                 series={[
                   { key: 'owed', label: 'Gözlənilən', color: '#b9c3d6' },
-                  { key: 'paid', label: 'Yığılan', color: '#1f8a65' },
+                  { key: 'paid', label: 'Daxil olan', color: '#1f8a65' },
                 ]}
               />
             </div>
@@ -909,7 +943,8 @@ export default function AnalitikaPage() {
           <p className="an-note">
             Hesablama: Nağd / Nisyə mənfəəti = satış − alış − satıcı faizi; Kredit mənfəəti = satış − alış (hədiyyələr daxil) − satıcı
             faizi, satış günündə sayılır. Xalis mənfəətə yığılan cərimə faizi əlavə, nömrə alışı və balans xərcləri çıxılır. Yığım
-            faizi yalnız tarixi çatmış taksitlər üzrədir.
+            faizi = dövrdə daxil olan ilkin + aylıq ödənişlər ÷ qrafikə görə həmin dövrdə tarixi çatmış taksitlər. 50 000 ₼-dan böyük
+            tək məbləğlər yazı səhvi sayılır və cəmlərə qatılmır.
           </p>
         </>
       )}
