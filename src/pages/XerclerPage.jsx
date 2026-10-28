@@ -692,7 +692,8 @@ export default function XerclerPage() {
     ])
     const list = []
     const push = (r) => {
-      const satici = String(r.satici || '').trim()
+      let satici = String(r.satici ?? '').trim()
+      if (/^(null|undefined|-|—)$/i.test(satici)) satici = ''
       const bonus = r2(num(r.bonus))
       if (!satici && !(bonus > 0)) return
       list.push({ ...r, satici: satici || '— (satıcı seçilməyib)', bonus })
