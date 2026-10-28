@@ -863,9 +863,14 @@ export function buildAlisDocumentXml(d) {
   x += P('', { after: 40 })
   x += kv('Cihazın vəziyyəti və komplekti: ', m.veziyyet)
   x += kv('Satış qiyməti: ', `${pul(m.qiymet)} AZN  (${pulSozle(m.qiymet)})`)
+  const krRef = `Alıcının Satıcıya ${d.krNomre ? `№ ${d.krNomre} saylı ` : ''}kredit (nisyə alqı-satqı) müqaviləsinə`
+  const qaytar = Number(d.qaytar) || 0
+  const ilkinHesab = d.ilkinHesab != null ? Number(d.ilkinHesab) || 0 : Number(m.qiymet) || 0
   x += J(
     d.odenisText ||
-    `Ödəniş üsulu: barter — cihazın dəyəri Alıcının Satıcıya ${d.krNomre ? `№ ${d.krNomre} saylı ` : ''}nisyə alqı-satqı müqaviləsi üzrə ilkin ödənişin hesabına sayılır. Ödəniş tarixi: ${d.tarix}.`
+      (qaytar > 0.009
+        ? `Ödəniş üsulu: ${krRef} əsasən cihazın dəyərindən ${pul(ilkinHesab)} AZN ilkin ödənişin hesabına sayılır, qalan ${pul(qaytar)} AZN Satıcıya nağd qaytarılır. Ödəniş tarixi: ${d.tarix}.`
+        : `Ödəniş üsulu: barter — cihazın dəyəri ${krRef} əsasən ilkin ödənişin hesabına sayılır. Ödəniş tarixi: ${d.tarix}.`)
   )
 
   x += H('4. Satıcının təminatları')
@@ -887,7 +892,9 @@ export function buildAlisDocumentXml(d) {
   x += J(
     d.odenisText
       ? 'Müqavilə 2 (iki) nüsxədə tərtib olunur və imzalandığı andan qüvvəyə minir. Satıcı müqaviləni oxuduğunu, şərtləri başa düşdüyünü və pulu tam aldığını öz imzası ilə təsdiq edir.'
-      : 'Müqavilə 2 (iki) nüsxədə tərtib olunur və imzalandığı andan qüvvəyə minir. Satıcı müqaviləni oxuduğunu, şərtləri başa düşdüyünü və cihazın dəyərinin ilkin ödənişə sayıldığını öz imzası ilə təsdiq edir.'
+      : qaytar > 0.009
+        ? `Müqavilə 2 (iki) nüsxədə tərtib olunur və imzalandığı andan qüvvəyə minir. Satıcı müqaviləni oxuduğunu, şərtləri başa düşdüyünü, cihazın dəyərindən ${pul(ilkinHesab)} AZN-in ilkin ödənişə sayıldığını və ${pul(qaytar)} AZN-i nağd aldığını öz imzası ilə təsdiq edir.`
+        : 'Müqavilə 2 (iki) nüsxədə tərtib olunur və imzalandığı andan qüvvəyə minir. Satıcı müqaviləni oxuduğunu, şərtləri başa düşdüyünü və cihazın dəyərinin ilkin ödənişə sayıldığını öz imzası ilə təsdiq edir.'
   )
 
   const half = AL_WIDTH / 2
