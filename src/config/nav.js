@@ -4,6 +4,11 @@
  */
 export const navSections = [
   {
+    id: 'analitika',
+    label: null,
+    items: [{ path: '/analitika', label: 'Analitika' }],
+  },
+  {
     id: 'satis',
     label: null,
     items: [
