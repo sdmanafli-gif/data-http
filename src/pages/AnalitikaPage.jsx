@@ -499,7 +499,9 @@ export default function AnalitikaPage() {
       depoSay += q
     }
     const alacaq = kreditQalan + ledgerAlacaq
-    const netMovqe = alacaq + depoDeyer - ledgerBorc
+    // Məhkəmədəki qalıq da sizindir — xalis vəziyyətə daxildir (ayrıca sətirdə göstərilir)
+    const netMovqe = alacaq + mehkemeQalan + depoDeyer - ledgerBorc
+    const netMehkemesiz = alacaq + depoDeyer - ledgerBorc
 
     // Son 12 ay qrafikləri
     const now = new Date()
@@ -588,6 +590,7 @@ export default function AnalitikaPage() {
       depoSay,
       alacaq: r2(alacaq),
       netMovqe: r2(netMovqe),
+      netMehkemesiz: r2(netMehkemesiz),
       months,
       topModels,
       topSuppliers,
@@ -649,7 +652,7 @@ export default function AnalitikaPage() {
       t.push({ tone: 'info', text: `Sizin borcunuz (Borc / Nisyə): ${azn(a.ledgerBorc)}. Qaytarma tarixlərini Borc / Nisyə səhifəsində izləyin.` })
     }
     if (a.mehkemeQalan > 0) {
-      t.push({ tone: 'info', text: `Məhkəmədə olan müştərilərin qalığı: ${azn(a.mehkemeQalan)} (alacağa daxil edilməyib).` })
+      t.push({ tone: 'info', text: `Məhkəmədə olan müştərilərin qalığı: ${azn(a.mehkemeQalan)} — xalis vəziyyətə daxildir, amma yığılması gecikə bilər.` })
     }
     if (!t.length) t.push({ tone: 'good', text: 'Hər şey qaydasındadır — ciddi problem görünmür.' })
     return t
@@ -716,8 +719,9 @@ export default function AnalitikaPage() {
               )}
             </div>
             <div className="an-verdict__pos">
-              Ümumi vəziyyət (bu gün): alacaq {azn(a.alacaq)} + depodakı mal {azn(a.depoDeyer)} − borcunuz {azn(a.ledgerBorc)} ={' '}
-              <b>{azn(a.netMovqe)}</b>
+              Ümumi vəziyyət (bu gün): alacaq {azn(a.alacaq)}
+              {a.mehkemeQalan > 0 ? ` + məhkəmədə ${azn(a.mehkemeQalan)}` : ''} + depodakı mal {azn(a.depoDeyer)} − borcunuz{' '}
+              {azn(a.ledgerBorc)} = <b>{azn(a.netMovqe)}</b>
             </div>
           </div>
 
@@ -867,8 +871,8 @@ export default function AnalitikaPage() {
                   <dd className="an-balance__total">{azn(a.alacaq)}</dd>
                   {a.mehkemeQalan > 0 && (
                     <>
-                      <dt className="an-muted">Məhkəmədə (ayrıca)</dt>
-                      <dd className="an-muted">{azn(a.mehkemeQalan)}</dd>
+                      <dt>Məhkəmədə</dt>
+                      <dd>{azn(a.mehkemeQalan)}</dd>
                     </>
                   )}
                 </dl>
@@ -888,7 +892,8 @@ export default function AnalitikaPage() {
               <div className={`an-balance__net ${a.netMovqe >= 0 ? 'an-tone--good' : 'an-tone--bad'}`}>
                 <span>Xalis vəziyyət</span>
                 <b>{azn(a.netMovqe)}</b>
-                <small>alacaq + mal − borc</small>
+                <small>alacaq + məhkəmədə + mal − borc</small>
+                {a.mehkemeQalan > 0 && <small>məhkəməsiz: {azn(a.netMehkemesiz)}</small>}
               </div>
             </div>
           </div>
