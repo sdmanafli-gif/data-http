@@ -214,6 +214,10 @@
 }
 
 /* Qrafik */
+.an-chart {
+  max-width: 820px;
+}
+
 .an-chart svg {
   width: 100%;
   height: auto;
