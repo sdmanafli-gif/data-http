@@ -8,6 +8,7 @@ import UserList from './pages/UserList'
 import KassaDesk from './pages/KassaDesk'
 import KontaktlarPage from './pages/KontaktlarPage'
 import NomrelerPage from './pages/NomrelerPage'
+import AnalitikaPage from './pages/AnalitikaPage'
 import AccountGone from './pages/AccountGone'
 import MfaChallenge from './pages/MfaChallenge'
 import MfaEnroll from './pages/MfaEnroll'
@@ -84,6 +85,14 @@ function AppRoutes() {
           element={
             <RequireAccess>
               <NomrelerPage />
+            </RequireAccess>
+          }
+        />
+        <Route
+          path="/analitika"
+          element={
+            <RequireAccess>
+              <AnalitikaPage />
             </RequireAccess>
           }
         />
