@@ -256,6 +256,16 @@ export const APP_MODULES = [
     summaryCards: [],
     defaultHidden: true,
   },
+  {
+    // Mağazanın SIM nömrələri və balans artırma vaxtları — admin icazə verməyənə qədər bağlıdır
+    id: 'nomreler',
+    path: '/nomreler',
+    label: 'Nömrələr',
+    columns: [],
+    filterFields: [],
+    summaryCards: [],
+    defaultHidden: true,
+  },
 ]
 
 const MODULE_BY_ID = Object.fromEntries(APP_MODULES.map((m) => [m.id, m]))
