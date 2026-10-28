@@ -158,3 +158,131 @@
   padding: 3px 8px;
   font-size: 12px;
 }
+
+/* İş / Şəxsi blokları */
+.xerc-sec {
+  padding: 0;
+  overflow: hidden;
+}
+
+.xerc-sec__head {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 18px;
+  background: none;
+  border: 0;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.xerc-sec--is .xerc-sec__head {
+  border-left: 5px solid var(--color-danger);
+}
+
+.xerc-sec--sexsi .xerc-sec__head {
+  border-left: 5px solid var(--color-info);
+}
+
+.xerc-sec__head:hover {
+  background: var(--color-bg);
+}
+
+.xerc-sec__arrow {
+  width: 14px;
+  color: var(--color-text-muted);
+}
+
+.xerc-sec__title {
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.xerc-sec__hint {
+  font-size: 12px;
+  color: var(--color-text-muted);
+  flex: 1;
+}
+
+.xerc-sec__sum {
+  font-size: 18px;
+}
+
+.xerc-sec__body {
+  padding: 4px 18px 18px;
+  border-top: 1px solid var(--color-border);
+}
+
+.xerc-sec__bar {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  margin: 12px 0;
+}
+
+.xerc-form {
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  padding: 14px;
+  margin-bottom: 12px;
+  background: var(--color-bg);
+}
+
+.xerc-katlist {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  margin-bottom: 14px;
+  font-size: 12px;
+}
+
+.xerc-katlist__label {
+  color: var(--color-text-muted);
+}
+
+.xerc-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: #eef0f4;
+}
+
+.xerc-tag--custom {
+  background: var(--color-info-bg);
+}
+
+.xerc-tag button {
+  border: 0;
+  background: none;
+  cursor: pointer;
+  color: var(--color-text-muted);
+  padding: 0;
+  font-size: 14px;
+  line-height: 1;
+}
+
+.xerc-newkat {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.xerc-newkat input {
+  width: 160px;
+}
+
+.xerc-total {
+  margin-left: auto;
+  font-size: 13px;
+  color: var(--color-text-muted);
+}
+
+.xerc-total b {
+  color: var(--color-text);
+}
