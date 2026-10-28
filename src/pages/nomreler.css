@@ -113,3 +113,78 @@
   font-size: 12px;
   white-space: nowrap;
 }
+
+.nomre-form__grid select {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.nomre-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 3px;
+}
+
+.nomre-tag {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: #eef0f4;
+  color: #444;
+}
+
+.nomre-link {
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--color-primary, #1a5fb4);
+  cursor: pointer;
+  font: inherit;
+  white-space: nowrap;
+  text-decoration: underline dotted;
+}
+
+.nomre-link--danger {
+  color: var(--color-accent, #e30613);
+}
+
+.nomre-sub td {
+  background: #fafafa;
+}
+
+.nomre-topup {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 10px;
+}
+
+.nomre-topup label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 12px;
+}
+
+.nomre-topup input {
+  width: 150px;
+}
+
+.nomre-topup__qeyd input {
+  width: 220px;
+}
+
+.nomre-hist__sum {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-bottom: 8px;
+  font-size: 13px;
+}
+
+.nomre-hist__table {
+  max-width: 560px;
+  font-size: 13px;
+}
