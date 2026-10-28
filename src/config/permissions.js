@@ -276,6 +276,16 @@ export const APP_MODULES = [
     summaryCards: [],
     defaultHidden: true,
   },
+  {
+    // İşə aid xərclər (icarə, maaş…) — Analitikada mənfəətdən çıxılır; admin icazə verməyənə qədər bağlı
+    id: 'xercler',
+    path: '/xercler',
+    label: 'Xərclər',
+    columns: [],
+    filterFields: [],
+    summaryCards: [],
+    defaultHidden: true,
+  },
 ]
 
 const MODULE_BY_ID = Object.fromEntries(APP_MODULES.map((m) => [m.id, m]))
