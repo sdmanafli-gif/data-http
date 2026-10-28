@@ -141,6 +141,8 @@ export default function KreditSaleFields({
   onRemoveItem,
   barterSlot = null,
   barterAmount = 0,
+  barterIlkin = 0,
+  barterQaytar = 0,
   hediyyeSlot = null,
   children,
 }) {
@@ -218,7 +220,9 @@ export default function KreditSaleFields({
           label={barterAmount > 0 ? 'İlkin ödəniş verilib (nağd)' : 'İlkin ödəniş verilib'}
           hint={
             barterAmount > 0
-              ? `+ barter ${formatMoney(barterAmount)} = cəmi ${formatMoney((Number(ilkinOdenisVerilib) || 0) + barterAmount)}`
+              ? `Barter ${formatMoney(barterAmount)}: ilkinə ${formatMoney(barterIlkin)}${
+                  barterQaytar > 0 ? ` · müştəriyə nağd qaytarılır ${formatMoney(barterQaytar)}` : ''
+                } · ilkinə cəmi ${formatMoney((Number(ilkinOdenisVerilib) || 0) + barterIlkin)}`
               : 'Satışdan sonra Ödənişlər tabına əlavə olunur.'
           }
         >
