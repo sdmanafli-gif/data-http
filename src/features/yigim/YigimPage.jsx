@@ -91,6 +91,39 @@ function WhatsAppIcon() {
   )
 }
 
+/** Söz verdiyi tarix: boşdursa sakit «Tarix…» yazısı, basanda tarix seçmə açılır */
+function SozTarixInput({ value, onSave }) {
+  const [edit, setEdit] = useState(false)
+  const ref = useRef(null)
+  useEffect(() => {
+    if (!edit || !ref.current) return
+    ref.current.focus()
+    try {
+      ref.current.showPicker?.()
+    } catch {
+      /* bəzi brauzerlər showPicker-i dəstəkləmir — xana fokusda qalır */
+    }
+  }, [edit])
+  if (!value && !edit) {
+    return (
+      <button type="button" className="yigim-soz__empty" onClick={() => setEdit(true)} title="Müştərinin söz verdiyi ödəniş tarixi">
+        Tarix…
+      </button>
+    )
+  }
+  return (
+    <input
+      ref={ref}
+      type="date"
+      className="yigim-soz__input"
+      value={value || ''}
+      onChange={(e) => onSave(e.target.value || null)}
+      onBlur={() => setEdit(false)}
+      onKeyDown={(e) => e.stopPropagation()}
+    />
+  )
+}
+
 /** Komment xanası — yazdıqca yox, xanadan çıxanda (və ya Enter) saxlanır */
 function KommentInput({ value, onSave }) {
   const [v, setV] = useState(value || '')
@@ -626,12 +659,7 @@ export default function YigimPage() {
       const gun = due && row.soz_tarixi < today ? Math.round((new Date(today) - new Date(row.soz_tarixi)) / 86400000) : 0
       return (
         <span className="yigim-soz">
-          <input
-            type="date"
-            value={row.soz_tarixi || ''}
-            onChange={(e) => saveQeyd(row, { soz_tarixi: e.target.value || null })}
-            onKeyDown={(e) => e.stopPropagation()}
-          />
+          <SozTarixInput value={row.soz_tarixi} onSave={(v) => saveQeyd(row, { soz_tarixi: v })} />
           {due && (
             <span className="yigim-soz__badge" title="Müştərinin söz verdiyi tarix çatıb, ödəniş hələ yoxdur">
               🔔 {gun > 0 ? `${gun} gün keçib` : 'Bu gün'}
