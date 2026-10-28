@@ -64,6 +64,22 @@ const isPartial = (row) => (Number(row.paid) || 0) > 0.009 && (Number(row.remain
 /** Söz verdiyi tarix çatıb / keçib və hələ ödənməyib */
 const isSozDue = (row, today) => Boolean(row.soz_tarixi) && row.soz_tarixi <= today && (Number(row.remaining) || 0) > 0.009
 
+/**
+ * Müştərinin WhatsApp nömrəsi: Nömrə 1…5 xanalarından ilk düzgün nömrə.
+ * Xanada yazı da ola bilər («Mobil1; 050 123 45 67 Ad» və ya «0501234567-0551234567»).
+ */
+function waNumberOf(row) {
+  for (const raw of row.nomreler || [row.nomre_1]) {
+    const text = String(raw || '').replace(/[\u200e\u200f\u202a-\u202e]/g, '')
+    const parts = text.match(/\+?\d[\d\s()]{6,}\d/g) || []
+    for (const part of parts) {
+      const wa = waPhone(part)
+      if (wa) return { wa, shown: part.trim() }
+    }
+  }
+  return null
+}
+
 function WhatsAppIcon() {
   return (
     <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" focusable="false">
@@ -239,6 +255,7 @@ export function buildYigimRows(musteriler, payments) {
         ad_soyad: m.ad_soyad || '—',
         model: m.model || null,
         nomre_1: m.nomre_1 || null,
+        nomreler: [m.nomre_1, m.nomre_2, m.nomre_3, m.nomre_4, m.nomre_5].filter(Boolean),
         veziyyet: m.veziyyet || null,
         type: line.type,
         label: line.label,
@@ -409,7 +426,7 @@ export default function YigimPage() {
           let q = supabase
             .from(MUSTERI_TABLE)
             .select(
-              'id, sira_no, ad_soyad, model, nomre_1, veziyyet, satis_qiymeti, alis_qiymeti, verilib, faiz, faktiki_gelir, ayliq_odenis, nece_ay, odenis_gunu, birinci_ayliq_odenis_tarixi, odenis_qrafiki, verilme_tarixi'
+              'id, sira_no, ad_soyad, model, nomre_1, nomre_2, nomre_3, nomre_4, nomre_5, veziyyet, satis_qiymeti, alis_qiymeti, verilib, faiz, faktiki_gelir, ayliq_odenis, nece_ay, odenis_gunu, birinci_ayliq_odenis_tarixi, odenis_qrafiki, verilme_tarixi'
             )
             .eq('veziyyet', 'Qalıb')
             .order('sira_no', { ascending: true })
@@ -555,7 +572,8 @@ export default function YigimPage() {
       )
     }
     if (col.key === 'ad_soyad') {
-      const wa = waPhone(row.nomre_1)
+      const waHit = waNumberOf(row)
+      const wa = waHit?.wa
       return (
         <span className="yigim-musteri">
           {wa ? (
@@ -564,7 +582,7 @@ export default function YigimPage() {
               href={`https://wa.me/${wa}`}
               target="_blank"
               rel="noopener noreferrer"
-              title={`WhatsApp: ${row.nomre_1}`}
+              title={`WhatsApp: ${waHit?.shown}`}
               onClick={(e) => e.stopPropagation()}
             >
               <WhatsAppIcon />
