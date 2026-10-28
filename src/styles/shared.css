@@ -184,9 +184,27 @@
   flex-wrap: wrap;
 }
 
-.yigim-soz input[type='date'] {
-  padding: 2px 4px;
+.yigim-soz__input,
+.yigim-soz__empty {
+  padding: 2px 6px;
   font-size: 12px;
+  font: inherit;
+  font-size: 12px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+}
+
+.yigim-soz__empty {
+  color: var(--color-text-muted);
+  cursor: pointer;
+}
+
+.yigim-soz__input:hover,
+.yigim-soz__input:focus,
+.yigim-soz__empty:hover {
+  border-color: var(--color-border);
+  background: var(--color-surface, #fff);
 }
 
 .yigim-soz__badge {
