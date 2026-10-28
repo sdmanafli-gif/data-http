@@ -452,3 +452,103 @@
   min-width: 220px;
   max-width: 360px;
 }
+
+/* Kredit satışı: yuxarıda solda Müştəri ID / Müqavilə / Satıcı / Satıcı faizi, sağda Hədiyyələr */
+.kredit-stack:has(.kredit-top) {
+  max-width: none;
+}
+
+.kredit-stack:has(.kredit-top) > :not(.kredit-top) {
+  max-width: 760px;
+}
+
+.kredit-stack:has(.kredit-top) > :has(.add-picker) {
+  max-width: none;
+}
+
+.kredit-top {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 24px;
+  align-items: flex-start;
+}
+
+.kredit-top__main {
+  flex: 0 1 760px;
+  min-width: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.kredit-top__side {
+  flex: 1 1 420px;
+  min-width: 0;
+  max-width: 640px;
+  margin-left: auto;
+}
+
+.hediyye-block {
+  border: 2px solid var(--color-accent, #e30613);
+}
+
+.hediyye-block__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.hediyye-block__head strong {
+  font-size: 16px;
+  color: var(--color-accent, #e30613);
+}
+
+.hediyye-block__total {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.hediyye-row {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr) 110px auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.hediyye-row__no {
+  font-weight: 600;
+  color: var(--color-text-muted);
+  text-align: right;
+}
+
+.hediyye-row__name input,
+.hediyye-row__price {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.hediyye-row__name .searchable-select {
+  margin-bottom: 0;
+}
+
+.hediyye-row__actions {
+  display: flex;
+  gap: 4px;
+}
+
+.hediyye-row__actions .btn {
+  padding: 4px 10px;
+  font-size: 12px;
+}
+
+.hediyye-row input[readonly] {
+  background: #f3f6f3;
+}
+
+.hediyye-row__tag {
+  grid-column: 2 / -1;
+  font-size: 11px;
+  color: var(--color-text-muted);
+  margin-top: -4px;
+}
