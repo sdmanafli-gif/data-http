@@ -426,7 +426,7 @@ export default function YigimPage() {
           let q = supabase
             .from(MUSTERI_TABLE)
             .select(
-              'id, sira_no, ad_soyad, model, nomre_1, nomre_2, nomre_3, nomre_4, nomre_5, veziyyet, satis_qiymeti, alis_qiymeti, verilib, faiz, faktiki_gelir, ayliq_odenis, nece_ay, odenis_gunu, birinci_ayliq_odenis_tarixi, odenis_qrafiki, verilme_tarixi'
+              'id, musteri_id, sira_no, ad_soyad, model, nomre_1, nomre_2, nomre_3, nomre_4, nomre_5, veziyyet, satis_qiymeti, alis_qiymeti, verilib, faiz, faktiki_gelir, ayliq_odenis, nece_ay, odenis_gunu, birinci_ayliq_odenis_tarixi, odenis_qrafiki, verilme_tarixi'
             )
             .eq('veziyyet', 'Qalıb')
             .order('sira_no', { ascending: true })
@@ -441,7 +441,21 @@ export default function YigimPage() {
       ])
       if (mErr) throw mErr
       if (pErr) throw pErr
-      setRows(buildYigimRows(musteriler || [], payments || []))
+      const built = buildYigimRows(musteriler || [], payments || [])
+      // Satışda nömrə yazılmayıbsa — müştərinin kontakt kartındakı (Müştərilər) nömrələr
+      const kontaktIds = [...new Set((musteriler || []).map((m) => m.musteri_id).filter(Boolean))]
+      if (kontaktIds.length) {
+        const { data: kontaktlar } = await fetchAllPages(() =>
+          supabase.from('musteriler').select('id, nomre_1, nomre_2, nomre_3, nomre_4, nomre_5')
+        )
+        const byId = new Map((kontaktlar || []).map((k) => [k.id, k]))
+        const kontaktOf = new Map((musteriler || []).map((m) => [m.id, byId.get(m.musteri_id)]))
+        for (const r of built) {
+          const k = kontaktOf.get(r.musteriId)
+          if (k) r.nomreler = [...r.nomreler, k.nomre_1, k.nomre_2, k.nomre_3, k.nomre_4, k.nomre_5].filter(Boolean)
+        }
+      }
+      setRows(built)
       // Komment / söz tarixi — alınmasa da yığım cədvəli göstərilir
       const { data: q, error: qErr } = await fetchAllPages(() =>
         supabase.from(QEYD_TABLE).select('musteri_id, setir, komment, soz_tarixi')
