@@ -7,6 +7,7 @@ import SuggestInput from '../musteri-bazasi/SuggestInput'
 import RecordModule from '../../components/RecordModule'
 import DepoFileSlots, { uploadPendingSlots } from './DepoFileSlots'
 import DepoKateqoriyaBlock, { loadKateqoriyalar } from './DepoKateqoriya'
+import { modelsFor } from './DepoFilterPanel'
 import MuqavileYarat from './MuqavileYarat'
 import { createAlisDocx, dmy } from './muqavile'
 import { parseSenedler, uploadSenedlerFiles } from '../../lib/senedler'
@@ -218,6 +219,10 @@ export default function DepoForm() {
   const [record, setRecord] = useState(null)
   const [editing, setEditing] = useState(false)
   const [suggestions, setSuggestions] = useState({})
+  /** Depodakı model + kateqoriya + növ — Model təklifləri seçilmiş kateqoriya/növə görə süzülür */
+  const [modelRows, setModelRows] = useState([])
+  const suggestFor = (f) =>
+    f?.kateqoriya || f?.nov ? { ...suggestions, model: modelsFor(modelRows, f.kateqoriya, f.nov) } : suggestions
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [deleting, setDeleting] = useState(false)
@@ -441,9 +446,10 @@ export default function DepoForm() {
       setLoading(true)
       try {
         const { data } = await fetchAllPages(() =>
-          supabase.from(DEPO_TABLE).select('model, reng, yaddas, kimden_alinib, sexsiyyet')
+          supabase.from(DEPO_TABLE).select('model, reng, yaddas, kimden_alinib, sexsiyyet, kateqoriya, nov')
         )
         const rows = data || []
+        if (!cancelled) setModelRows(rows)
         const [tRes, mRes, kRes] = await Promise.all([
           loadTechizatcilar(),
           fetchAllPages(() => supabase.from('musteriler').select('id, ad_soyad, nomre_1').order('ad_soyad')),
@@ -810,7 +816,7 @@ export default function DepoForm() {
                     })
                   }
                 }}
-                suggestions={suggestions}
+                suggestions={suggestFor(form)}
                 forceReadonly={
                   (col.key === 'battery_faiz' && isYeni) ||
                   (col.key === 'kimden_alinib' && Boolean(src.tip && src.pick))
@@ -990,7 +996,7 @@ export default function DepoForm() {
                               return { ...x, form: next }
                             })
                           }
-                          suggestions={suggestions}
+                          suggestions={suggestFor(f)}
                           forceReadonly={col.key === 'battery_faiz' && isYeni}
                           required={
                             col.key === 'veziyyet_cihaz' || (form.odenis_novu === 'nisye' && col.key === 'alis_qiymeti')
