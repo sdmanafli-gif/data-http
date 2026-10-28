@@ -6,7 +6,10 @@ export const navSections = [
   {
     id: 'analitika',
     label: null,
-    items: [{ path: '/analitika', label: 'Analitika' }],
+    items: [
+      { path: '/analitika', label: 'Analitika' },
+      { path: '/xercler', label: 'Xərclər' },
+    ],
   },
   {
     id: 'satis',
