@@ -266,6 +266,16 @@ export const APP_MODULES = [
     summaryCards: [],
     defaultHidden: true,
   },
+  {
+    // Biznesin ümumi analitikası (satış, mənfəət, yığım, borc) — yalnız admin, icazə verilməyənə qədər
+    id: 'analitika',
+    path: '/analitika',
+    label: 'Analitika',
+    columns: [],
+    filterFields: [],
+    summaryCards: [],
+    defaultHidden: true,
+  },
 ]
 
 const MODULE_BY_ID = Object.fromEntries(APP_MODULES.map((m) => [m.id, m]))
