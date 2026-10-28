@@ -121,6 +121,11 @@
   background: var(--color-warning-bg);
 }
 
+/* Yığım: qismən ödənənlər — tam açıq göy */
+.musteri-table-shell .data-table--band tbody tr.musteri-schedule__row--partial td {
+  background: #d3e5ff;
+}
+
 .musteri-table-shell .data-table--band tbody tr td.empty-state {
   height: auto;
   max-height: none;
