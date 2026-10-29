@@ -203,6 +203,15 @@ export async function buildKreditCixaris(musteriId) {
     { label: 'Cəmi qalan borc və faiz borcu', value: formatQebzMoney(qalan + faizQaliq), bold: true, accent: true },
   ]
 
+  // Bu günə ödənilməli: vaxtı çatmış (bu gün də daxil) ödənilməmiş qalıqlar + qalan faiz borcu
+  const bugun = todayLocal()
+  const gecikmede = round(
+    matched
+      .filter((l) => String(l.tarix || '').slice(0, 10) <= bugun && (Number(l.remaining) || 0) > 0)
+      .reduce((a, l) => a + (Number(l.remaining) || 0), 0)
+  )
+  const bugunOdenilmeli = { gecikmede, faiz: faizQaliq, cemi: round(gecikmede + faizQaliq) }
+
   const ayliqMatched = matched.filter((l) => l.type === 'ayliq')
   const paidMonths = ayliqMatched.filter((l) => (Number(l.remaining) || 0) <= 0).length
 
@@ -216,6 +225,7 @@ export async function buildKreditCixaris(musteriId) {
     mehsul: [m.model, m.yaddas, m.reng].filter(Boolean).join(' '),
     verilmeTarixi: m.verilme_tarixi,
     summary,
+    bugunOdenilmeli,
     totalMonths: ayliqMatched.length,
     paidMonths,
     leftMonths: ayliqMatched.length - paidMonths,
