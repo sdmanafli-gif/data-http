@@ -10,6 +10,7 @@ import KontaktlarPage from './pages/KontaktlarPage'
 import NomrelerPage from './pages/NomrelerPage'
 import AnalitikaPage from './pages/AnalitikaPage'
 import XerclerPage from './pages/XerclerPage'
+import QiymetCedveliPage from './pages/QiymetCedveliPage'
 import AccountGone from './pages/AccountGone'
 import MfaChallenge from './pages/MfaChallenge'
 import MfaEnroll from './pages/MfaEnroll'
@@ -102,6 +103,14 @@ function AppRoutes() {
           element={
             <RequireAccess>
               <XerclerPage />
+            </RequireAccess>
+          }
+        />
+        <Route
+          path="/qiymet-cedveli"
+          element={
+            <RequireAccess>
+              <QiymetCedveliPage />
             </RequireAccess>
           }
         />
