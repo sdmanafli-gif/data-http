@@ -9,6 +9,7 @@ export const navSections = [
     items: [
       { path: '/analitika', label: 'Analitika' },
       { path: '/xercler', label: 'Xərclər' },
+      { path: '/qiymet-cedveli', label: 'Qiymət cədvəli' },
     ],
   },
   {
