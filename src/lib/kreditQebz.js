@@ -368,6 +368,9 @@ export function kreditMessage(data) {
     `Tarix: ${formatQebzDate(data.tarix)}`,
     `Qalan borc: ${get('Qalan borc') || '—'}`,
     `Qalan faiz borcu: ${get('Qalan faiz borcu') || '—'}`,
+    ...(data.bugunOdenilmeli
+      ? [`Bu günə ödənilməli məbləğ: ${formatQebzMoney(data.bugunOdenilmeli.cemi)}`]
+      : []),
     'Mobideal',
   ].join('\n')
 }
