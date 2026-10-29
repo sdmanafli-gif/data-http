@@ -286,6 +286,16 @@ export const APP_MODULES = [
     summaryCards: [],
     defaultHidden: true,
   },
+  {
+    // Kredit qiymət cədvəli (kalkulyator) — bazaya yazmır; admin icazə verməyənə qədər bağlı
+    id: 'qiymet-cedveli',
+    path: '/qiymet-cedveli',
+    label: 'Qiymət cədvəli',
+    columns: [],
+    filterFields: [],
+    summaryCards: [],
+    defaultHidden: true,
+  },
 ]
 
 const MODULE_BY_ID = Object.fromEntries(APP_MODULES.map((m) => [m.id, m]))
