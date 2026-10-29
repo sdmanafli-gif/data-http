@@ -70,6 +70,32 @@ function dmy(s) {
 
 const monthKeyOf = (y, m) => `${y}-${String(m + 1).padStart(2, '0')}`
 
+const pad2 = (n) => String(n).padStart(2, '0')
+/** Ayın ilk və son günü (YYYY-MM-DD) */
+function monthBounds(y, m) {
+  const d = new Date(y, m, 1)
+  const yy = d.getFullYear()
+  const mm = d.getMonth()
+  const last = new Date(yy, mm + 1, 0).getDate()
+  return { from: `${yy}-${pad2(mm + 1)}-01`, to: `${yy}-${pad2(mm + 1)}-${pad2(last)}` }
+}
+function ymdAdd(s, days) {
+  const [y, m, d] = String(s).split('-').map(Number)
+  const dt = new Date(Date.UTC(y, m - 1, d + days))
+  return dt.toISOString().slice(0, 10)
+}
+function ymdDiff(a, b) {
+  const [y1, m1, d1] = String(a).split('-').map(Number)
+  const [y2, m2, d2] = String(b).split('-').map(Number)
+  return Math.round((Date.UTC(y2, m2 - 1, d2) - Date.UTC(y1, m1 - 1, d1)) / 86400000)
+}
+/** Tarix seçilən dövrün içindədirmi */
+const inP = (t, p) => {
+  const d = String(t || '').slice(0, 10)
+  return !!d && d >= p.from && d <= p.to
+}
+const norm = (v) => String(v ?? '').toLocaleLowerCase('az')
+
 function loadOpen() {
   try {
     const v = JSON.parse(localStorage.getItem(OPEN_KEY) || 'null')
@@ -81,7 +107,7 @@ function loadOpen() {
 }
 
 /** Bir qrupun bloku (İş və ya Şəxsi) */
-function XercSection({ qrup, open, onToggle, rows, year, month, onPickMonth, kats, canEdit, onSaved, onDeleted, onAddKat, onRemoveKat, setError }) {
+function XercSection({ qrup, open, onToggle, rows, year, month, period, prevPeriod, search, onPickMonth, kats, canEdit, onSaved, onDeleted, onAddKat, onRemoveKat, setError }) {
   const cfg = QRUPLAR[qrup]
   const mk = monthKeyOf(year, month)
   const [form, setForm] = useState(null)
@@ -92,9 +118,14 @@ function XercSection({ qrup, open, onToggle, rows, year, month, onPickMonth, kat
 
   useEffect(() => {
     setKatFilter('')
-  }, [mk])
+  }, [period.from, period.to])
 
-  const monthRows = useMemo(() => rows.filter((r) => String(r.tarix || '').slice(0, 7) === mk), [rows, mk])
+  const monthRows = useMemo(() => {
+    const q = norm(search).trim()
+    return rows.filter(
+      (r) => inP(r.tarix, period) && (!q || norm(`${r.kateqoriya} ${r.qeyd || ''} ${r.mebleg}`).includes(q))
+    )
+  }, [rows, period, search])
   const shownRows = katFilter ? monthRows.filter((r) => r.kateqoriya === katFilter) : monthRows
   const monthTotal = r2(monthRows.reduce((s, r) => s + num(r.mebleg), 0))
 
@@ -114,7 +145,7 @@ function XercSection({ qrup, open, onToggle, rows, year, month, onPickMonth, kat
     }
     return out
   }, [rows, year, month])
-  const prevTotal = last12[10]?.sum || 0
+  const prevTotal = r2(rows.filter((r) => inP(r.tarix, prevPeriod)).reduce((s, r) => s + num(r.mebleg), 0))
   const yearTotal = r2(rows.filter((r) => String(r.tarix || '').slice(0, 4) === String(year)).reduce((s, r) => s + num(r.mebleg), 0))
   const maxBar = Math.max(1, ...last12.map((m) => m.sum))
 
@@ -173,7 +204,7 @@ function XercSection({ qrup, open, onToggle, rows, year, month, onPickMonth, kat
           <div className="xerc-sec__bar">
             <div className="an-kpis" style={{ margin: 0, flex: 1 }}>
               <div className="an-kpi">
-                <div className="an-kpi__label">{MONTHS_FULL[month]}</div>
+                <div className="an-kpi__label">{period.label}</div>
                 <div className="an-kpi__value">{azn(monthTotal)}</div>
                 <div className="an-kpi__hint">
                   {monthRows.length} qeyd
@@ -183,13 +214,13 @@ function XercSection({ qrup, open, onToggle, rows, year, month, onPickMonth, kat
                       <span className={monthTotal > prevTotal ? 'an-delta--down' : 'an-delta--up'}>
                         {monthTotal > prevTotal ? '▲' : '▼'} {Math.abs(Math.round(((monthTotal - prevTotal) / prevTotal) * 100))}%
                       </span>{' '}
-                      keçən aya görə
+                      {period.isRange ? 'əvvəlki dövrə görə' : 'keçən aya görə'}
                     </>
                   )}
                 </div>
               </div>
               <div className="an-kpi">
-                <div className="an-kpi__label">Keçən ay</div>
+                <div className="an-kpi__label">{period.isRange ? 'Əvvəlki dövr' : 'Keçən ay'}</div>
                 <div className="an-kpi__value">{azn(prevTotal)}</div>
               </div>
               <div className="an-kpi">
@@ -329,9 +360,9 @@ function XercSection({ qrup, open, onToggle, rows, year, month, onPickMonth, kat
 
           <div className="an-grid2">
             <div>
-              <h3 className="an-h3">Nəyə nə qədər — {MONTHS_FULL[month]}</h3>
+              <h3 className="an-h3">Nəyə nə qədər — {period.label}</h3>
               {byKat.length === 0 ? (
-                <p className="empty-state" style={{ margin: 0 }}>Bu ay xərc yazılmayıb.</p>
+                <p className="empty-state" style={{ margin: 0 }}>{search ? 'Axtarışa uyğun xərc yoxdur.' : period.isRange ? 'Bu dövrdə xərc yazılmayıb.' : 'Bu ay xərc yazılmayıb.'}</p>
               ) : (
                 <ul className="xerc-kats">
                   {byKat.map((x, i) => (
@@ -364,7 +395,7 @@ function XercSection({ qrup, open, onToggle, rows, year, month, onPickMonth, kat
                   <button
                     key={m.key}
                     type="button"
-                    className={`xerc-months__col${m.key === mk ? ' xerc-months__col--on' : ''}`}
+                    className={`xerc-months__col${!period.isRange && m.key === mk ? ' xerc-months__col--on' : ''}`}
                     onClick={() => onPickMonth(m.key)}
                     title={`${m.full}: ${azn(m.sum)}`}
                   >
@@ -379,7 +410,7 @@ function XercSection({ qrup, open, onToggle, rows, year, month, onPickMonth, kat
 
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginTop: 14 }}>
             <h3 className="an-h3" style={{ margin: 0 }}>
-              {MONTHS_FULL[month]} {year} — qeydlər{katFilter ? ` · ${katFilter}` : ''}
+              {period.title} — qeydlər{katFilter ? ` · ${katFilter}` : ''}
             </h3>
             {katFilter && (
               <button type="button" className="btn btn--secondary" onClick={() => setKatFilter('')}>
@@ -463,15 +494,20 @@ function XercSection({ qrup, open, onToggle, rows, year, month, onPickMonth, kat
  * Mənbə: Nağd / Nisyə satış (nagd_satish) və Kredit satış (musteri_bazasi). Yalnız oxuyur.
  * Bu məbləğ satış mənfəətində artıq çıxılıb — Analitikada ikinci dəfə çıxılmır.
  */
-function IscilerFaizSection({ open, onToggle, sales, year, month, onPickMonth }) {
+function IscilerFaizSection({ open, onToggle, sales, year, month, period, prevPeriod, search, onPickMonth }) {
   const mk = monthKeyOf(year, month)
   const [who, setWho] = useState('')
 
   useEffect(() => {
     setWho('')
-  }, [mk])
+  }, [period.from, period.to])
 
-  const monthRows = useMemo(() => sales.filter((r) => String(r.tarix || '').slice(0, 7) === mk), [sales, mk])
+  const monthRows = useMemo(() => {
+    const q = norm(search).trim()
+    return sales.filter(
+      (r) => inP(r.tarix, period) && (!q || norm(`${r.satici} ${r.kim || ''} ${r.model || ''} ${r.nov}`).includes(q))
+    )
+  }, [sales, period, search])
   const shownRows = (who ? monthRows.filter((r) => r.satici === who) : monthRows)
     .slice()
     .sort((a, b) => String(b.tarix).localeCompare(String(a.tarix)))
@@ -502,7 +538,7 @@ function IscilerFaizSection({ open, onToggle, sales, year, month, onPickMonth })
     }
     return out
   }, [sales, year, month])
-  const prevTotal = last12[10]?.sum || 0
+  const prevTotal = r2(sales.filter((r) => inP(r.tarix, prevPeriod)).reduce((s, r) => s + r.bonus, 0))
   const yearTotal = r2(sales.filter((r) => String(r.tarix || '').slice(0, 4) === String(year)).reduce((s, r) => s + r.bonus, 0))
   const maxBar = Math.max(1, ...last12.map((m) => m.sum))
   const maxSeller = Math.max(1, ...bySeller.map((g) => g.bonus))
@@ -520,14 +556,14 @@ function IscilerFaizSection({ open, onToggle, sales, year, month, onPickMonth })
         <div className="xerc-sec__body">
           <div className="an-kpis" style={{ margin: '12px 0' }}>
             <div className="an-kpi">
-              <div className="an-kpi__label">{MONTHS_FULL[month]}</div>
+              <div className="an-kpi__label">{period.label}</div>
               <div className="an-kpi__value">{azn(monthTotal)}</div>
               <div className="an-kpi__hint">
                 {monthRows.length} satış · {bySeller.length} işçi
               </div>
             </div>
             <div className="an-kpi">
-              <div className="an-kpi__label">Keçən ay</div>
+              <div className="an-kpi__label">{period.isRange ? 'Əvvəlki dövr' : 'Keçən ay'}</div>
               <div className="an-kpi__value">{azn(prevTotal)}</div>
             </div>
             <div className="an-kpi">
@@ -541,9 +577,9 @@ function IscilerFaizSection({ open, onToggle, sales, year, month, onPickMonth })
 
           <div className="an-grid2">
             <div>
-              <h3 className="an-h3">Kim nə qədər — {MONTHS_FULL[month]}</h3>
+              <h3 className="an-h3">Kim nə qədər — {period.label}</h3>
               {bySeller.length === 0 ? (
-                <p className="empty-state" style={{ margin: 0 }}>Bu ay satıcı seçilmiş satış yoxdur.</p>
+                <p className="empty-state" style={{ margin: 0 }}>{search ? 'Axtarışa uyğun satış yoxdur.' : period.isRange ? 'Bu dövrdə satıcı seçilmiş satış yoxdur.' : 'Bu ay satıcı seçilmiş satış yoxdur.'}</p>
               ) : (
                 <ul className="xerc-kats">
                   {bySeller.map((g, i) => (
@@ -576,7 +612,7 @@ function IscilerFaizSection({ open, onToggle, sales, year, month, onPickMonth })
                   <button
                     key={m.key}
                     type="button"
-                    className={`xerc-months__col${m.key === mk ? ' xerc-months__col--on' : ''}`}
+                    className={`xerc-months__col${!period.isRange && m.key === mk ? ' xerc-months__col--on' : ''}`}
                     onClick={() => onPickMonth(m.key)}
                     title={`${m.full}: ${azn(m.sum)}`}
                   >
@@ -591,7 +627,7 @@ function IscilerFaizSection({ open, onToggle, sales, year, month, onPickMonth })
 
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginTop: 14 }}>
             <h3 className="an-h3" style={{ margin: 0 }}>
-              {MONTHS_FULL[month]} {year} — satışlar{who ? ` · ${who}` : ''}
+              {period.title} — satışlar{who ? ` · ${who}` : ''}
             </h3>
             {who && (
               <button type="button" className="btn btn--secondary" onClick={() => setWho('')}>
@@ -656,6 +692,8 @@ export default function XerclerPage() {
   const [error, setError] = useState('')
   const [open, setOpen] = useState(loadOpen)
   const [sales, setSales] = useState([])
+  const [range, setRange] = useState({ from: '', to: '' })
+  const [search, setSearch] = useState('')
 
   useEffect(() => {
     try {
@@ -762,22 +800,61 @@ export default function XerclerPage() {
   }
 
   function shift(dir) {
+    setRange({ from: '', to: '' })
     const d = new Date(year, month + dir, 1)
     setYear(d.getFullYear())
     setMonth(d.getMonth())
   }
 
   function pickMonthKey(key) {
+    setRange({ from: '', to: '' })
     const [y, m] = key.split('-').map(Number)
     setYear(y)
     setMonth(m - 1)
   }
 
-  const mk = monthKeyOf(year, month)
-  const monthSum = (qrup) => r2(rowsByQrup[qrup].filter((r) => String(r.tarix || '').slice(0, 7) === mk).reduce((s, r) => s + num(r.mebleg), 0))
+  // Seçilən dövr: tarix aralığı yazılıbsa o, yoxsa seçilən ay
+  const rangeOn = !!(range.from && range.to)
+  const rFrom = rangeOn && range.from > range.to ? range.to : range.from
+  const rTo = rangeOn && range.from > range.to ? range.from : range.to
+  const period = useMemo(() => {
+    if (rangeOn) {
+      const t = `${dmy(rFrom)} – ${dmy(rTo)}`
+      return { from: rFrom, to: rTo, label: t, title: t, isRange: true }
+    }
+    const b = monthBounds(year, month)
+    return { ...b, label: MONTHS_FULL[month], title: `${MONTHS_FULL[month]} ${year}`, isRange: false }
+  }, [rangeOn, rFrom, rTo, year, month])
+  const prevPeriod = useMemo(() => {
+    if (!period.isRange) return monthBounds(year, month - 1)
+    const len = ymdDiff(period.from, period.to) + 1
+    return { from: ymdAdd(period.from, -len), to: ymdAdd(period.from, -1) }
+  }, [period, year, month])
+  // Qrafik (son 12 ay) dövrün son ayına bağlanır
+  const anchorY = period.isRange ? Number(period.to.slice(0, 4)) : year
+  const anchorM = period.isRange ? Number(period.to.slice(5, 7)) - 1 : month
+
+  const q = norm(search).trim()
+  const monthSum = (qrup) =>
+    r2(
+      rowsByQrup[qrup]
+        .filter((r) => inP(r.tarix, period) && (!q || norm(`${r.kateqoriya} ${r.qeyd || ''} ${r.mebleg}`).includes(q)))
+        .reduce((s, r) => s + num(r.mebleg), 0)
+    )
   const isSum = monthSum('is')
   const sexsiSum = monthSum('sexsi')
-  const faizSum = r2(sales.filter((r) => String(r.tarix || '').slice(0, 7) === mk).reduce((s, r) => s + r.bonus, 0))
+  const faizSum = r2(
+    sales
+      .filter((r) => inP(r.tarix, period) && (!q || norm(`${r.satici} ${r.kim || ''} ${r.model || ''} ${r.nov}`).includes(q)))
+      .reduce((s, r) => s + r.bonus, 0)
+  )
+
+  function preset(kind) {
+    const t = todayYmd()
+    if (kind === '30') setRange({ from: ymdAdd(t, -29), to: t })
+    else if (kind === '90') setRange({ from: ymdAdd(t, -89), to: t })
+    else if (kind === 'il') setRange({ from: `${t.slice(0, 4)}-01-01`, to: t })
+  }
 
   return (
     <div className="an-page">
@@ -794,7 +871,7 @@ export default function XerclerPage() {
         <button type="button" className="btn btn--secondary" onClick={() => shift(-1)}>
           ‹
         </button>
-        <strong style={{ minWidth: 150, textAlign: 'center' }}>
+        <strong style={{ minWidth: 150, textAlign: 'center', opacity: rangeOn ? 0.45 : 1 }}>
           {MONTHS_FULL[month]} {year}
         </strong>
         <button type="button" className="btn btn--secondary" onClick={() => shift(1)}>
@@ -805,6 +882,7 @@ export default function XerclerPage() {
           className="btn btn--secondary"
           onClick={() => {
             const n = new Date()
+            setRange({ from: '', to: '' })
             setYear(n.getFullYear())
             setMonth(n.getMonth())
           }}
@@ -813,9 +891,43 @@ export default function XerclerPage() {
         </button>
         {!loading && (
           <span className="xerc-total">
-            {MONTHS_FULL[month]}: İş <b>{azn(isSum)}</b> · Şəxsi <b>{azn(sexsiSum)}</b> · İşçilər faizi <b>{azn(faizSum)}</b> · Cəmi <b>{azn(isSum + sexsiSum + faizSum)}</b>
+            {period.label}: İş <b>{azn(isSum)}</b> · Şəxsi <b>{azn(sexsiSum)}</b> · İşçilər faizi <b>{azn(faizSum)}</b> · Cəmi <b>{azn(isSum + sexsiSum + faizSum)}</b>
           </span>
         )}
+      </div>
+
+      <div className="xerc-filter">
+        <span className="xerc-filter__label">Tarix aralığı:</span>
+        <input
+          type="date"
+          value={range.from}
+          max={range.to || undefined}
+          onChange={(e) => setRange((r) => ({ ...r, from: e.target.value, to: r.to || (e.target.value ? todayYmd() : '') }))}
+          aria-label="Başlanğıc tarix"
+        />
+        <span>—</span>
+        <input
+          type="date"
+          value={range.to}
+          min={range.from || undefined}
+          onChange={(e) => setRange((r) => ({ ...r, to: e.target.value, from: r.from || e.target.value }))}
+          aria-label="Son tarix"
+        />
+        <button type="button" className="xerc-chip" onClick={() => preset('30')}>Son 30 gün</button>
+        <button type="button" className="xerc-chip" onClick={() => preset('90')}>Son 3 ay</button>
+        <button type="button" className="xerc-chip" onClick={() => preset('il')}>Bu il</button>
+        {rangeOn && (
+          <button type="button" className="btn btn--secondary xerc-btn" onClick={() => setRange({ from: '', to: '' })}>
+            Aralığı sıfırla
+          </button>
+        )}
+        <input
+          type="search"
+          className="xerc-filter__search"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Axtar: növ, qeyd, satıcı, müştəri, model…"
+        />
       </div>
 
       {error && <p style={{ color: 'var(--color-accent)' }}>{error}</p>}
@@ -832,8 +944,11 @@ export default function XerclerPage() {
             open={open[q]}
             onToggle={() => setOpen((o) => ({ ...o, [q]: !o[q] }))}
             rows={rowsByQrup[q]}
-            year={year}
-            month={month}
+            year={anchorY}
+            month={anchorM}
+            period={period}
+            prevPeriod={prevPeriod}
+            search={search}
             onPickMonth={pickMonthKey}
             kats={katsOf(q)}
             canEdit={canEdit}
@@ -853,8 +968,11 @@ export default function XerclerPage() {
           open={open.faiz}
           onToggle={() => setOpen((o) => ({ ...o, faiz: !o.faiz }))}
           sales={sales}
-          year={year}
-          month={month}
+          year={anchorY}
+          month={anchorM}
+          period={period}
+          prevPeriod={prevPeriod}
+          search={search}
           onPickMonth={pickMonthKey}
         />
       )}
