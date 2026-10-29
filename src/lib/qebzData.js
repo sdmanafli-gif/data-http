@@ -2,7 +2,7 @@
  * Qəbz üçün məlumat yığır (bazanı yalnız oxuyur, heç nə yazmır).
  */
 import { supabase } from './supabase'
-import { formatQebzMoney } from './qebz'
+import { formatQebzMoney, waPhone } from './qebz'
 import { normMusteriName } from './musteriler'
 import { ODENISLER_TABLE, MUSTERI_TABLE, tipLabel as odenisTipLabel, usuluLabel } from '../features/odenisler/constants'
 import { LEDGER_TABLE, tipLabel as ledgerTipLabel, computeBalances } from '../features/borc-nisye/constants'
@@ -18,6 +18,30 @@ import {
 export function cleanPhone(raw) {
   const m = String(raw || '').match(/\+?\d[\d\s()-]{6,}\d/)
   return m ? m[0].trim() : ''
+}
+
+/**
+ * Müştərinin WhatsApp üçün yararlı ilk nömrəsi: satışdakı Nömrə 1–5,
+ * olmazsa kontakt kartındakı (Müştərilər) nömrələr.
+ */
+async function bestPhone(m) {
+  const pick = (vals) => {
+    for (const raw of vals) {
+      const text = String(raw || '').replace(/[\u200e\u200f\u202a-\u202e]/g, '')
+      for (const part of text.match(/\+?\d[\d\s()-]{6,}\d/g) || []) {
+        if (waPhone(part)) return part.trim()
+      }
+    }
+    return ''
+  }
+  const own = pick([m?.nomre_1, m?.nomre_2, m?.nomre_3, m?.nomre_4, m?.nomre_5])
+  if (own || !m?.musteri_id) return own || cleanPhone(m?.nomre_1)
+  const { data: k } = await supabase
+    .from('musteriler')
+    .select('nomre_1, nomre_2, nomre_3, nomre_4, nomre_5')
+    .eq('id', m.musteri_id)
+    .maybeSingle()
+  return pick([k?.nomre_1, k?.nomre_2, k?.nomre_3, k?.nomre_4, k?.nomre_5]) || cleanPhone(m?.nomre_1)
 }
 
 /** Ödəniş üsulu qəbzdə: «Kart» yazılmır, əvəzinə «Hesab» */
@@ -60,7 +84,7 @@ export async function buildCreditQebz(paymentId) {
   const [{ data: m, error: mErr }, { data: all, error: aErr }] = await Promise.all([
     supabase
       .from(MUSTERI_TABLE)
-      .select('id, sira_no, ad_soyad, nomre_1, satis_qiymeti, model')
+      .select('id, sira_no, ad_soyad, nomre_1, nomre_2, nomre_3, nomre_4, nomre_5, musteri_id, satis_qiymeti, model')
       .eq('id', pay.musteri_bazasi_id)
       .maybeSingle(),
     supabase
@@ -85,7 +109,7 @@ export async function buildCreditQebz(paymentId) {
     tarix: pay.tarix,
     no: `K-${siraNo ?? '?'}/${idx + 1}`,
     qarsiTeref: m?.ad_soyad || pay.ad_soyad,
-    telefon: cleanPhone(m?.nomre_1),
+    telefon: await bestPhone(m),
     mebleg: Number(pay.mebleg) || 0,
     odenisNovu: usulText(pay.odenis_usulu, 'Nağd'),
     emeliyyat: `Mədaxil — ${odenisTipLabel(pay.tip)}`,
@@ -221,7 +245,7 @@ export async function buildKreditCixaris(musteriId) {
     no: `KC-${m.sira_no ?? '?'}`,
     musteri: m.ad_soyad,
     qarsiTeref: m.ad_soyad,
-    telefon: cleanPhone(m.nomre_1),
+    telefon: await bestPhone(m),
     mehsul: [m.model, m.yaddas, m.reng].filter(Boolean).join(' '),
     verilmeTarixi: m.verilme_tarixi,
     summary,
