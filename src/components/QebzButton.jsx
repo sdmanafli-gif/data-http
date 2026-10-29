@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useAuth } from '../contexts/AuthContext'
 import {
   loadQebzLogo,
@@ -51,6 +51,7 @@ function QebzModal({ buildData, onClose }) {
   const [busy, setBusy] = useState(false)
   const [note, setNote] = useState('')
   const [webLink, setWebLink] = useState('')
+  const phoneRef = useRef(null)
 
   const terdibEden = profile?.display_name || 'Mobideal'
 
@@ -113,8 +114,15 @@ function QebzModal({ buildData, onClose }) {
   }
 
   async function onWhatsApp() {
-    setBusy(true)
     setNote('')
+    setWebLink('')
+    // Nömrə yoxdursa WhatsApp «kimə göndərim» soruşur — əvvəlcə nömrəni istəyirik
+    if (!waPhone(phone)) {
+      setNote('Müştərinin WhatsApp nömrəsi yoxdur və ya düzgün deyil. Yuxarıdakı xanaya nömrəni yazıb yenidən basın.')
+      phoneRef.current?.focus()
+      return
+    }
+    setBusy(true)
     const isMobile =
       navigator.userAgentData?.mobile === true || /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent || '')
     const full0 = { ...data, telefon: phone }
@@ -178,6 +186,7 @@ function QebzModal({ buildData, onClose }) {
               <div className="form-group" style={{ marginBottom: 0, flex: '1 1 200px' }}>
                 <label>WhatsApp nömrəsi</label>
                 <input
+                  ref={phoneRef}
                   value={phone}
                   onChange={(e) => setPhone(e.target.value)}
                   placeholder="məs. 050 123 45 67"
