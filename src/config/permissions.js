@@ -256,6 +256,46 @@ export const APP_MODULES = [
     summaryCards: [],
     defaultHidden: true,
   },
+  {
+    // Mağazanın SIM nömrələri və balans artırma vaxtları — admin icazə verməyənə qədər bağlıdır
+    id: 'nomreler',
+    path: '/nomreler',
+    label: 'Nömrələr',
+    columns: [],
+    filterFields: [],
+    summaryCards: [],
+    defaultHidden: true,
+  },
+  {
+    // Biznesin ümumi analitikası (satış, mənfəət, yığım, borc) — yalnız admin, icazə verilməyənə qədər
+    id: 'analitika',
+    path: '/analitika',
+    label: 'Analitika',
+    columns: [],
+    filterFields: [],
+    summaryCards: [],
+    defaultHidden: true,
+  },
+  {
+    // İşə aid xərclər (icarə, maaş…) — Analitikada mənfəətdən çıxılır; admin icazə verməyənə qədər bağlı
+    id: 'xercler',
+    path: '/xercler',
+    label: 'Xərclər',
+    columns: [],
+    filterFields: [],
+    summaryCards: [],
+    defaultHidden: true,
+  },
+  {
+    // Kredit qiymət cədvəli (kalkulyator) — bazaya yazmır; admin icazə verməyənə qədər bağlı
+    id: 'qiymet-cedveli',
+    path: '/qiymet-cedveli',
+    label: 'Qiymət cədvəli',
+    columns: [],
+    filterFields: [],
+    summaryCards: [],
+    defaultHidden: true,
+  },
 ]
 
 const MODULE_BY_ID = Object.fromEntries(APP_MODULES.map((m) => [m.id, m]))

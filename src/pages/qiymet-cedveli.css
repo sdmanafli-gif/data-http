@@ -1,0 +1,98 @@
+/* Qiymət cədvəli — kredit kalkulyatoru */
+.qc-table th,
+.qc-table td {
+  vertical-align: middle;
+}
+.qc-terms th {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+.qc-terms__lbl {
+  text-align: right;
+  font-size: 12px;
+  color: var(--color-text-muted);
+  font-weight: 500;
+}
+.qc-pct,
+.qc-ay {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  white-space: nowrap;
+}
+.qc-pct input,
+.qc-ay input {
+  width: 56px;
+  padding: 3px 5px;
+  border: 1px solid var(--color-border);
+  border-radius: 5px;
+  font: inherit;
+  text-align: right;
+  background: var(--color-surface, #fff);
+  color: inherit;
+}
+.qc-pct input {
+  font-size: 12px;
+  font-weight: 400;
+}
+.qc-in {
+  width: 100px;
+  padding: 6px 8px;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  font: inherit;
+  font-weight: 600;
+  text-align: right;
+  background: var(--color-surface, #fff);
+  color: inherit;
+}
+.qc-in--model {
+  width: 130px;
+  text-align: left;
+  font-weight: 500;
+}
+.qc-qaliq {
+  color: var(--color-text-muted);
+}
+.qc-cell b {
+  display: block;
+  font-size: 15px;
+}
+.qc-cell small {
+  display: block;
+  font-size: 11px;
+  color: var(--color-text-muted);
+}
+.qc-x {
+  border: none;
+  background: none;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+  padding: 0 4px;
+}
+.qc-x:hover {
+  color: var(--color-accent);
+}
+.qc-foot {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 12px;
+}
+.qc-round {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+}
+.qc-round select {
+  padding: 5px 6px;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  font: inherit;
+  background: var(--color-surface, #fff);
+  color: inherit;
+}
