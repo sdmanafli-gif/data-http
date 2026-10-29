@@ -305,3 +305,30 @@
   color: var(--color-text-muted);
   margin: 0 0 12px;
 }
+
+/* Tarix aralığı və axtarış */
+.xerc-filter {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 0 14px;
+  font-size: 13px;
+}
+.xerc-filter__label {
+  font-weight: 600;
+  color: var(--color-text-muted);
+}
+.xerc-filter input[type='date'],
+.xerc-filter__search {
+  padding: 6px 8px;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  font: inherit;
+  background: var(--color-surface, #fff);
+  color: inherit;
+}
+.xerc-filter__search {
+  flex: 1 1 220px;
+  min-width: 180px;
+}
