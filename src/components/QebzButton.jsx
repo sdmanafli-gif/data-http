@@ -10,6 +10,7 @@ import {
   qebzMessage,
 } from '../lib/qebz'
 import { drawKreditCixaris, kreditMessage } from '../lib/kreditQebz'
+import { openWhatsApp, waWebUrl } from '../lib/whatsapp'
 import '../styles/shared.css'
 
 /**
@@ -49,6 +50,7 @@ function QebzModal({ buildData, onClose }) {
   const [preview, setPreview] = useState([])
   const [busy, setBusy] = useState(false)
   const [note, setNote] = useState('')
+  const [webLink, setWebLink] = useState('')
 
   const terdibEden = profile?.display_name || 'Mobideal'
 
@@ -129,11 +131,11 @@ function QebzModal({ buildData, onClose }) {
       // Olmazsa: PDF yüklənir, WhatsApp həmin nömrə ilə açılır, faylı əlavə edirsiniz
       downloadBlob(blob, name)
       const num = waPhone(phone)
-      const url = `https://wa.me/${num}?text=${encodeURIComponent(text)}`
-      window.open(url, '_blank', 'noopener')
+      openWhatsApp(num, text)
+      setWebLink(waWebUrl(num, text))
       setNote(
         num
-          ? 'PDF yükləndi. WhatsApp açıldı — yüklənmiş PDF faylını söhbətə əlavə edib göndərin.'
+          ? 'PDF yükləndi. WhatsApp tətbiqi açıldı — yüklənmiş PDF faylını söhbətə əlavə edib göndərin.'
           : 'PDF yükləndi. Telefon nömrəsi düzgün deyil, WhatsApp-da kontaktı özünüz seçin.'
       )
     } catch (err) {
@@ -182,7 +184,20 @@ function QebzModal({ buildData, onClose }) {
                 WhatsApp-a göndər
               </button>
             </div>
-            {note && <p className="qebz-modal__note">{note}</p>}
+            {note && (
+              <p className="qebz-modal__note">
+                {note}
+                {webLink && (
+                  <>
+                    {' '}
+                    Tətbiq açılmadısa:{' '}
+                    <a href={webLink} target="_blank" rel="noopener noreferrer">
+                      WhatsApp Web ilə aç
+                    </a>
+                  </>
+                )}
+              </p>
+            )}
             <div className="qebz-modal__preview">
               {preview.length ? (
                 preview.map((src, i) => <img key={i} src={src} alt={`Səhifə ${i + 1}`} />)
