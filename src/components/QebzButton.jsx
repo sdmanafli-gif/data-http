@@ -115,27 +115,34 @@ function QebzModal({ buildData, onClose }) {
   async function onWhatsApp() {
     setBusy(true)
     setNote('')
+    const isMobile =
+      navigator.userAgentData?.mobile === true || /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent || '')
+    const full0 = { ...data, telefon: phone }
+    const text = full0.kind === 'kredit' ? kreditMessage(full0) : qebzMessage(full0)
+    const num = waPhone(phone)
+    // Kompüterdə: WhatsApp tətbiqi dərhal (kliklə birlikdə) müştərinin söhbətində açılır
+    if (!isMobile) openWhatsApp(num, text)
     try {
-      const { blob, name, full } = await makePdf()
-      const text = full.kind === 'kredit' ? kreditMessage(full) : qebzMessage(full)
-      const file = new File([blob], name, { type: 'application/pdf' })
-      // Telefonda (və bəzi kompüterlərdə) faylı birbaşa paylaşmaq olur → WhatsApp seçilir
-      if (navigator.canShare?.({ files: [file] })) {
-        try {
-          await navigator.share({ files: [file], text })
-          return
-        } catch (err) {
-          if (err?.name === 'AbortError') return
+      const { blob, name } = await makePdf()
+      // Telefonda: faylı birbaşa paylaşmaq (WhatsApp seçilir)
+      if (isMobile) {
+        const file = new File([blob], name, { type: 'application/pdf' })
+        if (navigator.canShare?.({ files: [file] })) {
+          try {
+            await navigator.share({ files: [file], text })
+            return
+          } catch (err) {
+            if (err?.name === 'AbortError') return
+          }
         }
+        openWhatsApp(num, text)
       }
-      // Olmazsa: PDF yüklənir, WhatsApp həmin nömrə ilə açılır, faylı əlavə edirsiniz
+      // PDF yüklənir — WhatsApp söhbətinə sürüşdürüb göndərirsiniz
       downloadBlob(blob, name)
-      const num = waPhone(phone)
-      openWhatsApp(num, text)
       setWebLink(waWebUrl(num, text))
       setNote(
         num
-          ? 'PDF yükləndi. WhatsApp tətbiqi açıldı — yüklənmiş PDF faylını söhbətə əlavə edib göndərin.'
+          ? 'PDF yükləndi. WhatsApp tətbiqi müştərinin söhbətində açıldı — yüklənmiş PDF faylını söhbətə sürüşdürüb göndərin.'
           : 'PDF yükləndi. Telefon nömrəsi düzgün deyil, WhatsApp-da kontaktı özünüz seçin.'
       )
     } catch (err) {
