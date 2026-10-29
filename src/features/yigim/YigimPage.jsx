@@ -21,6 +21,7 @@ import CollapsibleSummary from '../../components/CollapsibleSummary'
 import { applyKeyOrder } from '../musteri-bazasi/columnOrder'
 import { useColumnConfig } from './useColumnConfig'
 import { waPhone } from '../../lib/qebz'
+import { openWhatsApp } from '../../lib/whatsapp'
 import '../../styles/shared.css'
 import '../musteri-bazasi/musteri-table.css'
 import '../musteri-bazasi/musteri-schedule.css'
@@ -630,7 +631,11 @@ export default function YigimPage() {
               target="_blank"
               rel="noopener noreferrer"
               title={`WhatsApp: ${waHit?.shown}`}
-              onClick={(e) => e.stopPropagation()}
+              onClick={(e) => {
+                e.stopPropagation()
+                e.preventDefault()
+                openWhatsApp(wa)
+              }}
             >
               <WhatsAppIcon />
             </a>
