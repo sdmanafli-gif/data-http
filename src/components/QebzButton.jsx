@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useAuth } from '../contexts/AuthContext'
+import { supabase } from '../lib/supabase'
 import {
   loadQebzLogo,
   drawQebz,
@@ -50,6 +51,20 @@ function contentHeight(canvas) {
     }
   }
   return height
+}
+
+const QEBZ_BUCKET = 'q'
+
+/** Qəbz şəklini fayl yerinə yükləyir, açıq linkini qaytarır (ad — 20 simvolluq təsadüfi) */
+async function uploadQebzImage(blob) {
+  const abc = 'abcdefghijklmnopqrstuvwxyz0123456789'
+  const rnd = crypto.getRandomValues(new Uint8Array(20))
+  const name = `${Array.from(rnd, (n) => abc[n % abc.length]).join('')}.png`
+  const { error } = await supabase.storage
+    .from(QEBZ_BUCKET)
+    .upload(name, blob, { contentType: 'image/png', cacheControl: '31536000', upsert: false })
+  if (error) throw error
+  return supabase.storage.from(QEBZ_BUCKET).getPublicUrl(name).data.publicUrl
 }
 
 /** Qəbzi səhifə-səhifə canvas-a çəkir */
@@ -166,6 +181,23 @@ function QebzModal({ buildData, onClose }) {
     const text = full0.kind === 'kredit' ? kreditMessage(full0) : qebzMessage(full0)
     const num = waPhone(phone)
     try {
+      // 1) Qəbz şəkli fayl yerinə yüklənir, mesaja linki əlavə olunur — müştərinin söhbəti hazır mesajla açılır
+      let link = ''
+      try {
+        link = await uploadQebzImage(await makeImageBlob())
+      } catch {
+        link = ''
+      }
+      if (link) {
+        const lines = text.split('\n')
+        const last = lines.pop()
+        const msg = [...lines, '', `Qəbz: ${link}`, '', last].join('\n')
+        openWhatsApp(num, msg)
+        setWebLink(waWebUrl(num, msg))
+        setNote('WhatsApp müştərinin söhbətində açıldı — mesaj və qəbz linki hazırdır, sadəcə «Göndər» basın.')
+        return
+      }
+      // 2) Yükləmək alınmadısa — köhnə qayda
       if (isMobile) {
         // Telefonda: qəbz şəkli + yazı birbaşa paylaşılır (WhatsApp seçilir)
         const blob = await makeImageBlob()
@@ -181,8 +213,7 @@ function QebzModal({ buildData, onClose }) {
         openWhatsApp(num, text)
         return
       }
-      // Kompüterdə: qəbz şəkli panoya kopyalanır (PDF yüklənmir),
-      // WhatsApp müştərinin söhbətində yazı ilə açılır — Ctrl+V ilə şəkil əlavə olunur
+      // Kompüterdə: qəbz şəkli panoya kopyalanır, WhatsApp söhbəti açılır — Ctrl+V
       let copied = false
       try {
         await navigator.clipboard.write([new ClipboardItem({ 'image/png': makeImageBlob() })])
@@ -194,7 +225,7 @@ function QebzModal({ buildData, onClose }) {
       setWebLink(waWebUrl(num, text))
       setNote(
         copied
-          ? 'Qəbz şəkli kopyalandı ✓ WhatsApp müştərinin söhbətində açıldı — söhbətdə Ctrl+V basın, şəkil yazı ilə birlikdə göndərilməyə hazır olacaq.'
+          ? 'Qəbz linki yaradılmadı. Şəkil kopyalandı — WhatsApp söhbətində Ctrl+V basıb göndərin.'
           : 'WhatsApp müştərinin söhbətində açıldı. Şəkli kopyalamaq alınmadı — «PDF yüklə» ilə faylı əlavə edin.'
       )
     } catch (err) {
