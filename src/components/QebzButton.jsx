@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useAuth } from '../contexts/AuthContext'
+import { supabase } from '../lib/supabase'
 import {
   loadQebzLogo,
   drawQebz,
@@ -10,6 +11,7 @@ import {
   qebzMessage,
 } from '../lib/qebz'
 import { drawKreditCixaris, kreditMessage } from '../lib/kreditQebz'
+import { openWhatsApp, waWebUrl } from '../lib/whatsapp'
 import '../styles/shared.css'
 
 /**
@@ -36,6 +38,35 @@ export default function QebzButton({ buildData, label = 'Qəbz', className = 'bt
   )
 }
 
+/** Səhifədə məzmunun bitdiyi hündürlük (aşağıdakı boş ağ hissə kəsilir) */
+function contentHeight(canvas) {
+  const { width, height } = canvas
+  const px = canvas.getContext('2d').getImageData(0, 0, width, height).data
+  // Ən altdakı səhifə nömrəsi («Səhifə 1 / 2») nəzərə alınmır
+  for (let y = height - 120; y > 0; y -= 1) {
+    const row = y * width * 4
+    for (let x = 0; x < width; x += 4) {
+      const i = row + x * 4
+      if (px[i] < 245 || px[i + 1] < 245 || px[i + 2] < 245) return Math.min(height, y + 40)
+    }
+  }
+  return height
+}
+
+const QEBZ_BUCKET = 'q'
+
+/** Qəbz şəklini fayl yerinə yükləyir, açıq linkini qaytarır (ad — 20 simvolluq təsadüfi) */
+async function uploadQebzImage(blob) {
+  const abc = 'abcdefghijklmnopqrstuvwxyz0123456789'
+  const rnd = crypto.getRandomValues(new Uint8Array(20))
+  const name = `${Array.from(rnd, (n) => abc[n % abc.length]).join('')}.png`
+  const { error } = await supabase.storage
+    .from(QEBZ_BUCKET)
+    .upload(name, blob, { contentType: 'image/png', cacheControl: '31536000', upsert: false })
+  if (error) throw error
+  return supabase.storage.from(QEBZ_BUCKET).getPublicUrl(name).data.publicUrl
+}
+
 /** Qəbzi səhifə-səhifə canvas-a çəkir */
 function renderPages(d, logo) {
   return d.kind === 'kredit' ? drawKreditCixaris(d, logo) : [drawQebz(d, logo)]
@@ -49,6 +80,8 @@ function QebzModal({ buildData, onClose }) {
   const [preview, setPreview] = useState([])
   const [busy, setBusy] = useState(false)
   const [note, setNote] = useState('')
+  const [webLink, setWebLink] = useState('')
+  const phoneRef = useRef(null)
 
   const terdibEden = profile?.display_name || 'Mobideal'
 
@@ -110,31 +143,90 @@ function QebzModal({ buildData, onClose }) {
     }
   }
 
+  /** Qəbzin bütün səhifələrini bir şəkilə (PNG) yığır — boş ağ yerlər kəsilir */
+  async function makeImageBlob() {
+    const logo = await loadQebzLogo()
+    const pages = renderPages({ ...data, telefon: phone }, logo)
+    const parts = pages.map((c) => ({ c, h: contentHeight(c) }))
+    const gap = 16
+    const out = document.createElement('canvas')
+    out.width = pages[0].width
+    out.height = parts.reduce((s, p) => s + p.h, 0) + gap * (parts.length - 1)
+    const ctx = out.getContext('2d')
+    ctx.fillStyle = '#fff'
+    ctx.fillRect(0, 0, out.width, out.height)
+    let y = 0
+    for (const p of parts) {
+      ctx.drawImage(p.c, 0, 0, p.c.width, p.h, 0, y, p.c.width, p.h)
+      y += p.h + gap
+    }
+    return new Promise((resolve, reject) =>
+      out.toBlob((b) => (b ? resolve(b) : reject(new Error('Şəkil yaradılmadı'))), 'image/png')
+    )
+  }
+
   async function onWhatsApp() {
-    setBusy(true)
     setNote('')
+    setWebLink('')
+    // Nömrə yoxdursa WhatsApp «kimə göndərim» soruşur — əvvəlcə nömrəni istəyirik
+    if (!waPhone(phone)) {
+      setNote('Müştərinin WhatsApp nömrəsi yoxdur və ya düzgün deyil. Yuxarıdakı xanaya nömrəni yazıb yenidən basın.')
+      phoneRef.current?.focus()
+      return
+    }
+    setBusy(true)
+    const isMobile =
+      navigator.userAgentData?.mobile === true || /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent || '')
+    const full0 = { ...data, telefon: phone }
+    const text = full0.kind === 'kredit' ? kreditMessage(full0) : qebzMessage(full0)
+    const num = waPhone(phone)
     try {
-      const { blob, name, full } = await makePdf()
-      const text = full.kind === 'kredit' ? kreditMessage(full) : qebzMessage(full)
-      const file = new File([blob], name, { type: 'application/pdf' })
-      // Telefonda (və bəzi kompüterlərdə) faylı birbaşa paylaşmaq olur → WhatsApp seçilir
-      if (navigator.canShare?.({ files: [file] })) {
-        try {
-          await navigator.share({ files: [file], text })
-          return
-        } catch (err) {
-          if (err?.name === 'AbortError') return
-        }
+      // 1) Qəbz şəkli fayl yerinə yüklənir, mesaja linki əlavə olunur — müştərinin söhbəti hazır mesajla açılır
+      let link = ''
+      try {
+        link = await uploadQebzImage(await makeImageBlob())
+      } catch {
+        link = ''
       }
-      // Olmazsa: PDF yüklənir, WhatsApp həmin nömrə ilə açılır, faylı əlavə edirsiniz
-      downloadBlob(blob, name)
-      const num = waPhone(phone)
-      const url = `https://wa.me/${num}?text=${encodeURIComponent(text)}`
-      window.open(url, '_blank', 'noopener')
+      if (link) {
+        const lines = text.split('\n')
+        const last = lines.pop()
+        const msg = [...lines, '', `Qəbz: ${link}`, '', last].join('\n')
+        openWhatsApp(num, msg)
+        setWebLink(waWebUrl(num, msg))
+        setNote('WhatsApp müştərinin söhbətində açıldı — mesaj və qəbz linki hazırdır, sadəcə «Göndər» basın.')
+        return
+      }
+      // 2) Yükləmək alınmadısa — köhnə qayda
+      if (isMobile) {
+        // Telefonda: qəbz şəkli + yazı birbaşa paylaşılır (WhatsApp seçilir)
+        const blob = await makeImageBlob()
+        const file = new File([blob], qebzFileName(full0).replace(/\.pdf$/i, '.png'), { type: 'image/png' })
+        if (navigator.canShare?.({ files: [file] })) {
+          try {
+            await navigator.share({ files: [file], text })
+            return
+          } catch (err) {
+            if (err?.name === 'AbortError') return
+          }
+        }
+        openWhatsApp(num, text)
+        return
+      }
+      // Kompüterdə: qəbz şəkli panoya kopyalanır, WhatsApp söhbəti açılır — Ctrl+V
+      let copied = false
+      try {
+        await navigator.clipboard.write([new ClipboardItem({ 'image/png': makeImageBlob() })])
+        copied = true
+      } catch {
+        copied = false
+      }
+      openWhatsApp(num, text)
+      setWebLink(waWebUrl(num, text))
       setNote(
-        num
-          ? 'PDF yükləndi. WhatsApp açıldı — yüklənmiş PDF faylını söhbətə əlavə edib göndərin.'
-          : 'PDF yükləndi. Telefon nömrəsi düzgün deyil, WhatsApp-da kontaktı özünüz seçin.'
+        copied
+          ? 'Qəbz linki yaradılmadı. Şəkil kopyalandı — WhatsApp söhbətində Ctrl+V basıb göndərin.'
+          : 'WhatsApp müştərinin söhbətində açıldı. Şəkli kopyalamaq alınmadı — «PDF yüklə» ilə faylı əlavə edin.'
       )
     } catch (err) {
       setError(err?.message || String(err))
@@ -169,6 +261,7 @@ function QebzModal({ buildData, onClose }) {
               <div className="form-group" style={{ marginBottom: 0, flex: '1 1 200px' }}>
                 <label>WhatsApp nömrəsi</label>
                 <input
+                  ref={phoneRef}
                   value={phone}
                   onChange={(e) => setPhone(e.target.value)}
                   placeholder="məs. 050 123 45 67"
@@ -182,7 +275,20 @@ function QebzModal({ buildData, onClose }) {
                 WhatsApp-a göndər
               </button>
             </div>
-            {note && <p className="qebz-modal__note">{note}</p>}
+            {note && (
+              <p className="qebz-modal__note">
+                {note}
+                {webLink && (
+                  <>
+                    {' '}
+                    Tətbiq açılmadısa:{' '}
+                    <a href={webLink} target="_blank" rel="noopener noreferrer">
+                      WhatsApp Web ilə aç
+                    </a>
+                  </>
+                )}
+              </p>
+            )}
             <div className="qebz-modal__preview">
               {preview.length ? (
                 preview.map((src, i) => <img key={i} src={src} alt={`Səhifə ${i + 1}`} />)

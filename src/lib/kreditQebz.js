@@ -273,6 +273,31 @@ export function drawKreditCixaris(data, logo) {
     doc.y += 50
   }
 
+  // Qrafikin altında: bu günə ödənilməli məbləğ (gecikmədə olan + faiz) — iri, qırmızı
+  const bo = data.bugunOdenilmeli
+  if (bo) {
+    doc.ensure(150)
+    const c = doc.ctx
+    const boxY = doc.y + 24
+    const boxH = 118
+    c.fillStyle = '#fdecea'
+    c.fillRect(L, boxY, R - L, boxH)
+    c.strokeStyle = RED
+    c.lineWidth = 3
+    c.strokeRect(L, boxY, R - L, boxH)
+    c.fillStyle = RED
+    c.textAlign = 'center'
+    c.font = `bold 40px ${FONT}`
+    c.fillText(fitText(c, `BU GÜNƏ ÖDƏNİLMƏLİ MƏBLƏĞ: ${money(bo.cemi)}`, R - L - 40), W / 2, boxY + 52)
+    c.font = `bold 27px ${FONT}`
+    c.fillText(
+      fitText(c, `GECİKMƏDƏ OLAN MƏBLƏĞ ${money(bo.gecikmede)} + FAİZ ${money(bo.faiz)}`, R - L - 40),
+      W / 2,
+      boxY + 96
+    )
+    doc.y = boxY + boxH + 6
+  }
+
   // 3) Ödəniş tarixləri
   sectionTitle(doc, 'Ödəniş tarixləri')
   if (data.payments?.length) {
@@ -321,19 +346,17 @@ export function drawKreditCixaris(data, logo) {
   doc.y += 40
   hLine(ctx, doc.y)
 
-  // Hər səhifənin altı: nömrə + izah
+  // Bir neçə səhifədirsə — altda yalnız səhifə nömrəsi
   const total = doc.pages.length
-  doc.pages.forEach((pg, i) => {
-    const c = pg.ctx
-    c.fillStyle = MUTED
-    c.font = `22px ${FONT}`
-    c.textAlign = 'center'
-    c.fillText(
-      `Bu qəbz elektron qaydada formalaşdırılıb${total > 1 ? ` · Səhifə ${i + 1} / ${total}` : ''}`,
-      W / 2,
-      H - 60
-    )
-  })
+  if (total > 1) {
+    doc.pages.forEach((pg, i) => {
+      const c = pg.ctx
+      c.fillStyle = MUTED
+      c.font = `22px ${FONT}`
+      c.textAlign = 'center'
+      c.fillText(`Səhifə ${i + 1} / ${total}`, W / 2, H - 60)
+    })
+  }
 
   return doc.pages.map((p) => p.canvas)
 }
@@ -345,6 +368,9 @@ export function kreditMessage(data) {
     `Tarix: ${formatQebzDate(data.tarix)}`,
     `Qalan borc: ${get('Qalan borc') || '—'}`,
     `Qalan faiz borcu: ${get('Qalan faiz borcu') || '—'}`,
+    ...(data.bugunOdenilmeli
+      ? [`Bu günə ödənilməli məbləğ: ${formatQebzMoney(data.bugunOdenilmeli.cemi)}`]
+      : []),
     'Mobideal',
   ].join('\n')
 }

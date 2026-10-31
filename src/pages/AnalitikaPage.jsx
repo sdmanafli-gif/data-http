@@ -1,0 +1,1330 @@
+import { useEffect, useMemo, useState } from 'react'
+import { supabase, fetchAllPages } from '../lib/supabase'
+import { computeBalances, LEDGER_TABLE } from '../features/borc-nisye/constants'
+import { buildYigimRows } from '../features/yigim/YigimPage'
+import '../styles/shared.css'
+import './analitika.css'
+
+/**
+ * Analitika — biznesin ümumi vəziyyəti bir səhifədə (yalnız oxuyur, heç nə yazmır).
+ *  · Satışlar: Nağd / Nisyə (nagd_satish) və Kredit (musteri_bazasi)
+ *  · Mənfəət: satış − alış − satıcı faizi (+ yığılan cərimə faizi − nömrə xərcləri)
+ *  · Yığım: ödəniş qrafikinə görə gözlənilən / yığılan, gecikmələr
+ *  · Borc / alacaq: kredit qalıqları + Borc / Nisyə qalıqları, Depodakı mal
+ */
+
+const MONTHS = ['Yan', 'Fev', 'Mar', 'Apr', 'May', 'İyn', 'İyl', 'Avq', 'Sen', 'Okt', 'Noy', 'Dek']
+const MONTHS_FULL = ['Yanvar', 'Fevral', 'Mart', 'Aprel', 'May', 'İyun', 'İyul', 'Avqust', 'Sentyabr', 'Oktyabr', 'Noyabr', 'Dekabr']
+
+const PERIODS = [
+  { value: 'this_month', label: 'Bu ay' },
+  { value: 'last_month', label: 'Keçən ay' },
+  { value: 'last_3', label: 'Son 3 ay' },
+  { value: 'this_year', label: 'Bu il' },
+  { value: 'last_12', label: 'Son 12 ay' },
+  { value: 'all', label: 'Hamısı' },
+  { value: 'custom', label: 'Özəl' },
+]
+
+/** Bir məhsul / satış üçün bundan böyük məbləğ yazı səhvi sayılır (məs. 1 000 000) — hesablamaya qatılmır */
+const SUSPICIOUS_LIMIT = 50000
+
+const r2 = (n) => Math.round((Number(n) || 0) * 100) / 100
+const num = (v) => {
+  const n = Number(v)
+  return Number.isFinite(n) ? n : 0
+}
+
+function azn(n, { sign = false } = {}) {
+  const v = r2(n)
+  const [i, d] = Math.abs(v).toFixed(2).split('.')
+  const s = `${i.replace(/\B(?=(\d{3})+(?!\d))/g, ' ')}${d === '00' ? '' : `,${d}`} ₼`
+  if (v < 0) return `−${s}`
+  return sign && v > 0 ? `+${s}` : s
+}
+
+function shortAzn(n) {
+  const v = Math.abs(num(n))
+  const sgn = num(n) < 0 ? '−' : ''
+  if (v >= 1_000_000) return `${sgn}${(v / 1_000_000).toFixed(1).replace('.', ',')}M`
+  if (v >= 1000) return `${sgn}${Math.round(v / 1000)}k`
+  return `${sgn}${Math.round(v)}`
+}
+
+const pct = (a, b) => (b > 0 ? Math.round((a / b) * 1000) / 10 : null)
+const pctText = (p) => (p == null ? '—' : `${String(p).replace('.', ',')}%`)
+
+function ymd(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+function todayYmd() {
+  return ymd(new Date())
+}
+
+function dmy(s) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(s || ''))
+  return m ? `${m[3]}.${m[2]}.${m[1]}` : '—'
+}
+
+function periodRange(period, customFrom, customTo) {
+  const now = new Date()
+  const y = now.getFullYear()
+  const m = now.getMonth()
+  switch (period) {
+    case 'this_month':
+      return { from: ymd(new Date(y, m, 1)), to: ymd(new Date(y, m + 1, 0)) }
+    case 'last_month':
+      return { from: ymd(new Date(y, m - 1, 1)), to: ymd(new Date(y, m, 0)) }
+    case 'last_3':
+      return { from: ymd(new Date(y, m - 2, 1)), to: ymd(new Date(y, m + 1, 0)) }
+    case 'this_year':
+      return { from: `${y}-01-01`, to: `${y}-12-31` }
+    case 'last_12':
+      return { from: ymd(new Date(y, m - 11, 1)), to: ymd(new Date(y, m + 1, 0)) }
+    case 'custom': {
+      let from = customFrom || null
+      let to = customTo || null
+      if (from && to && from > to) [from, to] = [to, from]
+      return { from, to }
+    }
+    default:
+      return { from: null, to: null }
+  }
+}
+
+/** Eyni uzunluqda əvvəlki dövr (müqayisə üçün) */
+function previousRange({ from, to }) {
+  if (!from || !to) return null
+  const a = new Date(`${from}T00:00:00`)
+  const b = new Date(`${to}T00:00:00`)
+  const days = Math.round((b - a) / 86400000) + 1
+  // Tam ay(lar)dırsa — əvvəlki eyni sayda ay
+  if (a.getDate() === 1 && new Date(b.getFullYear(), b.getMonth(), b.getDate() + 1).getDate() === 1) {
+    const months = (b.getFullYear() - a.getFullYear()) * 12 + (b.getMonth() - a.getMonth()) + 1
+    return { from: ymd(new Date(a.getFullYear(), a.getMonth() - months, 1)), to: ymd(new Date(a.getFullYear(), a.getMonth(), 0)) }
+  }
+  return { from: ymd(new Date(a.getFullYear(), a.getMonth(), a.getDate() - days)), to: ymd(new Date(a.getFullYear(), a.getMonth(), a.getDate() - 1)) }
+}
+
+const inRange = (d, r) => {
+  const s = String(d || '').slice(0, 10)
+  if (!s) return false
+  if (r.from && s < r.from) return false
+  if (r.to && s > r.to) return false
+  return true
+}
+
+const monthKey = (d) => String(d || '').slice(0, 7)
+
+/* ---------- Hesablamalar ---------- */
+
+function nagdProfit(r) {
+  return num(r.satis_qiymeti) - num(r.alis_qiymeti) - num(r.satici_faizi)
+}
+
+function kreditProfit(m) {
+  if (m.gozlenilen_gelir != null && m.gozlenilen_gelir !== '') return num(m.gozlenilen_gelir)
+  return num(m.satis_qiymeti) - num(m.alis_qiymeti) - num(m.satici_faizi)
+}
+
+function salesSummary(data, range) {
+  const nagd = { count: 0, satis: 0, alis: 0, menfeet: 0 }
+  const nisye = { count: 0, satis: 0, alis: 0, menfeet: 0 }
+  const kredit = { count: 0, satis: 0, alis: 0, menfeet: 0, qalan: 0 }
+  for (const r of data.nagd) {
+    if (!inRange(r.tarix, range)) continue
+    const t = r.satis_novu === 'nisye' ? nisye : nagd
+    t.count += 1
+    t.satis += num(r.satis_qiymeti)
+    t.alis += num(r.alis_qiymeti)
+    t.menfeet += nagdProfit(r)
+  }
+  for (const m of data.kredit) {
+    if (!inRange(m.verilme_tarixi, range)) continue
+    kredit.count += 1
+    kredit.satis += num(m.satis_qiymeti)
+    kredit.alis += num(m.alis_qiymeti)
+    kredit.menfeet += kreditProfit(m)
+    kredit.qalan += Math.max(0, num(m.qalan_borc))
+  }
+  let faiz = 0
+  let odenis = 0
+  for (const p of data.odenisler) {
+    if (!inRange(p.tarix, range)) continue
+    odenis += num(p.mebleg)
+    if (p.tip === 'faiz') faiz += num(p.mebleg)
+  }
+  let alis = 0
+  let alisCount = 0
+  for (const d of data.depo) {
+    if (!inRange(d.alis_tarixi, range)) continue
+    alis += num(d.alis_qiymeti) * Math.max(1, num(d.miqdar) || 1)
+    alisCount += 1
+  }
+  let nomreXerc = 0
+  for (const n of data.nomreler) if (inRange(n.alis_tarixi, range)) nomreXerc += num(n.alis_qiymeti)
+  for (const b of data.nomreBalans) if (inRange(b.tarix, range)) nomreXerc += num(b.mebleg)
+  let xerc = 0
+  for (const x of data.xercler) if (inRange(x.tarix, range)) xerc += num(x.mebleg) // yalnız İş xərcləri (yükləmədə süzülür)
+
+  const satisCemi = nagd.satis + nisye.satis + kredit.satis
+  const satisMenfeet = nagd.menfeet + nisye.menfeet + kredit.menfeet
+  const xalis = satisMenfeet + faiz - nomreXerc - xerc
+  return {
+    nagd,
+    nisye,
+    kredit,
+    faiz: r2(faiz),
+    odenis: r2(odenis),
+    alis: r2(alis),
+    alisCount,
+    nomreXerc: r2(nomreXerc),
+    xerc: r2(xerc),
+    satisCemi: r2(satisCemi),
+    satisCount: nagd.count + nisye.count + kredit.count,
+    satisMenfeet: r2(satisMenfeet),
+    xalis: r2(xalis),
+  }
+}
+
+/**
+ * Yığım: bu dövrdə ödəniş qrafikinə görə gözlənilən (tarixi bu günə qədər çatmış taksitlər)
+ * və bu dövrdə faktiki daxil olan ilkin + aylıq ödənişlər (köhnə borcların ödənişi də daxil).
+ */
+function collectionSummary(yigimRows, payments, range, today) {
+  let owed = 0
+  let lines = 0
+  for (const r of yigimRows) {
+    if (!inRange(r.tarix, range)) continue
+    if (r.tarix > today) continue // gələcək taksitlər yığım faizini korlamasın
+    owed += num(r.owed)
+    lines += 1
+  }
+  let paid = 0
+  for (const p of payments) {
+    if (p.tip !== 'ilkin' && p.tip !== 'ayliq') continue
+    if (inRange(p.tarix, range)) paid += num(p.mebleg)
+  }
+  return { owed: r2(owed), paid: r2(paid), remaining: r2(Math.max(0, owed - paid)), lines, rate: pct(paid, owed) }
+}
+
+/* ---------- Kiçik komponentlər ---------- */
+
+function Kpi({ label, value, hint, tone, delta, onOpen }) {
+  const clickable = Boolean(onOpen)
+  return (
+    <div
+      className={`an-kpi${tone ? ` an-kpi--${tone}` : ''}${clickable ? ' an-kpi--click' : ''}`}
+      onClick={onOpen}
+      onKeyDown={clickable ? (e) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), onOpen()) : undefined}
+      role={clickable ? 'button' : undefined}
+      tabIndex={clickable ? 0 : undefined}
+      title={clickable ? 'Ətraflı bax' : undefined}
+    >
+      <div className="an-kpi__label">{label}</div>
+      <div className="an-kpi__value">{value}</div>
+      {(hint || delta) && (
+        <div className="an-kpi__hint">
+          {delta}
+          {hint}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function Delta({ cur, prev }) {
+  if (prev == null || !(Math.abs(prev) > 0.009)) return null
+  const p = Math.round(((cur - prev) / Math.abs(prev)) * 100)
+  if (!Number.isFinite(p)) return null
+  const up = p >= 0
+  return (
+    <span className={`an-delta ${up ? 'an-delta--up' : 'an-delta--down'}`} title="Əvvəlki eyni dövrlə müqayisə">
+      {up ? '▲' : '▼'} {Math.abs(p)}%{' '}
+    </span>
+  )
+}
+
+/** Sadə qruplaşdırılmış sütun qrafiki (SVG, kənar paket yoxdur) */
+function BarChart({ data, series, height = 220 }) {
+  const W = 760
+  const H = height
+  const pad = { l: 46, r: 8, t: 12, b: 28 }
+  const values = data.flatMap((d) => series.map((s) => num(d[s.key])))
+  const max = Math.max(1, ...values)
+  const min = Math.min(0, ...values)
+  const span = max - min || 1
+  const innerW = W - pad.l - pad.r
+  const innerH = H - pad.t - pad.b
+  const y = (v) => pad.t + ((max - v) / span) * innerH
+  const groupW = innerW / Math.max(1, data.length)
+  const barW = Math.max(3, Math.min(22, (groupW * 0.8) / series.length))
+  const ticks = [0, 0.25, 0.5, 0.75, 1].map((t) => min + span * t)
+  return (
+    <div className="an-chart">
+      <svg viewBox={`0 0 ${W} ${H}`} role="img" preserveAspectRatio="none">
+        {ticks.map((t, i) => (
+          <g key={i}>
+            <line x1={pad.l} x2={W - pad.r} y1={y(t)} y2={y(t)} className="an-chart__grid" />
+            <text x={pad.l - 6} y={y(t) + 4} textAnchor="end" className="an-chart__axis">
+              {shortAzn(t)}
+            </text>
+          </g>
+        ))}
+        <line x1={pad.l} x2={W - pad.r} y1={y(0)} y2={y(0)} className="an-chart__zero" />
+        {data.map((d, i) => {
+          const gx = pad.l + i * groupW + (groupW - barW * series.length) / 2
+          return (
+            <g key={d.label}>
+              {series.map((s, j) => {
+                const v = num(d[s.key])
+                const top = y(Math.max(0, v))
+                const h = Math.max(1, Math.abs(y(v) - y(0)))
+                return (
+                  <rect
+                    key={s.key}
+                    x={gx + j * barW}
+                    y={top}
+                    width={barW - 1}
+                    height={h}
+                    rx="2"
+                    fill={v < 0 ? 'var(--color-danger)' : s.color}
+                  >
+                    <title>{`${d.full || d.label} · ${s.label}: ${azn(v)}`}</title>
+                  </rect>
+                )
+              })}
+              <text x={pad.l + i * groupW + groupW / 2} y={H - 8} textAnchor="middle" className="an-chart__axis">
+                {d.label}
+              </text>
+            </g>
+          )
+        })}
+      </svg>
+      <div className="an-legend">
+        {series.map((s) => (
+          <span key={s.key}>
+            <i style={{ background: s.color }} />
+            {s.label}
+          </span>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function ShareBar({ items }) {
+  const total = items.reduce((a, it) => a + Math.max(0, num(it.value)), 0)
+  return (
+    <div>
+      <div className="an-share">
+        {items.map((it) =>
+          it.value > 0 ? (
+            <span
+              key={it.label}
+              style={{ width: `${(it.value / (total || 1)) * 100}%`, background: it.color }}
+              title={`${it.label}: ${azn(it.value)} (${pctText(pct(it.value, total))})`}
+            />
+          ) : null
+        )}
+      </div>
+      <div className="an-legend">
+        {items.map((it) => (
+          <span key={it.label}>
+            <i style={{ background: it.color }} />
+            {it.label}: <b>{pctText(pct(it.value, total))}</b>
+          </span>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function TopList({ title, rows, empty = 'Məlumat yoxdur.' }) {
+  return (
+    <div className="card an-card">
+      <h3 className="an-h3">{title}</h3>
+      {rows.length === 0 ? (
+        <p className="empty-state" style={{ margin: 0 }}>{empty}</p>
+      ) : (
+        <ol className="an-top">
+          {rows.map((r, i) => (
+            <li key={`${r.name}-${i}`}>
+              <span className="an-top__name" title={r.name}>{r.name}</span>
+              {r.sub && <span className="an-top__sub">{r.sub}</span>}
+              <b className={r.tone ? `an-tone--${r.tone}` : undefined}>{r.value}</b>
+            </li>
+          ))}
+        </ol>
+      )}
+    </div>
+  )
+}
+
+/* ---------- Ətraflı (kartlara basanda) ---------- */
+
+const ODENIS_TIP = { ilkin: 'İlkin', ayliq: 'Aylıq', faiz: 'Cərimə faizi' }
+
+function buildDetail(kind, ctx) {
+  const { data, range, a, yigimRows, today } = ctx
+  const kreditById = new Map(data.kredit.map((m) => [m.id, m]))
+  const who = (m) => (m ? `${m.sira_no != null ? `#${m.sira_no} ` : ''}${m.ad_soyad || '—'}` : '—')
+
+  const saleRows = () => {
+    const rows = []
+    for (const r of data.nagd) {
+      if (!inRange(r.tarix, range)) continue
+      rows.push({
+        tarix: r.tarix,
+        nov: r.satis_novu === 'nisye' ? 'Nisyə' : 'Nağd',
+        kim: r.kime || '—',
+        model: r.model || '—',
+        satis: num(r.satis_qiymeti),
+        alis: num(r.alis_qiymeti),
+        faiz: num(r.satici_faizi),
+        menfeet: r2(nagdProfit(r)),
+      })
+    }
+    for (const m of data.kredit) {
+      if (!inRange(m.verilme_tarixi, range)) continue
+      rows.push({
+        tarix: m.verilme_tarixi,
+        nov: 'Kredit',
+        kim: who(m),
+        model: m.model || '—',
+        satis: num(m.satis_qiymeti),
+        alis: num(m.alis_qiymeti),
+        faiz: num(m.satici_faizi),
+        menfeet: r2(kreditProfit(m)),
+      })
+    }
+    return rows
+  }
+  const saleCols = [
+    { key: 'tarix', label: 'Tarix', date: true },
+    { key: 'nov', label: 'Növ' },
+    { key: 'kim', label: 'Kimə' },
+    { key: 'model', label: 'Model' },
+    { key: 'satis', label: 'Satış', money: true },
+    { key: 'alis', label: 'Alış', money: true },
+    { key: 'faiz', label: 'Satıcı faizi', money: true },
+    { key: 'menfeet', label: 'Mənfəət', money: true, tone: true },
+  ]
+  const byType = (rows, field) =>
+    ['Nağd', 'Nisyə', 'Kredit'].map((t) => ({
+      label: t,
+      value: azn(rows.filter((r) => r.nov === t).reduce((s, r) => s + r[field], 0)),
+    }))
+
+  if (kind === 'satis') {
+    const rows = saleRows()
+    return {
+      title: 'Satış dövriyyəsi',
+      summary: [...byType(rows, 'satis'), { label: 'Cəmi', value: azn(a.cur.satisCemi), bold: true }],
+      columns: saleCols,
+      rows,
+      sort: { key: 'tarix', dir: -1 },
+    }
+  }
+  if (kind === 'menfeet') {
+    const rows = saleRows()
+    for (const p of data.odenisler) {
+      if (p.tip !== 'faiz' || !inRange(p.tarix, range)) continue
+      rows.push({ tarix: p.tarix, nov: 'Cərimə faizi', kim: kreditById.has(p.musteri_bazasi_id) ? who(kreditById.get(p.musteri_bazasi_id)) : p.ad_soyad || '—', model: '—', satis: 0, alis: 0, faiz: 0, menfeet: num(p.mebleg) })
+    }
+    const nomreById = new Map(data.nomreler.map((n) => [n.id, n.nomre]))
+    for (const n of data.nomreler) {
+      if (!inRange(n.alis_tarixi, range) || !num(n.alis_qiymeti)) continue
+      rows.push({ tarix: n.alis_tarixi, nov: 'Nömrə alışı', kim: n.nomre || '—', model: '—', satis: 0, alis: 0, faiz: 0, menfeet: -num(n.alis_qiymeti) })
+    }
+    for (const b of data.nomreBalans) {
+      if (!inRange(b.tarix, range)) continue
+      rows.push({ tarix: b.tarix, nov: 'Nömrə balansı', kim: nomreById.get(b.nomre_id) || '—', model: '—', satis: 0, alis: 0, faiz: 0, menfeet: -num(b.mebleg) })
+    }
+    for (const x of data.xercler) {
+      if (!inRange(x.tarix, range)) continue
+      rows.push({ tarix: x.tarix, nov: 'Xərc', kim: x.kateqoriya || '—', model: x.qeyd || '—', satis: 0, alis: 0, faiz: 0, menfeet: -num(x.mebleg) })
+    }
+    return {
+      title: 'Xalis mənfəət — haradan gəlir',
+      summary: [
+        ...byType(rows, 'menfeet').map((x) => ({ ...x, label: `${x.label} satışlar` })),
+        { label: '+ Cərimə faizi', value: azn(a.cur.faiz) },
+        { label: '− Nömrə xərcləri', value: azn(-a.cur.nomreXerc) },
+        { label: '− İş xərcləri', value: azn(-a.cur.xerc) },
+        { label: 'Xalis mənfəət', value: azn(a.cur.xalis), bold: true },
+      ],
+      columns: saleCols,
+      rows,
+      sort: { key: 'menfeet', dir: -1 },
+    }
+  }
+  if (kind === 'odenis') {
+    const rows = data.odenisler
+      .filter((p) => inRange(p.tarix, range))
+      .map((p) => ({
+        tarix: p.tarix,
+        kim: kreditById.has(p.musteri_bazasi_id) ? who(kreditById.get(p.musteri_bazasi_id)) : p.ad_soyad || '—',
+        model: kreditById.get(p.musteri_bazasi_id)?.model || '—',
+        tip: ODENIS_TIP[p.tip] || p.tip || '—',
+        mebleg: num(p.mebleg),
+      }))
+    const sumTip = (t) => azn(rows.filter((r) => r.tip === t).reduce((s, r) => s + r.mebleg, 0))
+    return {
+      title: 'Daxil olan ödənişlər',
+      summary: [
+        { label: 'İlkin', value: sumTip('İlkin') },
+        { label: 'Aylıq', value: sumTip('Aylıq') },
+        { label: 'Cərimə faizi', value: sumTip('Cərimə faizi') },
+        { label: 'Cəmi', value: azn(a.cur.odenis), bold: true },
+      ],
+      columns: [
+        { key: 'tarix', label: 'Tarix', date: true },
+        { key: 'kim', label: 'Müştəri' },
+        { key: 'model', label: 'Model' },
+        { key: 'tip', label: 'Növ' },
+        { key: 'mebleg', label: 'Məbləğ', money: true },
+      ],
+      rows,
+      sort: { key: 'tarix', dir: -1 },
+    }
+  }
+  if (kind === 'alis') {
+    const rows = data.depo
+      .filter((d) => inRange(d.alis_tarixi, range))
+      .map((d) => {
+        const q = Math.max(1, num(d.miqdar) || 1)
+        return { tarix: d.alis_tarixi, model: d.model || '—', kim: d.kimden_alinib || '—', say: q, qiymet: num(d.alis_qiymeti), cemi: num(d.alis_qiymeti) * q }
+      })
+    return {
+      title: 'Alışlar (Depoya daxil olan mal)',
+      summary: [{ label: 'Cəmi', value: azn(a.cur.alis), bold: true }, { label: 'Məhsul', value: String(rows.length) }],
+      columns: [
+        { key: 'tarix', label: 'Tarix', date: true },
+        { key: 'model', label: 'Model' },
+        { key: 'kim', label: 'Kimdən' },
+        { key: 'say', label: 'Say', num: true },
+        { key: 'qiymet', label: 'Qiymət', money: true },
+        { key: 'cemi', label: 'Cəmi', money: true },
+      ],
+      rows,
+      sort: { key: 'tarix', dir: -1 },
+    }
+  }
+  if (kind === 'yigim') {
+    const rows = yigimRows
+      .filter((r) => inRange(r.tarix, range) && r.tarix <= today)
+      .map((r) => ({
+        tarix: r.tarix,
+        kim: `${r.sira_no != null ? `#${r.sira_no} ` : ''}${r.ad_soyad}`,
+        model: r.model || '—',
+        tip: r.label,
+        owed: num(r.owed),
+        paid: num(r.paid),
+        qalan: num(r.remaining),
+      }))
+    return {
+      title: 'Yığım — qrafikə görə bu dövrdə gözlənilən',
+      summary: [
+        { label: 'Gözlənilən', value: azn(a.col.owed) },
+        { label: 'Bu dövrdə daxil olub', value: azn(a.col.paid) },
+        { label: 'Yığım faizi', value: pctText(a.col.rate), bold: true },
+      ],
+      columns: [
+        { key: 'tarix', label: 'Tarix', date: true },
+        { key: 'kim', label: 'Müştəri' },
+        { key: 'model', label: 'Model' },
+        { key: 'tip', label: 'Növ' },
+        { key: 'owed', label: 'Məbləğ', money: true },
+        { key: 'paid', label: 'Ödənilib', money: true },
+        { key: 'qalan', label: 'Qalan', money: true, tone: 'bad' },
+      ],
+      rows,
+      sort: { key: 'qalan', dir: -1 },
+    }
+  }
+  if (kind === 'gecikme') {
+    return {
+      title: 'Gecikmiş ödənişlər',
+      summary: [{ label: 'Müştəri', value: String(a.lateCount) }, { label: 'Cəmi', value: azn(a.lateSum), bold: true }],
+      columns: [
+        { key: 'kim', label: 'Müştəri' },
+        { key: 'days', label: 'Ən çox gecikmə (gün)', num: true },
+        { key: 'sum', label: 'Gecikmiş məbləğ', money: true, tone: 'bad' },
+      ],
+      rows: a.lateList.map((g) => ({ kim: `${g.sira != null ? `#${g.sira} ` : ''}${g.name}`, days: g.days, sum: g.sum })),
+      sort: { key: 'sum', dir: -1 },
+    }
+  }
+  if (kind === 'alacaq' || kind === 'borc') {
+    const rows = []
+    if (kind === 'alacaq') {
+      for (const m of data.kredit) {
+        const q = Math.max(0, num(m.qalan_borc))
+        if (q <= 0.009 || (m.veziyyet !== 'Qalıb' && m.veziyyet !== 'Məhkəmə')) continue
+        rows.push({ kim: who(m), nov: m.veziyyet === 'Məhkəmə' ? 'Məhkəmə' : 'Kredit', model: m.model || '—', mebleg: q })
+      }
+      for (const p of a.ledgerPeople) if (p.net > 0) rows.push({ kim: p.name, nov: 'Borc / Nisyə', model: '—', mebleg: p.net })
+    } else {
+      for (const p of a.ledgerPeople) if (p.net < 0) rows.push({ kim: p.name, nov: 'Borc / Nisyə', model: '—', mebleg: -p.net })
+    }
+    return {
+      title: kind === 'alacaq' ? 'Alacaq — kim bizə borcludur' : 'Borcunuz — kimə borclusunuz',
+      summary:
+        kind === 'alacaq'
+          ? [
+              { label: 'Kredit', value: azn(a.kreditQalan) },
+              { label: 'Borc / Nisyə', value: azn(a.ledgerAlacaq) },
+              { label: 'Məhkəmə', value: azn(a.mehkemeQalan) },
+            ]
+          : [{ label: 'Cəmi', value: azn(a.ledgerBorc), bold: true }],
+      columns: [
+        { key: 'kim', label: 'Kim' },
+        { key: 'nov', label: 'Növ' },
+        { key: 'model', label: 'Model' },
+        { key: 'mebleg', label: 'Qalıq', money: true },
+      ],
+      rows,
+      sort: { key: 'mebleg', dir: -1 },
+    }
+  }
+  return null
+}
+
+function DetailModal({ detail, onClose }) {
+  const [q, setQ] = useState('')
+  const [sort, setSort] = useState(detail.sort || { key: detail.columns[0].key, dir: -1 })
+  useEffect(() => {
+    const onKey = (e) => e.key === 'Escape' && onClose()
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose])
+  const rows = useMemo(() => {
+    const term = q.trim().toLocaleLowerCase('az')
+    const list = term
+      ? detail.rows.filter((r) => detail.columns.some((c) => String(r[c.key] ?? '').toLocaleLowerCase('az').includes(term)))
+      : [...detail.rows]
+    const col = detail.columns.find((c) => c.key === sort.key)
+    list.sort((x, y) => {
+      const a = x[sort.key]
+      const b = y[sort.key]
+      if (col?.money || col?.num) return (num(a) - num(b)) * sort.dir
+      return String(a ?? '').localeCompare(String(b ?? ''), 'az') * sort.dir
+    })
+    return list
+  }, [detail, q, sort])
+  const moneyTotals = detail.columns.filter((c) => c.money).map((c) => [c.key, rows.reduce((s, r) => s + num(r[c.key]), 0)])
+  const totals = Object.fromEntries(moneyTotals)
+  return (
+    <div className="an-modal-overlay" onClick={onClose} role="presentation">
+      <div className="an-modal" onClick={(e) => e.stopPropagation()} role="dialog" aria-label={detail.title}>
+        <div className="an-modal__head">
+          <h2>{detail.title}</h2>
+          <button type="button" className="btn btn--secondary" onClick={onClose}>
+            Bağla
+          </button>
+        </div>
+        <div className="an-modal__summary">
+          {detail.summary.map((s) => (
+            <div key={s.label} className={s.bold ? 'an-modal__sum an-modal__sum--bold' : 'an-modal__sum'}>
+              <span>{s.label}</span>
+              <b>{s.value}</b>
+            </div>
+          ))}
+        </div>
+        <input
+          className="an-modal__search"
+          type="search"
+          placeholder="Axtar: ad, model, növ…"
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+        />
+        <div className="table-wrap an-modal__table">
+          <table className="data-table">
+            <thead>
+              <tr>
+                {detail.columns.map((c) => (
+                  <th
+                    key={c.key}
+                    className={c.money || c.num ? 'num' : undefined}
+                    onClick={() => setSort((s) => ({ key: c.key, dir: s.key === c.key ? -s.dir : -1 }))}
+                    style={{ cursor: 'pointer', whiteSpace: 'nowrap' }}
+                    title="Sırala"
+                  >
+                    {c.label} {sort.key === c.key ? (sort.dir > 0 ? '↑' : '↓') : ''}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.length === 0 ? (
+                <tr>
+                  <td colSpan={detail.columns.length} className="empty-state">
+                    Qeyd yoxdur.
+                  </td>
+                </tr>
+              ) : (
+                rows.map((r, i) => (
+                  <tr key={i}>
+                    {detail.columns.map((c) => {
+                      const v = r[c.key]
+                      const toneCls =
+                        c.tone === true ? (num(v) < 0 ? 'an-tone--bad' : 'an-tone--good') : c.tone === 'bad' && num(v) > 0 ? 'an-tone--bad' : ''
+                      return (
+                        <td key={c.key} className={[c.money || c.num ? 'num' : '', toneCls].filter(Boolean).join(' ') || undefined}>
+                          {c.money ? azn(v) : c.date ? dmy(v) : v ?? '—'}
+                        </td>
+                      )
+                    })}
+                  </tr>
+                ))
+              )}
+            </tbody>
+            {moneyTotals.length > 0 && rows.length > 0 && (
+              <tfoot>
+                <tr>
+                  {detail.columns.map((c, i) => (
+                    <td key={c.key} className={c.money ? 'num' : undefined}>
+                      {i === 0 ? `Cəmi (${rows.length})` : c.money ? azn(totals[c.key]) : ''}
+                    </td>
+                  ))}
+                </tr>
+              </tfoot>
+            )}
+          </table>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/* ---------- Səhifə ---------- */
+
+export default function AnalitikaPage() {
+  const [period, setPeriod] = useState('this_month')
+  const [customFrom, setCustomFrom] = useState('')
+  const [customTo, setCustomTo] = useState('')
+  const [data, setData] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
+  const [warn, setWarn] = useState(null)
+  const [detailKind, setDetailKind] = useState(null)
+
+  async function load() {
+    setLoading(true)
+    setError(null)
+    setWarn(null)
+    try {
+      const [k, o, n, l, d] = await Promise.all([
+        fetchAllPages(() =>
+          supabase
+            .from('musteri_bazasi')
+            .select(
+              'id, sira_no, ad_soyad, model, veziyyet, satis_qiymeti, alis_qiymeti, satici_faizi, verilib, faiz, qalan_borc, gozlenilen_gelir, faktiki_gelir, ayliq_odenis, nece_ay, odenis_gunu, birinci_ayliq_odenis_tarixi, odenis_qrafiki, verilme_tarixi'
+            )
+            .order('id', { ascending: true })
+        ),
+        fetchAllPages(() => supabase.from('odenisler').select('id, musteri_bazasi_id, ad_soyad, tip, mebleg, tarix').order('id', { ascending: true })),
+        fetchAllPages(() =>
+          supabase
+            .from('nagd_satish')
+            .select('id, tarix, satis_novu, model, kime, alis_qiymeti, satis_qiymeti, satici_faizi')
+            .order('id', { ascending: true })
+        ),
+        fetchAllPages(() => supabase.from(LEDGER_TABLE).select('id, kime, tip, mebleg, tarix').order('id', { ascending: true })),
+        fetchAllPages(() =>
+          supabase
+            .from('depo')
+            .select('id, model, kimden_alinib, alis_qiymeti, alis_tarixi, miqdar, status')
+            .order('id', { ascending: true })
+        ),
+      ])
+      const err = k.error || o.error || n.error || l.error || d.error
+      if (err) throw err
+      // Nömrə xərcləri — cədvəllər yoxdursa sadəcə 0 sayılır
+      const [nm, nb] = await Promise.all([
+        fetchAllPages(() => supabase.from('nomreler').select('id, nomre, alis_tarixi, alis_qiymeti').order('id', { ascending: true })),
+        fetchAllPages(() => supabase.from('nomre_balanslar').select('id, nomre_id, tarix, mebleg').order('id', { ascending: true })),
+      ])
+      if (nm.error || nb.error) setWarn('Nömrə xərcləri yüklənmədi — hesablamaya daxil edilmədi.')
+      // Xərclər (icarə, maaş…) — cədvəl yoxdursa 0 sayılır
+      const xr = await fetchAllPages(() => supabase.from('xercler').select('*').order('id', { ascending: true }))
+      // Yazı səhvi ola biləcək çox böyük məbləğlər ayrıca göstərilir, cəmlərə qatılmır
+      const suspicious = []
+      const big = (v) => num(v) > SUSPICIOUS_LIMIT
+      const depo = (d.data || []).filter((x) => {
+        if (!big(x.alis_qiymeti)) return true
+        suspicious.push(`Depo: ${x.model || '—'} — alış qiyməti ${azn(x.alis_qiymeti)}`)
+        return false
+      })
+      const nagd = (n.data || []).filter((x) => {
+        if (!big(x.alis_qiymeti) && !big(x.satis_qiymeti)) return true
+        suspicious.push(`Nağd satış: ${x.model || '—'} (${dmy(x.tarix)}) — alış ${azn(x.alis_qiymeti)}, satış ${azn(x.satis_qiymeti)}`)
+        return false
+      })
+      const kredit = (k.data || []).filter((x) => {
+        if (!big(x.alis_qiymeti) && !big(x.satis_qiymeti)) return true
+        suspicious.push(`Kredit #${x.sira_no ?? '—'} ${x.ad_soyad || ''} — alış ${azn(x.alis_qiymeti)}, satış ${azn(x.satis_qiymeti)}`)
+        return false
+      })
+      setData({
+        suspicious,
+        kredit,
+        odenisler: o.data || [],
+        nagd,
+        ledger: l.data || [],
+        depo,
+        nomreler: nm.error ? [] : nm.data || [],
+        nomreBalans: nb.error ? [] : nb.data || [],
+        // Şəxsi xərclər iş mənfəətinə qatılmır
+        xercler: xr.error ? [] : (xr.data || []).filter((x) => x.qrup !== 'sexsi'),
+      })
+    } catch (e) {
+      setError(e.message || String(e))
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    load()
+  }, [])
+
+  const today = todayYmd()
+  const range = useMemo(() => periodRange(period, customFrom, customTo), [period, customFrom, customTo])
+  const prevRange = useMemo(() => previousRange(range), [range])
+
+  const yigimRows = useMemo(() => {
+    if (!data) return []
+    const pays = data.odenisler.filter((p) => p.tip === 'ilkin' || p.tip === 'ayliq')
+    const veziyyetById = new Map(data.kredit.map((m) => [m.id, m.veziyyet]))
+    return buildYigimRows(data.kredit, pays).map((r) => ({ ...r, veziyyet: veziyyetById.get(r.musteriId) || r.veziyyet }))
+  }, [data])
+
+  const a = useMemo(() => {
+    if (!data) return null
+    const cur = salesSummary(data, range)
+    const prev = prevRange ? salesSummary(data, prevRange) : null
+    const col = collectionSummary(yigimRows, data.odenisler, range, today)
+    const prevCol = prevRange ? collectionSummary(yigimRows, data.odenisler, prevRange, today) : null
+
+    // Gecikmiş (bu günə qədər, aktiv müştərilər)
+    const lateByCustomer = new Map()
+    let lateSum = 0
+    for (const r of yigimRows) {
+      if (r.veziyyet !== 'Qalıb') continue
+      if (!(r.tarix < today) || !(num(r.remaining) > 0.009)) continue
+      lateSum += num(r.remaining)
+      const g = lateByCustomer.get(r.musteriId) || { name: r.ad_soyad, sira: r.sira_no, sum: 0, days: 0 }
+      g.sum += num(r.remaining)
+      g.days = Math.max(g.days, num(r.delayDays))
+      lateByCustomer.set(r.musteriId, g)
+    }
+
+    // Alacaq / borc (bu gün)
+    let kreditQalan = 0
+    let mehkemeQalan = 0
+    let aktivMusteri = 0
+    for (const m of data.kredit) {
+      const q = Math.max(0, num(m.qalan_borc))
+      if (m.veziyyet === 'Məhkəmə') mehkemeQalan += q
+      else if (m.veziyyet === 'Qalıb') {
+        kreditQalan += q
+        if (q > 0) aktivMusteri += 1
+      }
+    }
+    let ledgerAlacaq = 0
+    let ledgerBorc = 0
+    const ledgerPeople = []
+    for (const b of computeBalances(data.ledger)) {
+      const net = num(b.qaliq_borc) + num(b.qaliq_nisye)
+      if (net > 0.009) ledgerAlacaq += net
+      else if (net < -0.009) ledgerBorc += -net
+      if (Math.abs(net) > 0.009) ledgerPeople.push({ name: b.kime, net })
+    }
+    let depoDeyer = 0
+    let depoSay = 0
+    for (const d of data.depo) {
+      if (d.status !== 'available') continue
+      const q = Math.max(1, num(d.miqdar) || 1)
+      depoDeyer += num(d.alis_qiymeti) * q
+      depoSay += q
+    }
+    const alacaq = kreditQalan + ledgerAlacaq
+    // Məhkəmədəki qalıq da sizindir — xalis vəziyyətə daxildir (ayrıca sətirdə göstərilir)
+    const netMovqe = alacaq + mehkemeQalan + depoDeyer - ledgerBorc
+    const netMehkemesiz = alacaq + depoDeyer - ledgerBorc
+
+    // Son 12 ay qrafikləri
+    const now = new Date()
+    const months = []
+    for (let i = 11; i >= 0; i -= 1) {
+      const dt = new Date(now.getFullYear(), now.getMonth() - i, 1)
+      const key = `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}`
+      months.push({ key, label: MONTHS[dt.getMonth()], full: `${MONTHS_FULL[dt.getMonth()]} ${dt.getFullYear()}`, nagd: 0, kredit: 0, menfeet: 0, owed: 0, paid: 0, alis: 0 })
+    }
+    const mIdx = new Map(months.map((m, i) => [m.key, i]))
+    const add = (key, field, v) => {
+      const i = mIdx.get(key)
+      if (i != null) months[i][field] += v
+    }
+    for (const r of data.nagd) {
+      add(monthKey(r.tarix), 'nagd', num(r.satis_qiymeti))
+      add(monthKey(r.tarix), 'menfeet', nagdProfit(r))
+    }
+    for (const m of data.kredit) {
+      add(monthKey(m.verilme_tarixi), 'kredit', num(m.satis_qiymeti))
+      add(monthKey(m.verilme_tarixi), 'menfeet', kreditProfit(m))
+    }
+    for (const p of data.odenisler) if (p.tip === 'faiz') add(monthKey(p.tarix), 'menfeet', num(p.mebleg))
+    for (const nmr of data.nomreler) add(monthKey(nmr.alis_tarixi), 'menfeet', -num(nmr.alis_qiymeti))
+    for (const b of data.nomreBalans) add(monthKey(b.tarix), 'menfeet', -num(b.mebleg))
+    for (const x of data.xercler) add(monthKey(x.tarix), 'menfeet', -num(x.mebleg))
+    for (const r of yigimRows) {
+      if (r.tarix > today) continue
+      add(monthKey(r.tarix), 'owed', num(r.owed))
+    }
+    for (const p of data.odenisler) {
+      if (p.tip === 'ilkin' || p.tip === 'ayliq') add(monthKey(p.tarix), 'paid', num(p.mebleg))
+    }
+    for (const d of data.depo) add(monthKey(d.alis_tarixi), 'alis', num(d.alis_qiymeti) * Math.max(1, num(d.miqdar) || 1))
+
+    // Top siyahılar (dövr üzrə)
+    const modelMap = new Map()
+    const addModel = (model, satis, menfeet) => {
+      const k = String(model || '').trim()
+      if (!k) return
+      const g = modelMap.get(k) || { name: k, count: 0, satis: 0, menfeet: 0 }
+      g.count += 1
+      g.satis += satis
+      g.menfeet += menfeet
+      modelMap.set(k, g)
+    }
+    for (const r of data.nagd) if (inRange(r.tarix, range)) addModel(r.model, num(r.satis_qiymeti), nagdProfit(r))
+    for (const m of data.kredit) if (inRange(m.verilme_tarixi, range)) addModel(m.model, num(m.satis_qiymeti), kreditProfit(m))
+    const topModels = [...modelMap.values()].sort((x, y) => y.count - x.count || y.satis - x.satis).slice(0, 6)
+
+    const supMap = new Map()
+    for (const d of data.depo) {
+      if (!inRange(d.alis_tarixi, range)) continue
+      const k = String(d.kimden_alinib || '').trim()
+      if (!k) continue
+      const g = supMap.get(k) || { name: k, count: 0, sum: 0 }
+      g.count += 1
+      g.sum += num(d.alis_qiymeti) * Math.max(1, num(d.miqdar) || 1)
+      supMap.set(k, g)
+    }
+    const topSuppliers = [...supMap.values()].sort((x, y) => y.sum - x.sum).slice(0, 6)
+
+    const topDebtors = data.kredit
+      .filter((m) => m.veziyyet === 'Qalıb' && num(m.qalan_borc) > 0)
+      .sort((x, y) => num(y.qalan_borc) - num(x.qalan_borc))
+      .slice(0, 6)
+    const lateList = [...lateByCustomer.values()].sort((x, y) => y.sum - x.sum)
+    const topLate = lateList.slice(0, 6)
+
+    // Depoda mal neçə ayın satışına bəs edir (son 3 ayın orta alış dəyəri ilə)
+    const last3 = months.slice(-3)
+    const avgCostSold = last3.reduce((s, m) => s + (m.nagd + m.kredit - Math.max(0, m.menfeet)), 0) / 3
+
+    return {
+      cur,
+      prev,
+      col,
+      prevCol,
+      lateSum: r2(lateSum),
+      lateCount: lateByCustomer.size,
+      kreditQalan: r2(kreditQalan),
+      mehkemeQalan: r2(mehkemeQalan),
+      aktivMusteri,
+      ledgerAlacaq: r2(ledgerAlacaq),
+      ledgerBorc: r2(ledgerBorc),
+      ledgerPeople,
+      depoDeyer: r2(depoDeyer),
+      depoSay,
+      alacaq: r2(alacaq),
+      netMovqe: r2(netMovqe),
+      netMehkemesiz: r2(netMehkemesiz),
+      months,
+      topModels,
+      topSuppliers,
+      topDebtors,
+      topLate,
+      lateList,
+      stockMonths: avgCostSold > 0 ? Math.round((depoDeyer / avgCostSold) * 10) / 10 : null,
+    }
+  }, [data, yigimRows, range, prevRange, today])
+
+  /** Avtomatik məsləhətlər */
+  const tips = useMemo(() => {
+    if (!a) return []
+    const t = []
+    const { cur, prev, col } = a
+    for (const x of data?.suspicious || []) {
+      t.push({ tone: 'bad', text: `Şübhəli məbləğ (yazı səhvi ola bilər, hesablamaya qatılmadı): ${x}. Düzəldin.` })
+    }
+    if (cur.xalis < 0) {
+      t.push({ tone: 'bad', text: `Bu dövrdə xalis nəticə mənfidir (${azn(cur.xalis)}). Alış qiymətlərinə və satıcı faizlərinə baxın.` })
+    }
+    if (col.rate != null && col.rate < 85 && col.owed > 0) {
+      t.push({
+        tone: col.rate < 70 ? 'bad' : 'warn',
+        text: `Yığım faizi ${pctText(col.rate)}: qrafikə görə ${azn(col.owed)} gözlənilirdi, ${azn(col.paid)} daxil olub. Yığım səhifəsində «Gecikmiş» filtri ilə zəngləri planlayın.`,
+      })
+    } else if (col.rate != null && col.owed > 0) {
+      t.push({ tone: 'good', text: `Yığım yaxşıdır: ${pctText(col.rate)} yığılıb.` })
+    }
+    if (a.lateCount > 0) {
+      t.push({
+        tone: 'warn',
+        text: `${a.lateCount} müştərinin cəmi ${azn(a.lateSum)} gecikmiş ödənişi var. Ən böyük 5-i aşağıda «Ən çox gecikənlər» siyahısındadır.`,
+      })
+    }
+    if (prev && prev.satisCemi > 0) {
+      const ch = Math.round(((cur.satisCemi - prev.satisCemi) / prev.satisCemi) * 100)
+      if (ch <= -20) t.push({ tone: 'warn', text: `Satış əvvəlki dövrdən ${Math.abs(ch)}% azdır. Reklam / aksiya düşünün.` })
+      else if (ch >= 20) t.push({ tone: 'good', text: `Satış əvvəlki dövrdən ${ch}% çoxdur.` })
+    }
+    const margins = [
+      { name: 'Nağd', m: pct(cur.nagd.menfeet, cur.nagd.satis) },
+      { name: 'Nisyə', m: pct(cur.nisye.menfeet, cur.nisye.satis) },
+      { name: 'Kredit', m: pct(cur.kredit.menfeet, cur.kredit.satis) },
+    ].filter((x) => x.m != null)
+    const low = margins.filter((x) => x.m < 8)
+    if (low.length) {
+      t.push({ tone: 'warn', text: `Aşağı marja: ${low.map((x) => `${x.name} ${pctText(x.m)}`).join(', ')}. Bu satışlarda qiymətə yenidən baxın.` })
+    }
+    if (cur.kredit.satis > 0 && cur.kredit.qalan > 0) {
+      t.push({
+        tone: 'info',
+        text: `Bu dövrün kredit satışlarından ${azn(cur.kredit.qalan)} hələ müştərilərdədir — mənfəətin bu hissəsi yığıldıqca real pula çevriləcək.`,
+      })
+    }
+    if (a.stockMonths != null && a.stockMonths > 3) {
+      t.push({ tone: 'warn', text: `Depodakı mal (${azn(a.depoDeyer)}) təxminən ${String(a.stockMonths).replace('.', ',')} aylıq satışa bəs edir — yeni alışları azaltmaq olar.` })
+    }
+    if (a.ledgerBorc > 0) {
+      t.push({ tone: 'info', text: `Sizin borcunuz (Borc / Nisyə): ${azn(a.ledgerBorc)}. Qaytarma tarixlərini Borc / Nisyə səhifəsində izləyin.` })
+    }
+    if (a.mehkemeQalan > 0) {
+      t.push({ tone: 'info', text: `Məhkəmədə olan müştərilərin qalığı: ${azn(a.mehkemeQalan)} — xalis vəziyyətə daxildir, amma yığılması gecikə bilər.` })
+    }
+    if (!(a.cur.xerc > 0)) {
+      t.push({ tone: 'info', text: 'Bu dövrdə Xərclər səhifəsində xərc yazılmayıb — icarə, maaş və s. yazsanız, xalis mənfəət tam dəqiq olar.' })
+    }
+    if (!t.length) t.push({ tone: 'good', text: 'Hər şey qaydasındadır — ciddi problem görünmür.' })
+    return t
+  }, [a, data])
+
+  const periodLabel =
+    period === 'custom'
+      ? `${dmy(range.from)} – ${dmy(range.to)}`
+      : PERIODS.find((p) => p.value === period)?.label || ''
+
+  return (
+    <div className="an-page">
+      <div className="page-header" style={{ marginBottom: 12 }}>
+        <div>
+          <h1 style={{ marginBottom: 4 }}>Analitika</h1>
+          <p style={{ margin: 0, fontSize: 13, color: 'var(--color-text-muted)' }}>
+            Satış, mənfəət, yığım, borc və alacaq bir yerdə. Yalnız baxış üçündür, heç nə dəyişmir.
+          </p>
+        </div>
+        <button type="button" className="btn btn--secondary" onClick={load} disabled={loading}>
+          Yenilə
+        </button>
+      </div>
+
+      <div className="an-periods">
+        {PERIODS.map((p) => (
+          <button
+            key={p.value}
+            type="button"
+            className={`btn ${period === p.value ? 'btn--primary' : 'btn--secondary'}`}
+            onClick={() => setPeriod(p.value)}
+          >
+            {p.label}
+          </button>
+        ))}
+        {period === 'custom' && (
+          <>
+            <input type="date" value={customFrom} onChange={(e) => setCustomFrom(e.target.value)} />
+            <span>—</span>
+            <input type="date" value={customTo} onChange={(e) => setCustomTo(e.target.value)} />
+          </>
+        )}
+      </div>
+
+      {error && <p style={{ color: 'var(--color-accent)' }}>{error}</p>}
+      {warn && <p style={{ color: 'var(--color-warning)', fontSize: 13 }}>{warn}</p>}
+
+      {loading || !a ? (
+        <div className="card">
+          <p className="empty-state">Yüklənir…</p>
+        </div>
+      ) : (
+        <>
+          {/* Bir sözlə */}
+          <div className={`an-verdict an-verdict--${a.cur.xalis >= 0 ? 'good' : 'bad'}`}>
+            <div className="an-verdict__word">{a.cur.xalis >= 0 ? 'MƏNFƏƏTDƏSİNİZ' : 'ZƏRƏRDƏSİNİZ'}</div>
+            <div className="an-verdict__sum">{azn(a.cur.xalis, { sign: true })}</div>
+            <div className="an-verdict__text">
+              {periodLabel}: {a.cur.satisCount} satış, dövriyyə {azn(a.cur.satisCemi)}. Satış mənfəəti {azn(a.cur.satisMenfeet)}
+              {a.cur.faiz > 0 ? ` + cərimə faizi ${azn(a.cur.faiz)}` : ''}
+              {a.cur.nomreXerc > 0 ? ` − nömrə xərcləri ${azn(a.cur.nomreXerc)}` : ''}
+              {a.cur.xerc > 0 ? ` − iş xərcləri ${azn(a.cur.xerc)}` : ''}.
+              {a.prev && Math.abs(a.prev.xalis) > 0.009 && (
+                <> Əvvəlki dövr: {azn(a.prev.xalis, { sign: true })}.</>
+              )}
+            </div>
+            <div className="an-verdict__pos">
+              Ümumi vəziyyət (bu gün): alacaq {azn(a.alacaq)}
+              {a.mehkemeQalan > 0 ? ` + məhkəmədə ${azn(a.mehkemeQalan)}` : ''} + depodakı mal {azn(a.depoDeyer)} − borcunuz{' '}
+              {azn(a.ledgerBorc)} = <b>{azn(a.netMovqe)}</b>
+            </div>
+          </div>
+
+          {/* Əsas göstəricilər */}
+          <div className="an-kpis">
+            <Kpi
+              label="Satış dövriyyəsi"
+              value={azn(a.cur.satisCemi)}
+              delta={a.prev && <Delta cur={a.cur.satisCemi} prev={a.prev.satisCemi} />}
+              hint={`${a.cur.satisCount} satış`}
+              onOpen={() => setDetailKind('satis')}
+            />
+            <Kpi
+              label="Xalis mənfəət"
+              value={azn(a.cur.xalis)}
+              tone={a.cur.xalis >= 0 ? 'good' : 'bad'}
+              delta={a.prev && <Delta cur={a.cur.xalis} prev={a.prev.xalis} />}
+              hint={`marja ${pctText(pct(a.cur.xalis, a.cur.satisCemi))}`}
+              onOpen={() => setDetailKind('menfeet')}
+            />
+            <Kpi
+              label="Daxil olan ödənişlər"
+              value={azn(a.cur.odenis)}
+              delta={a.prev && <Delta cur={a.cur.odenis} prev={a.prev.odenis} />}
+              hint="kredit ilkin + aylıq + faiz"
+              onOpen={() => setDetailKind('odenis')}
+            />
+            <Kpi label="Alışlar (Depoya)" value={azn(a.cur.alis)} hint={`${a.cur.alisCount} məhsul`} onOpen={() => setDetailKind('alis')} />
+            <Kpi
+              label="Yığım faizi"
+              value={pctText(a.col.rate)}
+              tone={a.col.rate == null ? undefined : a.col.rate >= 85 ? 'good' : a.col.rate >= 70 ? 'warn' : 'bad'}
+              hint={`daxil olub ${azn(a.col.paid)} / gözlənilən ${azn(a.col.owed)}`}
+              onOpen={() => setDetailKind('yigim')}
+            />
+            <Kpi label="Gecikmiş ödənişlər" value={azn(a.lateSum)} tone={a.lateSum > 0 ? 'bad' : 'good'} hint={`${a.lateCount} müştəri`} onOpen={() => setDetailKind('gecikme')} />
+            <Kpi label="Alacaq (bizə borclu)" value={azn(a.alacaq)} hint={`kredit ${azn(a.kreditQalan)} · borc/nisyə ${azn(a.ledgerAlacaq)}`} onOpen={() => setDetailKind('alacaq')} />
+            <Kpi label="Borcunuz" value={azn(a.ledgerBorc)} tone={a.ledgerBorc > 0 ? 'warn' : undefined} hint="Borc / Nisyə üzrə" onOpen={() => setDetailKind('borc')} />
+          </div>
+
+          {detailKind && (
+            <DetailModal
+              key={`${detailKind}-${range.from}-${range.to}`}
+              detail={buildDetail(detailKind, { data, range, a, yigimRows, today })}
+              onClose={() => setDetailKind(null)}
+            />
+          )}
+
+          {/* Məsləhətlər */}
+          <div className="card an-card">
+            <h3 className="an-h3">Məsləhətlər</h3>
+            <ul className="an-tips">
+              {tips.map((t, i) => (
+                <li key={i} className={`an-tip an-tip--${t.tone}`}>
+                  {t.text}
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          {/* Satış növləri */}
+          <div className="card an-card">
+            <h3 className="an-h3">Satışlar — {periodLabel}</h3>
+            <div className="table-wrap">
+              <table className="data-table an-table">
+                <thead>
+                  <tr>
+                    <th>Növ</th>
+                    <th className="num">Say</th>
+                    <th className="num">Satış</th>
+                    <th className="num">Alış</th>
+                    <th className="num">Mənfəət</th>
+                    <th className="num">Marja</th>
+                    <th className="num">Orta mənfəət</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {[
+                    ['Nağd', a.cur.nagd],
+                    ['Nisyə', a.cur.nisye],
+                    ['Kredit', a.cur.kredit],
+                  ].map(([name, t]) => (
+                    <tr key={name}>
+                      <td>{name}</td>
+                      <td className="num">{t.count}</td>
+                      <td className="num">{azn(t.satis)}</td>
+                      <td className="num">{azn(t.alis)}</td>
+                      <td className={`num ${t.menfeet < 0 ? 'an-tone--bad' : 'an-tone--good'}`}>{azn(t.menfeet)}</td>
+                      <td className="num">{pctText(pct(t.menfeet, t.satis))}</td>
+                      <td className="num">{t.count ? azn(t.menfeet / t.count) : '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr>
+                    <td>Cəmi</td>
+                    <td className="num">{a.cur.satisCount}</td>
+                    <td className="num">{azn(a.cur.satisCemi)}</td>
+                    <td className="num">{azn(a.cur.nagd.alis + a.cur.nisye.alis + a.cur.kredit.alis)}</td>
+                    <td className="num">{azn(a.cur.satisMenfeet)}</td>
+                    <td className="num">{pctText(pct(a.cur.satisMenfeet, a.cur.satisCemi))}</td>
+                    <td className="num">{a.cur.satisCount ? azn(a.cur.satisMenfeet / a.cur.satisCount) : '—'}</td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+            <div style={{ marginTop: 12 }}>
+              <ShareBar
+                items={[
+                  { label: 'Nağd', value: a.cur.nagd.satis, color: '#1f8a65' },
+                  { label: 'Nisyə', value: a.cur.nisye.satis, color: '#d9a400' },
+                  { label: 'Kredit', value: a.cur.kredit.satis, color: '#2f6fed' },
+                ]}
+              />
+            </div>
+          </div>
+
+          {/* Qrafiklər */}
+          <div className="an-grid2">
+            <div className="card an-card">
+              <h3 className="an-h3">Son 12 ay — satış və mənfəət</h3>
+              <BarChart
+                data={a.months}
+                series={[
+                  { key: 'nagd', label: 'Nağd + Nisyə satış', color: '#1f8a65' },
+                  { key: 'kredit', label: 'Kredit satış', color: '#2f6fed' },
+                  { key: 'menfeet', label: 'Mənfəət', color: '#d9a400' },
+                ]}
+              />
+            </div>
+            <div className="card an-card">
+              <h3 className="an-h3">Son 12 ay — yığım (qrafikə görə gözlənilən / daxil olan)</h3>
+              <BarChart
+                data={a.months}
+                series={[
+                  { key: 'owed', label: 'Gözlənilən', color: '#b9c3d6' },
+                  { key: 'paid', label: 'Daxil olan', color: '#1f8a65' },
+                ]}
+              />
+            </div>
+          </div>
+          <div className="card an-card">
+            <h3 className="an-h3">Son 12 ay — alışlar (Depoya daxil olan mal)</h3>
+            <BarChart data={a.months} series={[{ key: 'alis', label: 'Alış', color: '#c45c26' }]} height={180} />
+          </div>
+
+          {/* Borc / alacaq */}
+          <div className="card an-card">
+            <h3 className="an-h3">Borc və alacaq — bu gün</h3>
+            <div className="an-balance">
+              <div>
+                <h4>Alacaq (bizə borclu)</h4>
+                <dl>
+                  <dt>Kredit müştəriləri ({a.aktivMusteri})</dt>
+                  <dd>{azn(a.kreditQalan)}</dd>
+                  <dt>Borc / Nisyə</dt>
+                  <dd>{azn(a.ledgerAlacaq)}</dd>
+                  <dt className="an-balance__total">Cəmi</dt>
+                  <dd className="an-balance__total">{azn(a.alacaq)}</dd>
+                  {a.mehkemeQalan > 0 && (
+                    <>
+                      <dt>Məhkəmədə</dt>
+                      <dd>{azn(a.mehkemeQalan)}</dd>
+                    </>
+                  )}
+                </dl>
+              </div>
+              <div>
+                <h4>Borcunuz</h4>
+                <dl>
+                  <dt>Borc / Nisyə üzrə</dt>
+                  <dd>{azn(a.ledgerBorc)}</dd>
+                </dl>
+                <h4 style={{ marginTop: 16 }}>Depoda mal</h4>
+                <dl>
+                  <dt>{a.depoSay} ədəd (alış qiyməti ilə)</dt>
+                  <dd>{azn(a.depoDeyer)}</dd>
+                </dl>
+              </div>
+              <div className={`an-balance__net ${a.netMovqe >= 0 ? 'an-tone--good' : 'an-tone--bad'}`}>
+                <span>Xalis vəziyyət</span>
+                <b>{azn(a.netMovqe)}</b>
+                <small>alacaq + məhkəmədə + mal − borc</small>
+                {a.mehkemeQalan > 0 && <small>məhkəməsiz: {azn(a.netMehkemesiz)}</small>}
+              </div>
+            </div>
+          </div>
+
+          {/* Top siyahılar */}
+          <div className="an-grid3">
+            <TopList
+              title="Ən çox gecikənlər"
+              rows={a.topLate.map((g) => ({
+                name: `${g.sira != null ? `#${g.sira} ` : ''}${g.name}`,
+                sub: `${g.days} gün`,
+                value: azn(g.sum),
+                tone: 'bad',
+              }))}
+              empty="Gecikmə yoxdur."
+            />
+            <TopList
+              title="Ən çox borcu olan müştərilər"
+              rows={a.topDebtors.map((m) => ({
+                name: `${m.sira_no != null ? `#${m.sira_no} ` : ''}${m.ad_soyad || '—'}`,
+                sub: m.model || '',
+                value: azn(m.qalan_borc),
+              }))}
+            />
+            <TopList
+              title={`Ən çox satılan modellər — ${periodLabel}`}
+              rows={a.topModels.map((m) => ({
+                name: m.name,
+                sub: `${m.count} əd.`,
+                value: azn(m.menfeet),
+                tone: m.menfeet < 0 ? 'bad' : 'good',
+              }))}
+            />
+            <TopList
+              title={`Ən çox alış etdiyimiz — ${periodLabel}`}
+              rows={a.topSuppliers.map((s) => ({ name: s.name, sub: `${s.count} məhsul`, value: azn(s.sum) }))}
+            />
+            <TopList
+              title="Borc / Nisyə — qalıqlar"
+              rows={[...a.ledgerPeople]
+                .sort((x, y) => Math.abs(y.net) - Math.abs(x.net))
+                .slice(0, 6)
+                .map((p) => ({
+                  name: p.name,
+                  sub: p.net > 0 ? 'bizə borclu' : 'biz borcluyuq',
+                  value: azn(Math.abs(p.net)),
+                  tone: p.net > 0 ? 'good' : 'bad',
+                }))}
+            />
+          </div>
+
+          <p className="an-note">
+            Hesablama: Nağd / Nisyə mənfəəti = satış − alış − satıcı faizi; Kredit mənfəəti = satış − alış (hədiyyələr daxil) − satıcı
+            faizi, satış günündə sayılır. Xalis mənfəətə yığılan cərimə faizi əlavə, nömrə alışı / balans xərcləri və Xərclər səhifəsindəki rasxodlar çıxılır. Yığım
+            faizi = dövrdə daxil olan ilkin + aylıq ödənişlər ÷ qrafikə görə həmin dövrdə tarixi çatmış taksitlər. 50 000 ₼-dan böyük
+            tək məbləğlər yazı səhvi sayılır və cəmlərə qatılmır.
+          </p>
+        </>
+      )}
+    </div>
+  )
+}

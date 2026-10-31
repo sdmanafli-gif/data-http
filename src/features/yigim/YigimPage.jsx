@@ -20,6 +20,8 @@ import MusteriRecordModule from '../musteri-bazasi/MusteriRecordModule'
 import CollapsibleSummary from '../../components/CollapsibleSummary'
 import { applyKeyOrder } from '../musteri-bazasi/columnOrder'
 import { useColumnConfig } from './useColumnConfig'
+import { waPhone, formatQebzMoney } from '../../lib/qebz'
+import { openWhatsApp } from '../../lib/whatsapp'
 import '../../styles/shared.css'
 import '../musteri-bazasi/musteri-table.css'
 import '../musteri-bazasi/musteri-schedule.css'
@@ -43,7 +45,110 @@ const STATUS_FILTERS = [
   { value: 'late', label: 'Gecikmiş' },
   { value: 'paid', label: 'Ödənib' },
   { value: 'partial', label: 'Qismən' },
+  { value: 'soz', label: 'Söz verdiyi tarix çatıb' },
 ]
+
+const QEYD_TABLE = 'yigim_qeydler'
+
+/** Yığım sətrinin açarı (komment / söz tarixi üçün) */
+const setirOf = (row) => `${row.type}-${row.installment}`
+const qeydKey = (musteriId, setir) => `${musteriId}|${setir}`
+
+function todayLocalYmd() {
+  const d = new Date()
+  return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10)
+}
+
+/** Qismən ödənib: nəsə ödənib, amma hələ qalıq var (gecikmiş olsa da) */
+const isPartial = (row) => (Number(row.paid) || 0) > 0.009 && (Number(row.remaining) || 0) > 0.009
+
+/** Söz verdiyi tarix çatıb / keçib və hələ ödənməyib */
+const isSozDue = (row, today) => Boolean(row.soz_tarixi) && row.soz_tarixi <= today && (Number(row.remaining) || 0) > 0.009
+
+/**
+ * Müştərinin WhatsApp nömrəsi: Nömrə 1…5 xanalarından ilk düzgün nömrə.
+ * Xanada yazı da ola bilər («Mobil1; 050 123 45 67 Ad» və ya «0501234567-0551234567»).
+ */
+function waNumberOf(row) {
+  for (const raw of row.nomreler || [row.nomre_1]) {
+    const text = String(raw || '').replace(/[\u200e\u200f\u202a-\u202e]/g, '')
+    const parts = text.match(/\+?\d[\d\s()]{6,}\d/g) || []
+    for (const part of parts) {
+      const wa = waPhone(part)
+      if (wa) return { wa, shown: part.trim() }
+    }
+  }
+  return null
+}
+
+function WhatsAppIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" focusable="false">
+      <path
+        fill="currentColor"
+        d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91c0 1.75.46 3.45 1.32 4.95L2.05 22l5.25-1.38a9.9 9.9 0 0 0 4.74 1.21h.01c5.46 0 9.91-4.45 9.91-9.91 0-2.65-1.03-5.14-2.9-7.01A9.85 9.85 0 0 0 12.04 2Zm0 18.15h-.01a8.2 8.2 0 0 1-4.19-1.15l-.3-.18-3.12.82.83-3.04-.2-.31a8.21 8.21 0 0 1-1.26-4.38c0-4.54 3.7-8.24 8.25-8.24 2.2 0 4.27.86 5.83 2.42a8.18 8.18 0 0 1 2.41 5.83c0 4.54-3.7 8.23-8.24 8.23Zm4.52-6.16c-.25-.12-1.47-.72-1.69-.81-.23-.08-.39-.12-.56.13-.16.25-.64.81-.79.97-.14.17-.29.19-.54.06-.25-.12-1.05-.39-1.99-1.23-.74-.66-1.23-1.47-1.38-1.72-.14-.25-.02-.38.11-.51.11-.11.25-.29.37-.43.13-.15.17-.25.25-.42.08-.17.04-.31-.02-.43-.06-.12-.56-1.34-.76-1.84-.2-.48-.41-.42-.56-.43h-.48c-.17 0-.43.06-.66.31-.23.25-.86.85-.86 2.07 0 1.22.89 2.4 1.01 2.56.12.17 1.75 2.67 4.23 3.74.59.26 1.05.41 1.41.52.59.19 1.13.16 1.56.1.48-.07 1.47-.6 1.67-1.18.21-.58.21-1.07.14-1.18-.06-.1-.22-.16-.47-.28Z"
+      />
+    </svg>
+  )
+}
+
+/** Söz verdiyi tarix: boşdursa sakit «Tarix…» yazısı, basanda tarix seçmə açılır */
+function SozTarixInput({ value, onSave }) {
+  const [edit, setEdit] = useState(false)
+  const ref = useRef(null)
+  useEffect(() => {
+    if (!edit || !ref.current) return
+    ref.current.focus()
+    try {
+      ref.current.showPicker?.()
+    } catch {
+      /* bəzi brauzerlər showPicker-i dəstəkləmir — xana fokusda qalır */
+    }
+  }, [edit])
+  if (!value && !edit) {
+    return (
+      <button type="button" className="yigim-soz__empty" onClick={() => setEdit(true)} title="Müştərinin söz verdiyi ödəniş tarixi">
+        Tarix…
+      </button>
+    )
+  }
+  return (
+    <input
+      ref={ref}
+      type="date"
+      className="yigim-soz__input"
+      value={value || ''}
+      onChange={(e) => onSave(e.target.value || null)}
+      onBlur={() => setEdit(false)}
+      onKeyDown={(e) => e.stopPropagation()}
+    />
+  )
+}
+
+/** Komment xanası — yazdıqca yox, xanadan çıxanda (və ya Enter) saxlanır */
+function KommentInput({ value, onSave }) {
+  const [v, setV] = useState(value || '')
+  useEffect(() => {
+    setV(value || '')
+  }, [value])
+  const commit = () => {
+    if ((v || '').trim() !== (value || '').trim()) onSave(v.trim())
+  }
+  return (
+    <input
+      className="yigim-komment"
+      value={v}
+      placeholder="Komment…"
+      onChange={(e) => setV(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        e.stopPropagation()
+        if (e.key === 'Enter') e.currentTarget.blur()
+      }}
+      title={v || undefined}
+    />
+  )
+}
 
 const YIGIM_PAGE_FILTERS_KEY = 'yigim'
 
@@ -149,7 +254,10 @@ function matchesStatusFilter(row, filter) {
     return row.status === 'odenib' || row.status === 'odenib_gec'
   }
   if (filter === 'partial') {
-    return row.status === 'qismen'
+    return isPartial(row)
+  }
+  if (filter === 'soz') {
+    return isSozDue(row, todayLocalYmd())
   }
   return true
 }
@@ -181,6 +289,7 @@ export function buildYigimRows(musteriler, payments) {
         ad_soyad: m.ad_soyad || '—',
         model: m.model || null,
         nomre_1: m.nomre_1 || null,
+        nomreler: [m.nomre_1, m.nomre_2, m.nomre_3, m.nomre_4, m.nomre_5].filter(Boolean),
         veziyyet: m.veziyyet || null,
         type: line.type,
         label: line.label,
@@ -288,8 +397,10 @@ export default function YigimPage() {
   const [viewRows, setViewRows] = useState([])
 
   const [rows, setRows] = useState([])
+  const [qeydler, setQeydler] = useState(() => new Map())
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+  const today = todayLocalYmd()
 
   useEffect(() => {
     setLocalCols(columns)
@@ -349,7 +460,7 @@ export default function YigimPage() {
           let q = supabase
             .from(MUSTERI_TABLE)
             .select(
-              'id, sira_no, ad_soyad, model, nomre_1, veziyyet, satis_qiymeti, alis_qiymeti, verilib, faiz, faktiki_gelir, ayliq_odenis, nece_ay, odenis_gunu, birinci_ayliq_odenis_tarixi, odenis_qrafiki, verilme_tarixi'
+              'id, musteri_id, sira_no, ad_soyad, model, nomre_1, nomre_2, nomre_3, nomre_4, nomre_5, veziyyet, satis_qiymeti, alis_qiymeti, verilib, faiz, faktiki_gelir, ayliq_odenis, nece_ay, odenis_gunu, birinci_ayliq_odenis_tarixi, odenis_qrafiki, verilme_tarixi'
             )
             .eq('veziyyet', 'Qalıb')
             .order('sira_no', { ascending: true })
@@ -364,7 +475,32 @@ export default function YigimPage() {
       ])
       if (mErr) throw mErr
       if (pErr) throw pErr
-      setRows(buildYigimRows(musteriler || [], payments || []))
+      const built = buildYigimRows(musteriler || [], payments || [])
+      // Satışda nömrə yazılmayıbsa — müştərinin kontakt kartındakı (Müştərilər) nömrələr
+      const kontaktIds = [...new Set((musteriler || []).map((m) => m.musteri_id).filter(Boolean))]
+      if (kontaktIds.length) {
+        const { data: kontaktlar } = await fetchAllPages(() =>
+          supabase.from('musteriler').select('id, nomre_1, nomre_2, nomre_3, nomre_4, nomre_5')
+        )
+        const byId = new Map((kontaktlar || []).map((k) => [k.id, k]))
+        const kontaktOf = new Map((musteriler || []).map((m) => [m.id, byId.get(m.musteri_id)]))
+        for (const r of built) {
+          const k = kontaktOf.get(r.musteriId)
+          if (k) r.nomreler = [...r.nomreler, k.nomre_1, k.nomre_2, k.nomre_3, k.nomre_4, k.nomre_5].filter(Boolean)
+        }
+      }
+      setRows(built)
+      // Komment / söz tarixi — alınmasa da yığım cədvəli göstərilir
+      const { data: q, error: qErr } = await fetchAllPages(() =>
+        supabase.from(QEYD_TABLE).select('musteri_id, setir, komment, soz_tarixi')
+      )
+      if (qErr) {
+        setError(`Komment / söz tarixi yüklənmədi: ${qErr.message}`)
+      } else {
+        const m = new Map()
+        for (const x of q || []) m.set(qeydKey(x.musteri_id, x.setir), x)
+        setQeydler(m)
+      }
     } catch (err) {
       setError(err.message)
       setRows([])
@@ -382,21 +518,62 @@ export default function YigimPage() {
     [period, year, month, weekStart, customFrom, customTo]
   )
 
+  /** Hər müştəri üçün bu günə qədər vaxtı çatmış, ödənilməmiş məbləğ (WhatsApp mesajı üçün) */
+  const gecikmeByMusteri = useMemo(() => {
+    const m = new Map()
+    for (const r of rows) {
+      if (String(r.tarix || '').slice(0, 10) > today) continue
+      const rem = Number(r.remaining) || 0
+      if (rem > 0) m.set(r.musteriId, (m.get(r.musteriId) || 0) + rem)
+    }
+    return m
+  }, [rows, today])
+
+  /** Sətirlərə komment və söz tarixi əlavə olunur */
+  const rowsWithQeyd = useMemo(
+    () =>
+      rows.map((r) => {
+        const q = qeydler.get(qeydKey(r.musteriId, setirOf(r)))
+        return q ? { ...r, komment: q.komment || '', soz_tarixi: q.soz_tarixi || '' } : { ...r, komment: '', soz_tarixi: '' }
+      }),
+    [rows, qeydler]
+  )
+
+  async function saveQeyd(row, patch) {
+    const setir = setirOf(row)
+    const key = qeydKey(row.musteriId, setir)
+    const prev = qeydler.get(key) || { musteri_id: row.musteriId, setir, komment: null, soz_tarixi: null }
+    const next = { ...prev, ...patch }
+    setQeydler((m) => new Map(m).set(key, next))
+    const { error: e } = await supabase
+      .from(QEYD_TABLE)
+      .upsert(
+        { musteri_id: row.musteriId, setir, ...patch, updated_at: new Date().toISOString() },
+        { onConflict: 'musteri_id,setir' }
+      )
+    if (e) {
+      setError(`Yadda saxlanmadı: ${e.message}`)
+      setQeydler((m) => new Map(m).set(key, prev))
+    }
+  }
+
   const periodFiltered = useMemo(() => {
     const term = search.trim().toLowerCase()
-    return rows.filter((r) => {
-      if (!inRange(r.tarix, range.from, range.to)) return false
+    return rowsWithQeyd.filter((r) => {
+      // Söz verdiyi tarix bu dövrə düşürsə (və hələ ödənməyibsə) sətir yenə göstərilir — xatırlatma
+      const sozInRange = r.soz_tarixi && r.remaining > 0 && inRange(r.soz_tarixi, range.from, range.to)
+      if (!inRange(r.tarix, range.from, range.to) && !sozInRange) return false
       if (!matchesStatusFilter(r, statusFilter)) return false
       if (r.veziyyet !== 'Qalıb') return false
       if (term) {
-        const hay = `${r.sira_no ?? ''} ${r.ad_soyad} ${r.model || ''} ${r.nomre_1 || ''}`.toLowerCase()
+        const hay = `${r.sira_no ?? ''} ${r.ad_soyad} ${r.model || ''} ${r.nomre_1 || ''} ${r.komment || ''}`.toLowerCase()
         if (!hay.includes(term) && !(term.match(/^\d+$/) && String(r.sira_no) === term)) {
           return false
         }
       }
       return true
     })
-  }, [rows, range, statusFilter, search])
+  }, [rowsWithQeyd, range, statusFilter, search])
 
   const totals = useMemo(() => {
     let owed = 0
@@ -454,16 +631,62 @@ export default function YigimPage() {
       )
     }
     if (col.key === 'ad_soyad') {
+      const waHit = waNumberOf(row)
+      const wa = waHit?.wa
       return (
-        <Link
-          to={`/musteri-bazasi/${row.musteriId}`}
-          target="_blank"
-          rel="noopener noreferrer"
-          title={row.nomre_1 || undefined}
-          onClick={(e) => handleMusteriLinkClick(e, row.musteriId)}
-        >
-          {row.ad_soyad}
-        </Link>
+        <span className="yigim-musteri">
+          {wa ? (
+            <a
+              className="yigim-wa"
+              href={`https://wa.me/${wa}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              title={`WhatsApp: ${waHit?.shown}`}
+              onClick={(e) => {
+                e.stopPropagation()
+                e.preventDefault()
+                const borc = Math.round((gecikmeByMusteri.get(row.musteriId) || 0) * 100) / 100
+                const [y, mo, d] = today.split('-')
+                openWhatsApp(
+                  wa,
+                  `Hörmətli Müştəri, Mobideal-da cari kredit üzrə ${d}.${mo}.${y} tarixinə olan ödəniş məbləği ${formatQebzMoney(borc)} təşkil edir.`
+                )
+              }}
+            >
+              <WhatsAppIcon />
+            </a>
+          ) : (
+            <span className="yigim-wa yigim-wa--none" title="Nömrə yoxdur və ya düzgün deyil">
+              <WhatsAppIcon />
+            </span>
+          )}
+          <Link
+            to={`/musteri-bazasi/${row.musteriId}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            title={row.nomre_1 || undefined}
+            onClick={(e) => handleMusteriLinkClick(e, row.musteriId)}
+          >
+            {row.ad_soyad}
+          </Link>
+        </span>
+      )
+    }
+    if (col.key === 'komment') {
+      return <KommentInput value={row.komment} onSave={(komment) => saveQeyd(row, { komment: komment || null })} />
+    }
+    if (col.key === 'soz_tarixi') {
+      const due = isSozDue(row, today)
+      const gun = due && row.soz_tarixi < today ? Math.round((new Date(today) - new Date(row.soz_tarixi)) / 86400000) : 0
+      return (
+        <span className="yigim-soz">
+          <SozTarixInput value={row.soz_tarixi} onSave={(v) => saveQeyd(row, { soz_tarixi: v })} />
+          {due && (
+            <span className="yigim-soz__badge" title="Müştərinin söz verdiyi tarix çatıb, ödəniş hələ yoxdur">
+              🔔 {gun > 0 ? `${gun} gün keçib` : 'Bu gün'}
+            </span>
+          )}
+        </span>
       )
     }
     if (col.key === 'delayDays') {
@@ -501,6 +724,13 @@ export default function YigimPage() {
   }
 
   function getYigimRowClass(row) {
+    const soz = isSozDue(row, today) ? ' yigim-row--soz' : ''
+    // Qismən ödənənlər — tam açıq göy (gecikmiş olsa da)
+    if (isPartial(row)) return `musteri-schedule__row--partial${soz}`
+    return getYigimStatusClass(row) + soz
+  }
+
+  function getYigimStatusClass(row) {
     if (row.status === 'gecikib' || (row.delayDays > 0 && row.remaining > 0)) {
       return 'musteri-schedule__row--late'
     }

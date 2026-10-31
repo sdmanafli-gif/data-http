@@ -4,6 +4,15 @@
  */
 export const navSections = [
   {
+    id: 'analitika',
+    label: null,
+    items: [
+      { path: '/analitika', label: 'Analitika' },
+      { path: '/xercler', label: 'Xərclər' },
+      { path: '/qiymet-cedveli', label: 'Qiymət cədvəli' },
+    ],
+  },
+  {
     id: 'satis',
     label: null,
     items: [
@@ -11,6 +20,7 @@ export const navSections = [
       { path: '/musteri-bazasi', label: 'Müştəri Bazası' },
       { path: '/nagd-satish', label: 'Nağd satış' },
       { path: '/kontaktlar', label: 'Kontaktlar' },
+      { path: '/nomreler', label: 'Nömrələr' },
     ],
   },
   {

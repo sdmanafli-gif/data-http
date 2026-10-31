@@ -121,6 +121,102 @@
   background: var(--color-warning-bg);
 }
 
+/* Yığım: qismən ödənənlər — tam açıq göy */
+.musteri-schedule__row--partial td,
+.data-table--band tbody tr.musteri-schedule__row--partial td,
+.musteri-table-shell .data-table--band tbody tr.musteri-schedule__row--partial td {
+  background: #d3e5ff;
+}
+
+/* Yığım: söz verdiyi tarix çatıb — solda narıncı zolaq */
+.data-table tbody tr.yigim-row--soz td:first-child {
+  box-shadow: inset 4px 0 0 #f59e0b;
+}
+
+.yigim-musteri {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.yigim-wa {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  color: #fff;
+  background: #25d366;
+  flex: 0 0 auto;
+}
+
+.yigim-wa:hover {
+  background: #1da851;
+}
+
+.yigim-wa--none {
+  background: #c9ccd1;
+  cursor: not-allowed;
+}
+
+.yigim-komment {
+  width: 100%;
+  min-width: 120px;
+  box-sizing: border-box;
+  padding: 3px 6px;
+  font-size: 12px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+}
+
+.yigim-komment:hover,
+.yigim-komment:focus {
+  border-color: var(--color-border);
+  background: var(--color-surface, #fff);
+}
+
+.yigim-soz {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.yigim-soz__input,
+.yigim-soz__empty {
+  padding: 2px 6px;
+  font-size: 12px;
+  font: inherit;
+  font-size: 12px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+}
+
+.yigim-soz__empty {
+  color: var(--color-text-muted);
+  cursor: pointer;
+}
+
+.yigim-soz__input:hover,
+.yigim-soz__input:focus,
+.yigim-soz__empty:hover {
+  border-color: var(--color-border);
+  background: var(--color-surface, #fff);
+}
+
+.yigim-soz__badge {
+  font-size: 11px;
+  font-weight: 700;
+  color: #9a3412;
+  background: #ffedd5;
+  border-radius: 999px;
+  padding: 1px 7px;
+  white-space: nowrap;
+}
+
 .data-table--band tbody td.empty-state {
   height: auto;
   max-height: none;

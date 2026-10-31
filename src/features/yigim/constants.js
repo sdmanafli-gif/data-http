@@ -16,6 +16,8 @@ export const DEFAULT_COLUMNS = [
   { key: 'delayDays', label: 'Gecikmə', type: 'number', visible: true, system: true },
   { key: 'penalty', label: 'Cərimə', type: 'money', visible: true, system: true },
   { key: 'statusText', label: 'Status', type: 'text', visible: true, system: true },
+  { key: 'komment', label: 'Komment', type: 'text', visible: true, system: true, width: 220 },
+  { key: 'soz_tarixi', label: 'Söz verdiyi tarix', type: 'date', visible: true, system: true, width: 170 },
 ]
 
 const SYSTEM_KEYS = new Set(DEFAULT_COLUMNS.map((c) => c.key))

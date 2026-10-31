@@ -7,6 +7,10 @@ import InviteUser from './pages/InviteUser'
 import UserList from './pages/UserList'
 import KassaDesk from './pages/KassaDesk'
 import KontaktlarPage from './pages/KontaktlarPage'
+import NomrelerPage from './pages/NomrelerPage'
+import AnalitikaPage from './pages/AnalitikaPage'
+import XerclerPage from './pages/XerclerPage'
+import QiymetCedveliPage from './pages/QiymetCedveliPage'
 import AccountGone from './pages/AccountGone'
 import MfaChallenge from './pages/MfaChallenge'
 import MfaEnroll from './pages/MfaEnroll'
@@ -75,6 +79,38 @@ function AppRoutes() {
           element={
             <RequireAccess>
               <KontaktlarPage />
+            </RequireAccess>
+          }
+        />
+        <Route
+          path="/nomreler"
+          element={
+            <RequireAccess>
+              <NomrelerPage />
+            </RequireAccess>
+          }
+        />
+        <Route
+          path="/analitika"
+          element={
+            <RequireAccess>
+              <AnalitikaPage />
+            </RequireAccess>
+          }
+        />
+        <Route
+          path="/xercler"
+          element={
+            <RequireAccess>
+              <XerclerPage />
+            </RequireAccess>
+          }
+        />
+        <Route
+          path="/qiymet-cedveli"
+          element={
+            <RequireAccess>
+              <QiymetCedveliPage />
             </RequireAccess>
           }
         />

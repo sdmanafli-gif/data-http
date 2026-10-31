@@ -488,7 +488,7 @@ export default function KontaktlarPage() {
           fetchAllPages(() =>
             supabase
               .from('depo')
-              .select('id, sira_no, kimden_alinib, nomre, model, reng, yaddas, imei_1, alis_qiymeti, alis_tarixi, miqdar, status')
+              .select('id, sira_no, kimden_alinib, nomre, model, reng, yaddas, imei_1, alis_qiymeti, alis_tarixi, miqdar, status, haradan_tip, musteri_id')
               .order('id', { ascending: true })
           ),
           // Təchizatçılar cədvəli (Depoda «Yeni Təchizatçı» ilə yaradılanlar); yoxdursa boş
@@ -583,6 +583,8 @@ export default function KontaktlarPage() {
       map.get(key).info = t
     }
     for (const d of data.depo) {
+      // Müştəridən alınan (müştəri kartına bağlı) məhsul təchizatçı sayılmır
+      if (d.haradan_tip === 'musteri' && d.musteri_id) continue
       const name = String(d.kimden_alinib || '').trim().replace(/\s+/g, ' ')
       if (!name) continue
       const key = norm(name)
@@ -604,7 +606,8 @@ export default function KontaktlarPage() {
           ...g,
           id: g.key,
           tukan: g.info?.tukan || '',
-          phone: [g.info?.nomre_1, g.info?.nomre_2].filter(Boolean).join(', ') || g.phone,
+          // Kart varsa yalnız kartdakı nömrələr (kartda silinən nömrə Depodan geri gəlməsin)
+          phone: g.info ? [g.info.nomre_1, g.info.nomre_2].filter(Boolean).join(', ') : g.phone,
           total: round2(g.total),
           count: g.items.length,
           ledger,
@@ -725,7 +728,7 @@ export default function KontaktlarPage() {
 
   function startEdit() {
     if (!openCustomer) return
-    setEditForm(Object.fromEntries(EDIT_FIELDS.map((f) => [f.key, openCustomer[f.key] || ''])))
+    setEditForm({ ...Object.fromEntries(EDIT_FIELDS.map((f) => [f.key, openCustomer[f.key] || ''])), nov: 'musteri' })
     setModalError(null)
     setEditing(true)
   }
@@ -751,6 +754,10 @@ export default function KontaktlarPage() {
       ])
     )
     patch.ad_soyad = ad
+    if (editForm.nov === 'techizatci') {
+      await moveCustomerToSupplier(openCustomer, ad, patch)
+      return
+    }
     setSaving(true)
     setModalError(null)
     const { error: e } = await supabase
@@ -798,6 +805,7 @@ export default function KontaktlarPage() {
       nomre_1: info ? info.nomre_1 || '' : openSupplier.phone || '',
       nomre_2: info?.nomre_2 || '',
       komment: info?.komment || '',
+      nov: 'techizatci',
     })
     setModalError(null)
     setSupEditing(true)
@@ -810,6 +818,10 @@ export default function KontaktlarPage() {
     const newName = String(supForm.ad_soyad || '').trim().replace(/\s+/g, ' ')
     if (!newName) {
       setModalError('Təchizatçının adı boş ola bilməz.')
+      return
+    }
+    if (supForm.nov === 'musteri') {
+      await moveSupplierToCustomer(sup, newName)
       return
     }
     const newKey = norm(newName)
@@ -867,6 +879,169 @@ export default function KontaktlarPage() {
       }
       setSupEditing(false)
       setOpenSupplierKey(newKey)
+      setReloadKey((k) => k + 1)
+    } catch (e) {
+      setModalError(e.message || String(e))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  /**
+   * Təchizatçı → Müştəri.
+   *  1) eyni adlı müştəri varsa ona bağlanır (boş nömrə / komment doldurulur), yoxdursa yaradılır
+   *  2) ondan alınan məhsullar Depoda «Müştəridən alınıb» kimi həmin müştəriyə bağlanır
+   *  3) ad dəyişibsə Borc / Nisyə yazılarında da yeni ad yazılır
+   *  4) yalnız bundan sonra təchizatçı qeydi silinir — yarıda xəta olsa heç nə itmir
+   */
+  async function moveSupplierToCustomer(sup, newName) {
+    const ledgerNames =
+      newName !== sup.name ? [...new Set(data.ledger.map((l) => l.kime).filter((k) => norm(k) === sup.key))] : []
+    if (
+      !window.confirm(
+        `«${sup.name}» Təchizatçılardan çıxıb Müştərilərə keçsin?\n\n` +
+          (sup.items.length ? `Ondan alınan ${sup.items.length} məhsul Depoda «Müştəridən alınıb» kimi qeyd olunacaq. ` : '') +
+          'Məhsullar, borc / nisyə yazıları silinmir.'
+      )
+    ) {
+      return
+    }
+    const n1 = String(supForm.nomre_1 || '').trim() || null
+    const n2 = String(supForm.nomre_2 || '').trim() || null
+    const komment = [String(supForm.tukan || '').trim() ? `Tükan: ${String(supForm.tukan).trim()}` : '', String(supForm.komment || '').trim()]
+      .filter(Boolean)
+      .join(' · ') || null
+    setSaving(true)
+    setModalError(null)
+    try {
+      const nowIso = new Date().toISOString()
+      const existing = data.musteriler.find((m) => normMusteriName(m.ad_soyad) === normMusteriName(newName))
+      let cid
+      if (existing) {
+        cid = existing.id
+        const patch = {}
+        const have = phonesOf(existing)
+        // Yeni nömrələr müştərinin ilk boş nömrə xanalarına
+        const free = ['nomre_1', 'nomre_2', 'nomre_3', 'nomre_4', 'nomre_5'].filter((k) => !String(existing[k] || '').trim())
+        for (const ph of [n1, n2].filter((x) => x && !have.includes(x))) {
+          const k = free.shift()
+          if (k) patch[k] = ph
+        }
+        if (komment && hasCol(existing, 'komment') && !String(existing.komment || '').trim()) patch.komment = komment
+        if (Object.keys(patch).length) {
+          const { error: e } = await supabase.from('musteriler').update({ ...patch, updated_at: nowIso }).eq('id', cid)
+          if (e) throw e
+        }
+      } else {
+        const row = { ad_soyad: newName, nomre_1: n1, nomre_2: n2 }
+        if (komment) row.komment = komment
+        const { data: ins, error: e } = await supabase.from('musteriler').insert(row).select('id').single()
+        if (e) throw e
+        cid = ins.id
+      }
+      for (const ids of chunks(sup.items.map((d) => d.id))) {
+        const { error: e } = await supabase
+          .from('depo')
+          .update({ haradan_tip: 'musteri', musteri_id: cid, techizatci_id: null, kimden_alinib: newName, updated_at: nowIso })
+          .in('id', ids)
+        if (e) throw e
+      }
+      for (const oldName of ledgerNames) {
+        const { error: e } = await supabase.from(LEDGER_TABLE).update({ kime: newName }).eq('kime', oldName)
+        if (e) throw e
+      }
+      if (sup.info?.id) {
+        const { error: e } = await supabase.from('techizatcilar').delete().eq('id', sup.info.id)
+        if (e) throw e
+      }
+      setSupEditing(false)
+      setOpenSupplierKey(null)
+      setTab('musteri')
+      setOpenCustomerId(cid)
+      setReloadKey((k) => k + 1)
+    } catch (e) {
+      setModalError(e.message || String(e))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  /**
+   * Müştəri → Təchizatçı. Yalnız satışı, şəxsiyyət məlumatı və faylı olmayan müştəri üçün
+   * (onlar təchizatçı kartında saxlanmır — itməsin deyə keçid bağlanır).
+   */
+  async function moveCustomerToSupplier(c, newName, patch) {
+    if (c.saleCount > 0) {
+      setModalError(`Bu müştərinin ${c.saleCount} alışı var — təchizatçıya keçirmək olmaz.`)
+      return
+    }
+    const idFilled = ID_FIELDS.filter((f) => String(c[f.key] || '').trim()).map((f) => f.label)
+    if (idFilled.length || c.senedCount > 0) {
+      setModalError(
+        'Bu müştərinin şəxsiyyət məlumatları / faylları var (' +
+          [...idFilled, c.senedCount > 0 ? 'fayllar' : ''].filter(Boolean).join(', ') +
+          ') — təchizatçı kartında saxlanmadığı üçün keçirilmir.'
+      )
+      return
+    }
+    const phones = [patch.nomre_1, patch.nomre_2, patch.nomre_3, patch.nomre_4, patch.nomre_5, patch.sexsi_nomre_1, patch.sexsi_nomre_2]
+      .map((x) => String(x || '').trim())
+      .filter(Boolean)
+    const extra = phones.slice(2)
+    const komment =
+      [String(patch.komment || '').trim(), extra.length ? `Digər nömrələr: ${extra.join(', ')}` : '', patch.zamin ? `Zamin: ${patch.zamin}` : '']
+        .filter(Boolean)
+        .join(' · ') || null
+    const fromDepo = data.depo.filter((d) => d.musteri_id === c.id)
+    if (
+      !window.confirm(
+        `«${newName}» Müştərilərdən çıxıb Təchizatçılara keçsin?\n\n` +
+          (fromDepo.length ? `Ondan alınan ${fromDepo.length} məhsul Depoda «Təchizatçıdan alınıb» kimi qeyd olunacaq. ` : '') +
+          'Nömrələr və komment təchizatçı kartına köçürülür.'
+      )
+    ) {
+      return
+    }
+    setSaving(true)
+    setModalError(null)
+    try {
+      const nowIso = new Date().toISOString()
+      const key = norm(newName)
+      const existing = (data.techizatcilar || []).find((t) => norm(t.ad_soyad) === key)
+      let tid
+      if (existing) {
+        tid = existing.id
+        const tp = {}
+        if (!String(existing.nomre_1 || '').trim() && phones[0]) tp.nomre_1 = phones[0]
+        if (!String(existing.nomre_2 || '').trim() && phones[1]) tp.nomre_2 = phones[1]
+        if (!String(existing.komment || '').trim() && komment) tp.komment = komment
+        if (Object.keys(tp).length) {
+          const { error: e } = await supabase.from('techizatcilar').update({ ...tp, updated_at: nowIso }).eq('id', tid)
+          if (e) throw e
+        }
+      } else {
+        const { data: ins, error: e } = await supabase
+          .from('techizatcilar')
+          .insert({ ad_soyad: newName, nomre_1: phones[0] || null, nomre_2: phones[1] || null, komment })
+          .select('id')
+          .single()
+        if (e) throw e
+        tid = ins.id
+      }
+      for (const ids of chunks(fromDepo.map((d) => d.id))) {
+        const { error: e } = await supabase
+          .from('depo')
+          .update({ haradan_tip: 'techizatci', techizatci_id: tid, musteri_id: null, kimden_alinib: newName, updated_at: nowIso })
+          .in('id', ids)
+        if (e) throw e
+      }
+      const { error: delErr } = await supabase.from('musteriler').delete().eq('id', c.id)
+      if (delErr) throw delErr
+      setEditing(false)
+      setOpenCustomerId(null)
+      setTab('techizatci')
+      setOpenSupplierKey(key)
+      setSupEditing(false)
       setReloadKey((k) => k + 1)
     } catch (e) {
       setModalError(e.message || String(e))
@@ -1151,6 +1326,24 @@ export default function KontaktlarPage() {
                     openCustomer.ad_soyad
                   ),
                 },
+                ...(editing
+                  ? [
+                      {
+                        key: 'nov',
+                        label: 'Növ',
+                        value: (
+                          <select
+                            style={fieldInputStyle}
+                            value={editForm.nov || 'musteri'}
+                            onChange={(e) => setEditForm((prev) => ({ ...prev, nov: e.target.value }))}
+                          >
+                            <option value="musteri">Müştəri</option>
+                            <option value="techizatci">Təchizatçı (Təchizatçılara keçir)</option>
+                          </select>
+                        ),
+                      },
+                    ]
+                  : []),
                 { label: 'Alış Sayı', value: openCustomer.saleCount },
                 { label: 'Alış Qiyməti', value: formatMoney(openCustomer.alis) },
                 { label: 'Satış Qiyməti', value: formatMoney(openCustomer.satis) },
@@ -1407,7 +1600,22 @@ export default function KontaktlarPage() {
           <CardSection title="Əsas Məlumatlar">
             {supEditing ? (
               <FieldGrid
-                items={SUPPLIER_EDIT_FIELDS.map((f) => ({
+                items={[
+                  {
+                    key: 'nov',
+                    label: 'Növ',
+                    value: (
+                      <select
+                        style={fieldInputStyle}
+                        value={supForm.nov || 'techizatci'}
+                        onChange={(e) => setSupForm((prev) => ({ ...prev, nov: e.target.value }))}
+                      >
+                        <option value="techizatci">Təchizatçı</option>
+                        <option value="musteri">Müştəri (Müştərilərə keçir)</option>
+                      </select>
+                    ),
+                  },
+                  ...SUPPLIER_EDIT_FIELDS.map((f) => ({
                   key: f.key,
                   label: f.label,
                   value:
@@ -1425,7 +1633,8 @@ export default function KontaktlarPage() {
                         onChange={(e) => setSupForm((prev) => ({ ...prev, [f.key]: e.target.value }))}
                       />
                     ),
-                }))}
+                  })),
+                ]}
               />
             ) : null}
             <FieldGrid
@@ -1435,7 +1644,7 @@ export default function KontaktlarPage() {
                   : [
                       { label: 'Təchizatçı', value: openSupplier.name },
                       { label: 'Hansı Tükan', value: openSupplier.tukan },
-                      { label: 'Əlaqə Nömrəsi 1', value: openSupplier.info?.nomre_1 || openSupplier.phone },
+                      { label: 'Əlaqə Nömrəsi 1', value: openSupplier.info ? openSupplier.info.nomre_1 : openSupplier.phone },
                       { label: 'Əlaqə Nömrəsi 2', value: openSupplier.info?.nomre_2 },
                       { label: 'Komment', value: openSupplier.info?.komment },
                     ]),

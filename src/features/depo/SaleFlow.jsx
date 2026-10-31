@@ -67,6 +67,7 @@ import MuqavileYarat from './MuqavileYarat'
 import { buildMuqavileData, createMuqavileDocx, createAlisDocx } from './muqavile'
 import HediyyeBlock, { emptyHediyyeler, hediyyeTotal, hediyyeExtra } from './HediyyeBlock'
 import BarterAlis, { EMPTY_BARTER, barterAmount, barterMissing } from './BarterAlis'
+import { barterSplit } from './barterSplit'
 import { parseSenedler, uploadSenedlerFiles } from '../../lib/senedler'
 
 /** Prefill from Depo — shown read-only on kredit form */
@@ -660,6 +661,12 @@ export default function SaleFlow() {
     })
   }
 
+  /** Kredit: ilkin ödənişə sayılan (nağd + barterin ilkinə düşən hissəsi) və müştəriyə qaytarılan */
+  const split = useMemo(
+    () => barterSplit({ cash: ilkinOdenisVerilib, barter: barterAmount(barter), ilkinDue: ilkinOdenis }),
+    [ilkinOdenisVerilib, barter, ilkinOdenis]
+  )
+
   const totals = useMemo(() => {
     let alis = 0
     let satis = 0
@@ -668,14 +675,14 @@ export default function SaleFlow() {
       alis += Number(lp.alis) || 0
       satis += Number(lp.satis) || 0
     }
-    const verilib = saleType === 'nagd' ? (Number(form.verilib) || satis) : (Number(ilkinOdenisVerilib) || 0) + barterAmount(barter)
+    const verilib = saleType === 'nagd' ? (Number(form.verilib) || satis) : split.paid
     return {
       alis,
       satis,
       gozlenilen: satis - alis,
       qalan: satis - verilib,
     }
-  }, [basket, linePrices, form.verilib, saleType, ilkinOdenisVerilib, barter])
+  }, [basket, linePrices, form.verilib, saleType, split.paid])
 
   const computedIlkin = useMemo(() => {
     const satis =
@@ -716,9 +723,8 @@ export default function SaleFlow() {
 
   const ilkinRemaining = useMemo(() => {
     const due = Number(ilkinOdenis) || 0
-    const paid = (Number(ilkinOdenisVerilib) || 0) + barterAmount(barter)
-    return Math.max(0, Math.round((due - paid) * 100) / 100)
-  }, [ilkinOdenis, ilkinOdenisVerilib, barter])
+    return Math.max(0, Math.round((due - split.paid) * 100) / 100)
+  }, [ilkinOdenis, split.paid])
 
   function selectType(type) {
     setSaleType(type)
@@ -905,7 +911,7 @@ export default function SaleFlow() {
   function kreditSchedulePlan() {
     const totalSatis = totals.satis
     const itemIlkin = Number(ilkinOdenis) || 0
-    const paidForItem = (Number(ilkinOdenisVerilib) || 0) + barterAmount(barter)
+    const paidForItem = split.paid
     const remainingForItem = Math.max(0, Math.round((itemIlkin - paidForItem) * 100) / 100)
     const verilme = musteriForm.verilme_tarixi || localTodayYmd()
     const ilkinDueDate = remainingForItem > 0.009 ? ilkinQaliqTarixi || verilme : verilme
@@ -958,7 +964,7 @@ export default function SaleFlow() {
       basket,
       linePrices,
       lineCihaz,
-      paidNow: (Number(ilkinOdenisVerilib) || 0) + barterAmount(barter),
+      paidNow: split.paid,
       scheduleLines: lines,
     })
   }
@@ -1001,6 +1007,8 @@ export default function SaleFlow() {
         veziyyet: b.veziyyet,
         qiymet: barterAmount(b),
       },
+      ilkinHesab: split.barterIlkin,
+      qaytar: split.qaytar,
     }
   }
 
@@ -1208,9 +1216,9 @@ export default function SaleFlow() {
         setError(barterErr)
         return
       }
-      const paidNow = (Number(ilkinOdenisVerilib) || 0) + barterAmount(barter)
+      const paidNow = split.paid
       const ilkinDue = Number(ilkinOdenis) || 0
-      if (paidNow < 0) {
+      if ((Number(ilkinOdenisVerilib) || 0) < 0) {
         setError('İlkin ödəniş verilib mənfi ola bilməz.')
         return
       }
@@ -1218,8 +1226,8 @@ export default function SaleFlow() {
         setError('İlkin ödəniş mənfi ola bilməz.')
         return
       }
-      if (paidNow - ilkinDue > 0.009) {
-        setError('İlkin ödəniş verilib (barter daxil), ilkin ödənişdən çox ola bilməz.')
+      if (split.cashOver || paidNow - ilkinDue > 0.009) {
+        setError('İlkin ödəniş verilib (nağd), ilkin ödənişdən çox ola bilməz.')
         return
       }
       if (ilkinDue - paidNow > 0.009 && !ilkinQaliqTarixi) {
@@ -1374,8 +1382,8 @@ export default function SaleFlow() {
             (basket.length > 1
               ? `Kredit satış (${basket.length} məhsul) — ilkin ödəniş verilib`
               : 'Kredit satış — ilkin ödəniş verilib') +
-            (barterAmount(barter) > 0
-              ? ` (nağd ${Number(ilkinOdenisVerilib) || 0} + barter ${barterAmount(barter)}: ${[barter.nov, barter.model].filter(Boolean).join(' ')})`
+            (split.barter > 0
+              ? ` (nağd ${split.cash} + barterdən ${split.barterIlkin}: ${[barter.nov, barter.model].filter(Boolean).join(' ')} — dəyəri ${split.barter}${split.qaytar > 0 ? `, müştəriyə nağd qaytarıldı ${split.qaytar}` : ''})`
               : ''),
           updated_at: new Date().toISOString(),
         })
@@ -1579,14 +1587,14 @@ export default function SaleFlow() {
         hediyyeTotal(hediyyeler)
     ),
     faktiki_gelir: formatMoney(
-      (Number(ilkinOdenisVerilib) || 0) +
+      split.paid +
         (Number(musteriForm.faiz) || 0) -
         (Number(musteriForm.alis_qiymeti) || totals.alis || 0) -
         (Number(musteriForm.satici_faizi) || 0) -
         hediyyeTotal(hediyyeler)
     ),
     qalan_borc: formatMoney(
-      (Number(musteriForm.satis_qiymeti) || totals.satis || 0) - (Number(ilkinOdenisVerilib) || 0)
+      (Number(musteriForm.satis_qiymeti) || totals.satis || 0) - split.paid
     ),
     faiz: formatMoney(Number(musteriForm.faiz) || 0),
   }
@@ -1872,6 +1880,8 @@ export default function SaleFlow() {
               kontakt={kreditKontakt}
               addPicker={addPickerPanel}
               barterAmount={barterAmount(barter)}
+              barterIlkin={split.barterIlkin}
+              barterQaytar={split.qaytar}
               hediyyeSlot={
                 <HediyyeBlock
                   value={hediyyeler}
