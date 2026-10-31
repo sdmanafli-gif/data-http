@@ -20,7 +20,7 @@ import MusteriRecordModule from '../musteri-bazasi/MusteriRecordModule'
 import CollapsibleSummary from '../../components/CollapsibleSummary'
 import { applyKeyOrder } from '../musteri-bazasi/columnOrder'
 import { useColumnConfig } from './useColumnConfig'
-import { waPhone } from '../../lib/qebz'
+import { waPhone, formatQebzMoney } from '../../lib/qebz'
 import { openWhatsApp } from '../../lib/whatsapp'
 import '../../styles/shared.css'
 import '../musteri-bazasi/musteri-table.css'
@@ -518,6 +518,17 @@ export default function YigimPage() {
     [period, year, month, weekStart, customFrom, customTo]
   )
 
+  /** Hər müştəri üçün bu günə qədər vaxtı çatmış, ödənilməmiş məbləğ (WhatsApp mesajı üçün) */
+  const gecikmeByMusteri = useMemo(() => {
+    const m = new Map()
+    for (const r of rows) {
+      if (String(r.tarix || '').slice(0, 10) > today) continue
+      const rem = Number(r.remaining) || 0
+      if (rem > 0) m.set(r.musteriId, (m.get(r.musteriId) || 0) + rem)
+    }
+    return m
+  }, [rows, today])
+
   /** Sətirlərə komment və söz tarixi əlavə olunur */
   const rowsWithQeyd = useMemo(
     () =>
@@ -634,7 +645,12 @@ export default function YigimPage() {
               onClick={(e) => {
                 e.stopPropagation()
                 e.preventDefault()
-                openWhatsApp(wa)
+                const borc = Math.round((gecikmeByMusteri.get(row.musteriId) || 0) * 100) / 100
+                const [y, mo, d] = today.split('-')
+                openWhatsApp(
+                  wa,
+                  `Hörmətli Müştəri, Mobideal-da cari kredit üzrə ${d}.${mo}.${y} tarixinə olan ödəniş məbləği ${formatQebzMoney(borc)} təşkil edir.`
+                )
               }}
             >
               <WhatsAppIcon />
