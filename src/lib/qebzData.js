@@ -162,6 +162,7 @@ export async function buildLedgerQebz(row) {
   else if (net < 0) yekunBorcText = `${formatQebzMoney(-net)} (bizim borcumuz)`
 
   return {
+    kind: 'ledger',
     tarix: row.tarix,
     no: row.sira_no != null ? `BN-${row.sira_no}` : `BN-${String(row.id).slice(0, 6).toUpperCase()}`,
     qarsiTeref: kime,

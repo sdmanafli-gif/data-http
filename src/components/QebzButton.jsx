@@ -54,17 +54,22 @@ function contentHeight(canvas) {
 }
 
 const QEBZ_BUCKET = 'q'
+const QISA_LINK = 'https://qbz-az.netlify.app'
 
-/** Qəbz şəklini fayl yerinə yükləyir, açıq linkini qaytarır (ad — 20 simvolluq təsadüfi) */
-async function uploadQebzImage(blob) {
+/**
+ * Qəbz şəklini fayl yerinə yükləyir, qısa linkini qaytarır: qbz-az.netlify.app/xxxxxxxxxx
+ * (ayrıca kiçik Netlify saytı — əsas saytla əlaqəsi yoxdur, yalnız «q» fayl yerinə yönləndirir).
+ * Ad — 10 simvolluq təsadüfi, təxmin etmək olmur.
+ */
+export async function uploadQebzImage(blob) {
   const abc = 'abcdefghijklmnopqrstuvwxyz0123456789'
-  const rnd = crypto.getRandomValues(new Uint8Array(20))
-  const name = `${Array.from(rnd, (n) => abc[n % abc.length]).join('')}.png`
+  const rnd = crypto.getRandomValues(new Uint8Array(10))
+  const name = Array.from(rnd, (n) => abc[n % abc.length]).join('')
   const { error } = await supabase.storage
     .from(QEBZ_BUCKET)
     .upload(name, blob, { contentType: 'image/png', cacheControl: '31536000', upsert: false })
   if (error) throw error
-  return supabase.storage.from(QEBZ_BUCKET).getPublicUrl(name).data.publicUrl
+  return `${QISA_LINK}/${name}`
 }
 
 /** Qəbzi səhifə-səhifə canvas-a çəkir */
@@ -189,9 +194,23 @@ function QebzModal({ buildData, onClose }) {
         link = ''
       }
       if (link) {
-        const lines = text.split('\n')
-        const last = lines.pop()
-        const msg = [...lines, '', `Qəbz: ${link}`, '', last].join('\n')
+        let msg
+        if (full0.kind === 'ledger') {
+          // Borc / Nisyə: qısa yazı, link aralarında 2 boş sətirlə
+          msg = [
+            'Yekun məbləği öyrənmək üçün zəhmət olmasa, Linkə daxil olun',
+            '',
+            '',
+            link,
+            '',
+            '',
+            'Hörmətlə, Mobideal',
+          ].join('\n')
+        } else {
+          const lines = text.split('\n')
+          const last = lines.pop()
+          msg = [...lines, '', `Qəbz: ${link}`, '', last].join('\n')
+        }
         openWhatsApp(num, msg)
         setWebLink(waWebUrl(num, msg))
         setNote('WhatsApp müştərinin söhbətində açıldı — mesaj və qəbz linki hazırdır, sadəcə «Göndər» basın.')
