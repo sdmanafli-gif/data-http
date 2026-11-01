@@ -189,9 +189,23 @@ function QebzModal({ buildData, onClose }) {
         link = ''
       }
       if (link) {
-        const lines = text.split('\n')
-        const last = lines.pop()
-        const msg = [...lines, '', `Qəbz: ${link}`, '', last].join('\n')
+        let msg
+        if (full0.kind === 'ledger') {
+          // Borc / Nisyə: qısa yazı, link aralarında 2 boş sətirlə
+          msg = [
+            'Yekun məbləği öyrənmək üçün zəhmət olmasa, Linkə daxil olun',
+            '',
+            '',
+            link,
+            '',
+            '',
+            'Hörmətlə, Mobideal',
+          ].join('\n')
+        } else {
+          const lines = text.split('\n')
+          const last = lines.pop()
+          msg = [...lines, '', `Qəbz: ${link}`, '', last].join('\n')
+        }
         openWhatsApp(num, msg)
         setWebLink(waWebUrl(num, msg))
         setNote('WhatsApp müştərinin söhbətində açıldı — mesaj və qəbz linki hazırdır, sadəcə «Göndər» basın.')
