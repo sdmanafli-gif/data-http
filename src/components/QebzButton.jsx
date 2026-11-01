@@ -55,16 +55,20 @@ function contentHeight(canvas) {
 
 const QEBZ_BUCKET = 'q'
 
-/** Qəbz şəklini fayl yerinə yükləyir, açıq linkini qaytarır (ad — 20 simvolluq təsadüfi) */
+/**
+ * Qəbz şəklini fayl yerinə yükləyir, qısa linkini qaytarır: sayt/q/xxxxxxxxxx
+ * (sayt bu ünvanı Supabase fayl yerinə yönləndirir — netlify.toml / _redirects).
+ * Ad — 10 simvolluq təsadüfi, təxmin etmək olmur.
+ */
 export async function uploadQebzImage(blob) {
   const abc = 'abcdefghijklmnopqrstuvwxyz0123456789'
-  const rnd = crypto.getRandomValues(new Uint8Array(20))
-  const name = `${Array.from(rnd, (n) => abc[n % abc.length]).join('')}.png`
+  const rnd = crypto.getRandomValues(new Uint8Array(10))
+  const name = Array.from(rnd, (n) => abc[n % abc.length]).join('')
   const { error } = await supabase.storage
     .from(QEBZ_BUCKET)
     .upload(name, blob, { contentType: 'image/png', cacheControl: '31536000', upsert: false })
   if (error) throw error
-  return supabase.storage.from(QEBZ_BUCKET).getPublicUrl(name).data.publicUrl
+  return `${window.location.origin}/q/${name}`
 }
 
 /** Qəbzi səhifə-səhifə canvas-a çəkir */
