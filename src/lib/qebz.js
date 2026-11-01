@@ -195,8 +195,9 @@ function dataUrlToBytes(dataUrl) {
  */
 export function jpegPagesToPdfBlob(pages) {
   const enc = new TextEncoder()
-  const pageW = 595.28
-  const pageH = 841.89
+  // A4: şəkil enlidirsə səhifə yan (landşaft) qoyulur
+  const A4S = 595.28
+  const A4L = 841.89
   const parts = []
   const offsets = []
   let length = 0
@@ -219,9 +220,11 @@ export function jpegPagesToPdfBlob(pages) {
   obj(1, ['<< /Type /Catalog /Pages 2 0 R >>'])
   const kids = pages.map((_, i) => `${pageObj(i)} 0 R`).join(' ')
   obj(2, [`<< /Type /Pages /Kids [${kids}] /Count ${n} >>`])
-  const content = `q\n${pageW} 0 0 ${pageH} 0 0 cm\n/Im0 Do\nQ\n`
   pages.forEach((pg, i) => {
     const po = pageObj(i)
+    const pageW = pg.w > pg.h ? A4L : A4S
+    const pageH = pg.w > pg.h ? A4S : A4L
+    const content = `q\n${pageW} 0 0 ${pageH} 0 0 cm\n/Im0 Do\nQ\n`
     obj(po, [
       `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pageW} ${pageH}] /Resources << /XObject << /Im0 ${po + 1} 0 R >> >> /Contents ${po + 2} 0 R >>`,
     ])

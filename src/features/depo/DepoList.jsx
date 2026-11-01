@@ -15,6 +15,7 @@ import {
 } from './constants'
 import { LEDGER_TABLE } from '../borc-nisye/constants'
 import CollapsibleSummary from '../../components/CollapsibleSummary'
+import QaliqMalButton from './QaliqMal'
 import { loadPageFilters, savePageFilters } from '../../lib/uiPrefs'
 import DepoFilterFields, {
   EMPTY_DEPO_FILTERS,
@@ -457,6 +458,9 @@ export default function DepoList() {
 
   return (
     <>
+      <div style={{ marginBottom: 16 }}>
+        <QaliqMalButton columns={visibleCols} />
+      </div>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16, alignItems: 'flex-end', marginBottom: 16 }}>
         <div className="form-group" style={{ marginBottom: 0, flex: '1 1 240px', maxWidth: 360 }}>
           <label>Axtarış</label>

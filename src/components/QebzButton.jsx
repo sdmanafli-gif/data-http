@@ -56,7 +56,7 @@ function contentHeight(canvas) {
 const QEBZ_BUCKET = 'q'
 
 /** Qəbz şəklini fayl yerinə yükləyir, açıq linkini qaytarır (ad — 20 simvolluq təsadüfi) */
-async function uploadQebzImage(blob) {
+export async function uploadQebzImage(blob) {
   const abc = 'abcdefghijklmnopqrstuvwxyz0123456789'
   const rnd = crypto.getRandomValues(new Uint8Array(20))
   const name = `${Array.from(rnd, (n) => abc[n % abc.length]).join('')}.png`
