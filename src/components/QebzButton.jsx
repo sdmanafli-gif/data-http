@@ -54,10 +54,11 @@ function contentHeight(canvas) {
 }
 
 const QEBZ_BUCKET = 'q'
+const QISA_LINK = 'https://qbz-az.netlify.app'
 
 /**
- * Qəbz şəklini fayl yerinə yükləyir, qısa linkini qaytarır: sayt/q/xxxxxxxxxx
- * (sayt bu ünvanı Supabase fayl yerinə yönləndirir — netlify.toml / _redirects).
+ * Qəbz şəklini fayl yerinə yükləyir, qısa linkini qaytarır: qbz-az.netlify.app/xxxxxxxxxx
+ * (ayrıca kiçik Netlify saytı — əsas saytla əlaqəsi yoxdur, yalnız «q» fayl yerinə yönləndirir).
  * Ad — 10 simvolluq təsadüfi, təxmin etmək olmur.
  */
 export async function uploadQebzImage(blob) {
@@ -68,7 +69,7 @@ export async function uploadQebzImage(blob) {
     .from(QEBZ_BUCKET)
     .upload(name, blob, { contentType: 'image/png', cacheControl: '31536000', upsert: false })
   if (error) throw error
-  return `${window.location.origin}/q/${name}`
+  return `${QISA_LINK}/${name}`
 }
 
 /** Qəbzi səhifə-səhifə canvas-a çəkir */
