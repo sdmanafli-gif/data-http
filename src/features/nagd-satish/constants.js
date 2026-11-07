@@ -1,5 +1,5 @@
 import { formatSenedlerCount, parseSenedler } from '../../lib/senedler'
-import { formatDate } from '../../lib/formatDate'
+import { formatDate, todayYmd } from '../../lib/formatDate'
 
 export { formatDate }
 
@@ -117,7 +117,7 @@ export function formatCell(value, col) {
 export function emptyNagdForm(columns = DEFAULT_COLUMNS) {
   const base = {
     extra: {},
-    tarix: new Date().toISOString().slice(0, 10),
+    tarix: todayYmd(),
     satis_novu: 'nagd',
     satici_faizi: '0',
     senedler: [],
@@ -125,7 +125,7 @@ export function emptyNagdForm(columns = DEFAULT_COLUMNS) {
   for (const col of columns) {
     if (col.key === 'sira_no' || col.key === 'senedler' || GENERATED_KEYS.has(col.key)) continue
     if (col.custom) base.extra[col.key] = ''
-    else if (col.key === 'tarix') base.tarix = new Date().toISOString().slice(0, 10)
+    else if (col.key === 'tarix') base.tarix = todayYmd()
     else if (col.key === 'satis_novu') base.satis_novu = 'nagd'
     else if (col.key === 'satici_faizi') base.satici_faizi = '0'
     else base[col.key] = ''
@@ -248,7 +248,7 @@ export function depoItemToNagdPayload(
   { kime, musteriId, tarix, alis, satis, satici, saticiFaizi, kommentler, satisNovu }
 ) {
   return {
-    tarix: tarix || new Date().toISOString().slice(0, 10),
+    tarix: tarix || todayYmd(),
     satis_novu: satisNovu === 'nisye' ? 'nisye' : 'nagd',
     kime: kime || null,
     musteri_id: musteriId || null,

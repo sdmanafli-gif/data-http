@@ -1,5 +1,6 @@
 import * as XLSX from 'xlsx'
 import { PAYMENT_TYPES } from './constants'
+import { todayYmd } from '../../lib/formatDate'
 
 export const IMPORT_FIELDS = [
   { key: 'sira_no', label: '# / №', type: 'number' },
@@ -175,7 +176,7 @@ export function excelRowToPayload(excelRow, mapping) {
 
   const tip = parseTip(raw.tip)
   const mebleg = parseMoney(raw.mebleg)
-  const tarix = parseDate(raw.tarix) || new Date().toISOString().slice(0, 10)
+  const tarix = parseDate(raw.tarix) || todayYmd()
   let sira_no = null
   if (raw.sira_no !== '' && raw.sira_no != null) {
     const n = Number(String(raw.sira_no).replace(/\s/g, ''))

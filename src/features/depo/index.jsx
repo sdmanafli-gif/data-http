@@ -11,7 +11,7 @@ import '../../styles/shared.css'
 export default function DepoFeature() {
   const navigate = useNavigate()
   const location = useLocation()
-  const { access } = useAuth()
+  const { access, isAdmin } = useAuth()
   const hideHeader =
     location.pathname.includes('/sutunlar') ||
     location.pathname.includes('/idxal') ||
@@ -25,9 +25,11 @@ export default function DepoFeature() {
         <div className="page-header">
           <h1>Depo</h1>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            <button type="button" className="btn btn--secondary" onClick={() => navigate('/depo/tarixce')}>
-              Tarixçə
-            </button>
+            {isAdmin && (
+              <button type="button" className="btn btn--secondary" onClick={() => navigate('/depo/tarixce')}>
+                Tarixçə
+              </button>
+            )}
             {access.canCreate('depo') && (
               <button type="button" className="btn btn--secondary" onClick={() => navigate('/depo/idxal')}>
                 Excel idxal

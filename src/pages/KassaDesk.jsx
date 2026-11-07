@@ -15,6 +15,7 @@ import {
 } from '../features/odenisler/constants'
 import CollapsibleSummary from '../components/CollapsibleSummary'
 import '../styles/shared.css'
+import { todayYmd } from '../lib/formatDate'
 
 function round2(n) {
   return Math.round((Number(n) || 0) * 100) / 100
@@ -214,7 +215,7 @@ export default function KassaDesk() {
 
   const [wdUserId, setWdUserId] = useState('')
   const [wdMebleg, setWdMebleg] = useState('')
-  const [wdTarix, setWdTarix] = useState(() => new Date().toISOString().slice(0, 10))
+  const [wdTarix, setWdTarix] = useState(() => todayYmd())
   const [wdScope, setWdScope] = useState('all') // all | nagd | kart:xxx
   const [wdQeyd, setWdQeyd] = useState('')
   const [wdNov, setWdNov] = useState('cixaris') // cixaris | medaxil
@@ -441,7 +442,7 @@ export default function KassaDesk() {
     setEditingWdId(null)
     setWdUserId('')
     setWdMebleg('')
-    setWdTarix(new Date().toISOString().slice(0, 10))
+    setWdTarix(todayYmd())
     setWdScope('all')
     setWdQeyd('')
     setWdNov('cixaris')
@@ -453,7 +454,7 @@ export default function KassaDesk() {
     setEditingWdId(w.id)
     setWdUserId(w.user_id || '')
     setWdMebleg(w.mebleg != null ? String(w.mebleg) : '')
-    setWdTarix(w.tarix || new Date().toISOString().slice(0, 10))
+    setWdTarix(w.tarix || todayYmd())
     setWdQeyd(w.qeyd || '')
     setWdNov(isMedaxil(w) ? 'medaxil' : 'cixaris')
     if (w.odenis_usulu === 'nagd') setWdScope('nagd')
@@ -496,7 +497,7 @@ export default function KassaDesk() {
     const payload = {
       user_id: wdUserId,
       mebleg,
-      tarix: wdTarix || new Date().toISOString().slice(0, 10),
+      tarix: wdTarix || todayYmd(),
       qeyd: String(wdQeyd || '').trim() || null,
       odenis_usulu: null,
       kart_nomresi: null,

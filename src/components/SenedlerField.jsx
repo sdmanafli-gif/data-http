@@ -1,7 +1,7 @@
 import { useId, useRef, useState } from 'react'
 import {
   parseSenedler,
-  senedlerPublicUrl,
+  openSenedlerFile,
   uploadSenedlerFiles,
   removeSenedlerFile,
 } from '../lib/senedler'
@@ -86,7 +86,13 @@ export default function SenedlerField({
         <ul className="senedler-field__list">
           {files.map((f, i) => (
             <li key={`${f.path}-${i}`}>
-              <a href={senedlerPublicUrl(f.path)} target="_blank" rel="noopener noreferrer">
+              <a
+                href="#"
+                onClick={(e) => {
+                  e.preventDefault()
+                  openSenedlerFile(f.path)
+                }}
+              >
                 {f.name || 'fayl'}
               </a>
               {!readOnly && (

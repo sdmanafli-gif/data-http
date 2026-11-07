@@ -1,4 +1,5 @@
 import { Routes, Route, useNavigate, useLocation } from 'react-router-dom'
+import { useAuth } from '../../contexts/AuthContext'
 import OverviewPage from './OverviewPage'
 import CounterpartDetail from './CounterpartDetail'
 import LedgerForm from './LedgerForm'
@@ -12,6 +13,7 @@ import '../../styles/shared.css'
 export default function BorcNisyeFeature() {
   const navigate = useNavigate()
   const location = useLocation()
+  const { access, isAdmin } = useAuth()
   const hideHeader =
     location.pathname.includes('/taraf/') ||
     location.pathname.includes('/qeyd/') ||
@@ -30,22 +32,30 @@ export default function BorcNisyeFeature() {
             <button type="button" className="btn btn--secondary" onClick={() => navigate('/borc-nisye/kalendar')}>
               Kalendar
             </button>
-            <button type="button" className="btn btn--secondary" onClick={() => navigate('/borc-nisye/tarixce')}>
-              Tarixçə
-            </button>
-            <button type="button" className="btn btn--secondary" onClick={() => navigate('/borc-nisye/idxal')}>
-              Excel idxal
-            </button>
-            <button
-              type="button"
-              className="btn btn--secondary"
-              onClick={() => navigate('/borc-nisye/sexsi-kredit/yeni')}
-            >
-              Kredit yarat
-            </button>
-            <button type="button" className="btn btn--primary" onClick={() => navigate('/borc-nisye/yeni')}>
-              Yeni əməliyyat
-            </button>
+            {isAdmin && (
+              <button type="button" className="btn btn--secondary" onClick={() => navigate('/borc-nisye/tarixce')}>
+                Tarixçə
+              </button>
+            )}
+            {access.canCreate('borc-nisye') && (
+              <button type="button" className="btn btn--secondary" onClick={() => navigate('/borc-nisye/idxal')}>
+                Excel idxal
+              </button>
+            )}
+            {access.canCreate('borc-nisye') && (
+              <button
+                type="button"
+                className="btn btn--secondary"
+                onClick={() => navigate('/borc-nisye/sexsi-kredit/yeni')}
+              >
+                Kredit yarat
+              </button>
+            )}
+            {access.canCreate('borc-nisye') && (
+              <button type="button" className="btn btn--primary" onClick={() => navigate('/borc-nisye/yeni')}>
+                Yeni əməliyyat
+              </button>
+            )}
           </div>
         </div>
       )}

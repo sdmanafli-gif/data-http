@@ -1,3 +1,8 @@
+-- ⚠️⚠️ KÖHNƏ FAYL — CANLI BAZADA YENİDƏN İŞLƏTMƏYİN! ⚠️⚠️
+-- Bu fayl cədvəlləri «hamıya açıq» edən köhnə qaydalar yaradır (using (true)).
+-- Canlı bazadakı indiki qaydalar: setup/tables/46_tab_icazeleri.sql
+-- Səhvən işlədilibsə, dərhal 46_tab_icazeleri.sql-i yenidən işlədin.
+
 -- iCloud tracking: which number each device (from credit sales) is registered under
 -- Monthly tracking: per sale per month — expected vs paid vs missing (for credit sales)
 

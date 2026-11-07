@@ -8,16 +8,13 @@ import { applyKeyOrder } from '../musteri-bazasi/columnOrder'
 import { NAGD_TABLE, formatCell, getRowValue, formatMoney, SATIS_NOVU_OPTIONS } from './constants'
 import CollapsibleSummary from '../../components/CollapsibleSummary'
 import '../../styles/shared.css'
+import { todayYmd } from '../../lib/formatDate'
 
 function sumField(rows, key) {
   return rows.reduce((acc, row) => {
     const n = Number(row[key])
     return acc + (Number.isNaN(n) ? 0 : n)
   }, 0)
-}
-
-function todayYmd() {
-  return new Date().toISOString().slice(0, 10)
 }
 
 function monthStartYmd() {

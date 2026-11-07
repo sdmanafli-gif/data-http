@@ -1,4 +1,5 @@
 import { Routes, Route, useNavigate, useLocation } from 'react-router-dom'
+import { useAuth } from '../../contexts/AuthContext'
 import NagdList from './NagdList'
 import NagdForm from './NagdForm'
 import ColumnManager from './ColumnManager'
@@ -9,6 +10,7 @@ import '../../styles/shared.css'
 export default function NagdSatishFeature() {
   const navigate = useNavigate()
   const location = useLocation()
+  const { access, isAdmin } = useAuth()
   const hideHeader =
     location.pathname.includes('/sutunlar') ||
     location.pathname.includes('/idxal') ||
@@ -21,15 +23,21 @@ export default function NagdSatishFeature() {
         <div className="page-header">
           <h1>Nağd satış</h1>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            <button type="button" className="btn btn--secondary" onClick={() => navigate('/nagd-satish/tarixce')}>
-              Tarixçə
-            </button>
-            <button type="button" className="btn btn--secondary" onClick={() => navigate('/nagd-satish/idxal')}>
-              Excel idxal
-            </button>
-            <button type="button" className="btn btn--primary" onClick={() => navigate('/nagd-satish/yeni')}>
-              Yeni qeyd
-            </button>
+            {isAdmin && (
+              <button type="button" className="btn btn--secondary" onClick={() => navigate('/nagd-satish/tarixce')}>
+                Tarixçə
+              </button>
+            )}
+            {access.canCreate('nagd-satish') && (
+              <button type="button" className="btn btn--secondary" onClick={() => navigate('/nagd-satish/idxal')}>
+                Excel idxal
+              </button>
+            )}
+            {access.canCreate('nagd-satish') && (
+              <button type="button" className="btn btn--primary" onClick={() => navigate('/nagd-satish/yeni')}>
+                Yeni qeyd
+              </button>
+            )}
           </div>
         </div>
       )}

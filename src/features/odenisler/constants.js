@@ -1,4 +1,4 @@
-import { formatDate } from '../../lib/formatDate'
+import { formatDate, todayYmd } from '../../lib/formatDate'
 import { VEZIYYET_OPTIONS } from '../musteri-bazasi/constants'
 
 export const ODENISLER_TABLE = 'odenisler'
@@ -82,7 +82,7 @@ export function emptyOdenisForm(prefill = {}) {
     ad_soyad: prefill.ad_soyad || '',
     tip: prefill.tip || 'ayliq',
     mebleg: prefill.mebleg != null ? String(prefill.mebleg) : '',
-    tarix: prefill.tarix || new Date().toISOString().slice(0, 10),
+    tarix: prefill.tarix || todayYmd(),
     odenis_usulu: prefill.odenis_usulu || 'nagd',
     kart_nomresi: prefill.kart_nomresi || '',
     qeyd: prefill.qeyd || '',

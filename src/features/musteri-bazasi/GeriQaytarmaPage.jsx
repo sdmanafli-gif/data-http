@@ -30,6 +30,7 @@ import {
   depoRowToForm,
 } from './returnUtils'
 import '../../styles/shared.css'
+import { todayYmd } from '../../lib/formatDate'
 
 const MUSTERI_EDIT_KEYS = [
   'ad_soyad',
@@ -248,7 +249,7 @@ export default function GeriQaytarmaPage() {
         depoId = data.id
       }
 
-      const note = `Geri qaytarma: ${new Date().toISOString().slice(0, 10)}`
+      const note = `Geri qaytarma: ${todayYmd()}`
       const komment = [musteriPayload.kommentler, note].filter(Boolean).join(' · ')
       const { error: linkErr } = await supabase
         .from(MUSTERI_TABLE)

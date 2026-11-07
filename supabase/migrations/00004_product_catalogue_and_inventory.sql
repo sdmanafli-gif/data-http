@@ -1,3 +1,8 @@
+-- ⚠️⚠️ KÖHNƏ FAYL — CANLI BAZADA YENİDƏN İŞLƏTMƏYİN! ⚠️⚠️
+-- Bu fayl cədvəlləri «hamıya açıq» edən köhnə qaydalar yaradır (using (true)).
+-- Canlı bazadakı indiki qaydalar: setup/tables/46_tab_icazeleri.sql
+-- Səhvən işlədilibsə, dərhal 46_tab_icazeleri.sql-i yenidən işlədin.
+
 -- Mobideal: Məhsul kataloqu (unikal Növ, Model, Rəng, Memory) + inventar əlavə sahələr
 -- Product catalogue: unique (type, model, color, memory). Inventory: product_id + user, comments, client_number, return_amount
 

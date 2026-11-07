@@ -1,5 +1,5 @@
 import { formatSenedlerCount, parseSenedler } from '../../lib/senedler'
-import { formatDate } from '../../lib/formatDate'
+import { formatDate, todayYmd } from '../../lib/formatDate'
 import { LEDGER_TABLE } from '../borc-nisye/constants'
 
 export { formatDate }
@@ -341,7 +341,7 @@ export async function syncDepoPurchaseNisyeLedger(supabase, depoRow) {
 
   const payload = {
     kime,
-    tarix: depoRow.alis_tarixi || new Date().toISOString().slice(0, 10),
+    tarix: depoRow.alis_tarixi || todayYmd(),
     qaytarma_tarixi: depoRow.qaytarma_tarixi || null,
     tip: 'nisye_aldim',
     mebleg,

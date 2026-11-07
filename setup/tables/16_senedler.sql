@@ -1,3 +1,7 @@
+-- ⚠️⚠️ KÖHNƏ FAYL — CANLI BAZADA YENİDƏN İŞLƏTMƏYİN! ⚠️⚠️
+-- Bu fayl sənəd qovluğunu (Mobideal) login olmadan hamıya açır (yükləmə/silmə də).
+-- Canlı bazada qovluq yalnız işçilərə açıqdır; 47_senedler_private.sql onu tam bağlayır.
+
 -- ============================================================
 -- Sənədlər — multi-file attachments (Supabase Storage bucket Mobideal)
 -- Stored as jsonb: [{ "name": "...", "path": "..." }, ...]

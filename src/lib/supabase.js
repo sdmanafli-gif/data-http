@@ -31,7 +31,9 @@ export async function fetchAllPages(buildQuery, { pageSize = 1000 } = {}) {
 
   for (;;) {
     const to = from + pageSize - 1
-    const { data, error } = await buildQuery().range(from, to)
+    // Sabit sıra vacibdir: sırasız səhifələrdə (1000-dən çox sətir) bəzi sətirlər iki dəfə gələ,
+    // bəziləri isə heç gəlməyə bilər. `id` əlavə (ikinci) sıralamadır — mövcud sıranı dəyişmir.
+    const { data, error } = await buildQuery().order('id', { ascending: true }).range(from, to)
     if (error) return { data: null, error }
     const batch = data || []
     all.push(...batch)

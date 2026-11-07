@@ -1,3 +1,8 @@
+-- ⚠️⚠️ KÖHNƏ FAYL — CANLI BAZADA YENİDƏN İŞLƏTMƏYİN! ⚠️⚠️
+-- Bu fayl cədvəlləri «hamıya açıq» edən köhnə qaydalar yaradır (using (true)).
+-- Canlı bazadakı indiki qaydalar: setup/tables/46_tab_icazeleri.sql
+-- Səhvən işlədilibsə, dərhal 46_tab_icazeleri.sql-i yenidən işlədin.
+
 -- Şəxsi kreditlər (öz krediti: bank və s.) — Borc/Nisyə şöbəsi daxilində
 create table if not exists public.sexsi_kreditler (
   id uuid primary key default gen_random_uuid(),

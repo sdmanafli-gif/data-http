@@ -19,6 +19,7 @@ import {
 } from './sexsiKreditSchedule'
 import '../musteri-bazasi/musteri-schedule.css'
 import '../../styles/shared.css'
+import { todayYmd } from '../../lib/formatDate'
 
 export default function SexsiKreditDetail() {
   const { id } = useParams()
@@ -29,7 +30,7 @@ export default function SexsiKreditDetail() {
   const [error, setError] = useState(null)
   const [payForm, setPayForm] = useState({
     mebleg: '',
-    tarix: new Date().toISOString().slice(0, 10),
+    tarix: todayYmd(),
     qeyd: '',
   })
   const [savingPay, setSavingPay] = useState(false)
@@ -162,7 +163,7 @@ export default function SexsiKreditDetail() {
       if (eIns) throw eIns
       setPayForm({
         mebleg: '',
-        tarix: new Date().toISOString().slice(0, 10),
+        tarix: todayYmd(),
         qeyd: '',
       })
       await load()

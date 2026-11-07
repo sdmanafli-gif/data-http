@@ -1,5 +1,5 @@
 import { formatSenedlerCount, parseSenedler } from '../../lib/senedler'
-import { formatDate } from '../../lib/formatDate'
+import { formatDate, todayYmd } from '../../lib/formatDate'
 
 export { formatDate }
 
@@ -121,7 +121,7 @@ export function counterpartPath(kime) {
 export function emptyLedgerForm() {
   return {
     kime: '',
-    tarix: new Date().toISOString().slice(0, 10),
+    tarix: todayYmd(),
     qaytarma_tarixi: '',
     tip: 'nisye_verdim',
     mebleg: '',
@@ -167,7 +167,7 @@ export function depoItemToLedgerPayload(item, { kime, tip, tarix, qaytarma_tarix
   const label = String(mehsul ?? item.model ?? '').trim()
   return {
     kime: String(kime || '').trim(),
-    tarix: tarix || new Date().toISOString().slice(0, 10),
+    tarix: tarix || todayYmd(),
     qaytarma_tarixi: qaytarma_tarixi || null,
     tip: tip || 'nisye_verdim',
     mebleg: Number(mebleg) || 0,
@@ -197,7 +197,7 @@ export function rowToForm(row) {
 
 /** Rows with a due date, for the calendar. */
 export function buildDueEvents(rows) {
-  const today = new Date().toISOString().slice(0, 10)
+  const today = todayYmd()
   const list = []
   for (const row of rows || []) {
     const due = row.qaytarma_tarixi
@@ -265,7 +265,9 @@ export function computeBalances(rows) {
 export function parseExcelDate(v) {
   if (v == null || v === '') return null
   if (v instanceof Date && !Number.isNaN(v.getTime())) {
-    return v.toISOString().slice(0, 10)
+    // Excel tarixi yerli gecə yarısı (bəzən bir neçə saniyə əvvəl) və ya UTC gecə yarısı gəlir —
+    // +12 saat edib yerli günü götürürük ki, Bakı vaxtında bir gün geri düşməsin.
+    return todayYmd(new Date(v.getTime() + 12 * 3600 * 1000))
   }
   if (typeof v === 'number' && Number.isFinite(v)) {
     // Excel serial date
