@@ -1,3 +1,8 @@
+-- ⚠️⚠️ KÖHNƏ FAYL — CANLI BAZADA YENİDƏN İŞLƏTMƏYİN! ⚠️⚠️
+-- Bu fayl cədvəlləri «hamıya açıq» edən köhnə qaydalar yaradır (using (true)).
+-- Canlı bazadakı indiki qaydalar: setup/tables/46_tab_icazeleri.sql
+-- Səhvən işlədilibsə, dərhal 46_tab_icazeleri.sql-i yenidən işlədin.
+
 -- Bazara borc: mağazanın təchizatçılara (B2B tərəfdaşlara) borcu — alış-ödəniş qeydləri
 
 create table if not exists public.bazara_borc (
