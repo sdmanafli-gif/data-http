@@ -1,4 +1,4 @@
-import { formatDate } from '../../lib/formatDate'
+import { formatDate, todayYmd } from '../../lib/formatDate'
 import { computeMonthlyAmount } from './sexsiKreditSchedule'
 
 export { formatDate }
@@ -16,7 +16,7 @@ export function emptySexsiKreditForm() {
   return {
     ad: '',
     kimden: '',
-    verilme_tarixi: new Date().toISOString().slice(0, 10),
+    verilme_tarixi: todayYmd(),
     cemi_mebleg: '',
     nece_ay: '',
     aylik_odenis: '',
