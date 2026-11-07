@@ -1,4 +1,5 @@
 import { Routes, Route, useNavigate, useLocation } from 'react-router-dom'
+import { useAuth } from '../../contexts/AuthContext'
 import OdenisList from './OdenisList'
 import OdenisForm from './OdenisForm'
 import ExcelImport from './ExcelImport'
@@ -8,6 +9,7 @@ import '../../styles/shared.css'
 export default function OdenislerFeature() {
   const navigate = useNavigate()
   const location = useLocation()
+  const { access, isAdmin } = useAuth()
   const hideHeader =
     location.pathname.includes('/idxal') ||
     location.pathname.includes('/tarixce') ||
@@ -20,15 +22,21 @@ export default function OdenislerFeature() {
         <div className="page-header">
           <h1>Ödənişlər</h1>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            <button type="button" className="btn btn--secondary" onClick={() => navigate('/odenisler/tarixce')}>
-              Tarixçə
-            </button>
-            <button type="button" className="btn btn--secondary" onClick={() => navigate('/odenisler/idxal')}>
-              Excel idxal
-            </button>
-            <button type="button" className="btn btn--primary" onClick={() => navigate('/odenisler/yeni')}>
-              Ödəniş et
-            </button>
+            {isAdmin && (
+              <button type="button" className="btn btn--secondary" onClick={() => navigate('/odenisler/tarixce')}>
+                Tarixçə
+              </button>
+            )}
+            {access.canCreate('odenisler') && (
+              <button type="button" className="btn btn--secondary" onClick={() => navigate('/odenisler/idxal')}>
+                Excel idxal
+              </button>
+            )}
+            {access.canCreate('odenisler') && (
+              <button type="button" className="btn btn--primary" onClick={() => navigate('/odenisler/yeni')}>
+                Ödəniş et
+              </button>
+            )}
           </div>
         </div>
       )}
