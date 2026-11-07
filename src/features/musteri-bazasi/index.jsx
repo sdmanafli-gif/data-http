@@ -11,7 +11,7 @@ import '../../styles/shared.css'
 export default function MusteriBazasi() {
   const navigate = useNavigate()
   const location = useLocation()
-  const { access } = useAuth()
+  const { access, isAdmin } = useAuth()
   const hideHeader =
     location.pathname.includes('/sutunlar') ||
     location.pathname.includes('/idxal') ||
@@ -26,9 +26,11 @@ export default function MusteriBazasi() {
         <div className="page-header">
           <h1>Müştəri Bazası</h1>
           <div style={{ display: 'flex', gap: 'var(--space-sm)', flexWrap: 'wrap' }}>
-            <button type="button" className="btn btn--secondary" onClick={() => navigate('/musteri-bazasi/tarixce')}>
-              Tarixçə
-            </button>
+            {isAdmin && (
+              <button type="button" className="btn btn--secondary" onClick={() => navigate('/musteri-bazasi/tarixce')}>
+                Tarixçə
+              </button>
+            )}
             {access.canCreate('musteri-bazasi') && (
               <button type="button" className="btn btn--secondary" onClick={() => navigate('/musteri-bazasi/idxal')}>
                 Excel idxal
