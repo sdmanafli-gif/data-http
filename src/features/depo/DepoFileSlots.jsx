@@ -1,5 +1,5 @@
 import { useEffect, useId, useState } from 'react'
-import { parseSenedler, senedlerPublicUrl, uploadSenedlerFiles, removeSenedlerFile } from '../../lib/senedler'
+import { parseSenedler, senedlerSignedUrl, uploadSenedlerFiles, removeSenedlerFile } from '../../lib/senedler'
 import { confirmDelete } from '../../lib/confirmDelete'
 
 /**
@@ -44,8 +44,29 @@ function isPdfName(name) {
   return /\.pdf$/i.test(String(name || ''))
 }
 
-/** Faylı səhifənin üstündə açır (Müştəri bazasındakı kart kimi), yuxarıda "Bağla" */
-export function FilePreviewModal({ name, url, onClose }) {
+/**
+ * Faylı səhifənin üstündə açır (Müştəri bazasındakı kart kimi), yuxarıda "Bağla".
+ * `url` verilməyibsə, `path`-dən müvəqqəti (imzalı) link alınır.
+ */
+export function FilePreviewModal({ name, url: givenUrl, path, onClose }) {
+  const [signedUrl, setSignedUrl] = useState(null)
+  const [failed, setFailed] = useState(false)
+  useEffect(() => {
+    if (givenUrl || !path) return undefined
+    let alive = true
+    setSignedUrl(null)
+    setFailed(false)
+    senedlerSignedUrl(path).then((u) => {
+      if (!alive) return
+      if (u) setSignedUrl(u)
+      else setFailed(true)
+    })
+    return () => {
+      alive = false
+    }
+  }, [givenUrl, path])
+  const url = givenUrl || signedUrl
+
   useEffect(() => {
     const onKey = (e) => {
       if (e.key === 'Escape') onClose()
@@ -62,16 +83,20 @@ export function FilePreviewModal({ name, url, onClose }) {
             {name || 'Fayl'}
           </h2>
           <div style={{ display: 'flex', gap: 8 }}>
-            <a className="btn btn--secondary" href={url} target="_blank" rel="noreferrer">
-              Yeni pəncərədə aç
-            </a>
+            {url && (
+              <a className="btn btn--secondary" href={url} target="_blank" rel="noreferrer">
+                Yeni pəncərədə aç
+              </a>
+            )}
             <button type="button" className="btn btn--secondary" onClick={onClose}>
               Bağla
             </button>
           </div>
         </div>
         <div className="depo-file-preview__body">
-          {isImageName(name) ? (
+          {!url ? (
+            <p>{failed ? 'Fayl açılmadı. Yenidən cəhd edin.' : 'Yüklənir…'}</p>
+          ) : isImageName(name) ? (
             <img src={url} alt={name} />
           ) : isPdfName(name) ? (
             <iframe src={url} title={name} />
@@ -96,7 +121,7 @@ function Slot({ slot, file, pendingFile, enabled, onPick, onRemove }) {
   const shown = file || (pendingFile ? { name: pendingFile.name } : null)
 
   function openPreview() {
-    if (file) setPreview({ name: file.name, url: senedlerPublicUrl(file.path) })
+    if (file) setPreview({ name: file.name, path: file.path })
     else if (pendingFile) setPreview({ name: pendingFile.name, url: URL.createObjectURL(pendingFile), revoke: true })
   }
   function closePreview() {
@@ -170,7 +195,7 @@ function Slot({ slot, file, pendingFile, enabled, onPick, onRemove }) {
           </label>
         </>
       )}
-      {preview && <FilePreviewModal name={preview.name} url={preview.url} onClose={closePreview} />}
+      {preview && <FilePreviewModal name={preview.name} url={preview.url} path={preview.path} onClose={closePreview} />}
     </div>
   )
 }
@@ -270,7 +295,7 @@ export default function DepoFileSlots({ value, recordId, pending = {}, onPending
       {extraPreview && (
         <FilePreviewModal
           name={extraPreview.name}
-          url={senedlerPublicUrl(extraPreview.path)}
+          path={extraPreview.path}
           onClose={() => setExtraPreview(null)}
         />
       )}
