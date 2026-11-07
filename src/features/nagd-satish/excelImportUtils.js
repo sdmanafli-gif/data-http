@@ -1,4 +1,5 @@
 import * as XLSX from 'xlsx'
+import { todayYmd } from '../../lib/formatDate'
 
 export const IMPORT_SKIP_KEYS = new Set(['xeyir', 'xeyir_faizle'])
 export const IMPORT_ALLOW_READONLY = new Set(['sira_no'])
@@ -127,7 +128,7 @@ export function coerceValue(raw, col) {
 }
 
 export function excelRowToForm(excelRow, mapping, columnsByKey) {
-  const form = { satici_faizi: '0', tarix: new Date().toISOString().slice(0, 10), extra: {} }
+  const form = { satici_faizi: '0', tarix: todayYmd(), extra: {} }
   for (const [excelHeader, dbKey] of Object.entries(mapping)) {
     if (!dbKey) continue
     const col = columnsByKey.get(dbKey)
