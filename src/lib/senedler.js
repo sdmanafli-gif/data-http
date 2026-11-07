@@ -16,9 +16,28 @@ export function parseSenedler(value) {
   return []
 }
 
-export function senedlerPublicUrl(path) {
+/**
+ * Sənədə müvəqqəti link (yalnız login olmuş işçi ala bilər, müddəti bitəndən sonra işləmir).
+ * Fayl qovluğu bağlı (private) olanda da işləyir.
+ */
+export async function senedlerSignedUrl(path, seconds = 600) {
   if (!path) return ''
-  return supabase.storage.from(SENEDLER_BUCKET).getPublicUrl(path).data.publicUrl
+  const { data, error } = await supabase.storage.from(SENEDLER_BUCKET).createSignedUrl(path, seconds)
+  if (error || !data?.signedUrl) return ''
+  return data.signedUrl
+}
+
+/** Sənədi yeni pəncərədə açır (pəncərə dərhal açılır ki, brauzer bloklamasın) */
+export async function openSenedlerFile(path) {
+  const win = window.open('', '_blank')
+  const url = await senedlerSignedUrl(path, 120)
+  if (!url) {
+    win?.close()
+    window.alert('Fayl açılmadı. Yenidən cəhd edin.')
+    return
+  }
+  if (win) win.location.href = url
+  else window.location.href = url
 }
 
 function safeFileName(name) {

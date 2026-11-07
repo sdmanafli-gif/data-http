@@ -13,3 +13,14 @@ export function formatDate(value) {
   const yyyy = d.getFullYear()
   return `${dd}.${mm}.${yyyy}`
 }
+
+/**
+ * Bu günün tarixi YYYY-MM-DD — kompüterin (Bakı) vaxtı ilə.
+ * `new Date().toISOString().slice(0, 10)` UTC verir: gecə 00:00–04:00 arası dünənki tarixi yazırdı.
+ */
+export function todayYmd(d = new Date()) {
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
