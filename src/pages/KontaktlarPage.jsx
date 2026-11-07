@@ -14,7 +14,7 @@ import {
 } from '../lib/uiPrefs'
 import ResizableDataTable from '../features/musteri-bazasi/ResizableDataTable'
 import { applyKeyOrder } from '../features/musteri-bazasi/columnOrder'
-import { parseSenedler, senedlerPublicUrl, SENEDLER_BUCKET } from '../lib/senedler'
+import { parseSenedler, openSenedlerFile, SENEDLER_BUCKET } from '../lib/senedler'
 import { confirmDelete } from '../lib/confirmDelete'
 import { normMusteriName, mergeMusteriler } from '../lib/musteriler'
 import { loadTechizatcilar, mergeTechizatcilar } from '../lib/techizatcilar'
@@ -1446,7 +1446,13 @@ export default function KontaktlarPage() {
                         </div>
                         {c.files.map((f) => (
                           <div key={f.path}>
-                            <a href={senedlerPublicUrl(f.path)} target="_blank" rel="noopener noreferrer">
+                            <a
+                              href="#"
+                              onClick={(e) => {
+                                e.preventDefault()
+                                openSenedlerFile(f.path)
+                              }}
+                            >
                               {f.name || 'fayl'}
                             </a>
                           </div>
