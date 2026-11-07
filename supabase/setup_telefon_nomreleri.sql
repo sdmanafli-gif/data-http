@@ -1,3 +1,8 @@
+-- ⚠️⚠️ KÖHNƏ FAYL — CANLI BAZADA YENİDƏN İŞLƏTMƏYİN! ⚠️⚠️
+-- Bu fayl cədvəlləri «hamıya açıq» edən köhnə qaydalar yaradır (using (true)).
+-- Canlı bazadakı indiki qaydalar: setup/tables/46_tab_icazeleri.sql
+-- Səhvən işlədilibsə, dərhal 46_tab_icazeleri.sql-i yenidən işlədin.
+
 -- Run this entire file in Supabase → SQL Editor to create the table and load the data.
 
 -- 1) Create table
